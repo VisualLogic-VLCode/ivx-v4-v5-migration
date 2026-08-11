@@ -26,7 +26,7 @@ test('Agent classification and constrained Patch return a dry-run Job to validat
   fs.writeFileSync(path.join(converter, 'index.js'), `
     export function convertV4CaseJsonToV5CaseJson({ v4CaseJson }) {
       const output = structuredClone(v4CaseJson);
-      output.case.events.list = [{ ast: { op: 'root', args: [{ op: 'jsfn', val: '(() =>', args: [] }] } }];
+      output.case.events.list = [{ ast: { op: 'root', args: [{ op: 'jsfn', val: ['(() =>'], args: [] }] } }];
       return output;
     }
   `);
@@ -57,7 +57,7 @@ test('Agent classification and constrained Patch return a dry-run Job to validat
     assert.equal(classified.status, 'AI_REPAIR_REQUIRED');
     const patchPath = path.join(temporary, 'repair.json');
     fs.writeFileSync(patchPath, JSON.stringify([
-      { op: 'replace', path: '/case/events/list/0/ast/args/0/val', value: '() => null' },
+      { op: 'replace', path: '/case/events/list/0/ast/args/0/val', value: ['() => null'] },
     ]));
     const repaired = invoke(home, ['job', 'apply-patch', '--job', dryRun.jobId, '--file', patchPath]);
     assert.equal(repaired.status, 'DRY_RUN_SUCCEEDED');

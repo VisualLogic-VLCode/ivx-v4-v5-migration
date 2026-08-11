@@ -1,29 +1,120 @@
 import { scanWorkVersionSignals } from '../workflow/version-classifier.js';
 
-function walkObjectGraph(root, visitor) {
-  const stack = [root];
+function walkObjectGraph(root, visitor, initialPath = []) {
+  const stack = [{ value: root, path: initialPath }];
   const seen = new Set();
   while (stack.length) {
-    const value = stack.pop();
+    const { value, path } = stack.pop();
     if (!value || typeof value !== 'object' || seen.has(value)) continue;
     seen.add(value);
-    visitor(value);
+    if (visitor(value, path) === false) continue;
     if (Array.isArray(value)) {
-      for (const child of value) stack.push(child);
+      for (let index = value.length - 1; index >= 0; index -= 1) {
+        stack.push({ value: value[index], path: [...path, index] });
+      }
     } else {
-      for (const child of Object.values(value)) stack.push(child);
+      const entries = Object.entries(value);
+      for (let index = entries.length - 1; index >= 0; index -= 1) {
+        const [key, child] = entries[index];
+        stack.push({ value: child, path: [...path, key] });
+      }
     }
   }
 }
 
+function pathContainsSequence(path, sequence) {
+  return path.some((segment, index) => sequence.every((expected, offset) => {
+    const actual = path[index + offset];
+    return expected === Number ? Number.isInteger(actual) : actual === expected;
+  }));
+}
+
+function isNonOwningNodePath(path) {
+  return pathContainsSequence(path, ['events', 'list', Number, 'tree'])
+    || pathContainsSequence(path, ['uis', 'modConfigs']);
+}
+
 function collectNodeIds(work) {
   const counts = new Map();
-  walkObjectGraph(work, (value) => {
-    if (!Array.isArray(value) && typeof value.id === 'string' && typeof value.type === 'string') {
-      counts.set(value.id, (counts.get(value.id) || 0) + 1);
+  const realmCounts = new Map();
+  for (const realm of ['case', 'stage', 'server']) {
+    if (!work?.[realm] || typeof work[realm] !== 'object') continue;
+    const realmNodeCounts = new Map();
+    realmCounts.set(realm, realmNodeCounts);
+    walkObjectGraph(work[realm], (value, path) => {
+      if (isNonOwningNodePath(path)) return false;
+      if (!Array.isArray(value) && typeof value.id === 'string' && typeof value.type === 'string') {
+        counts.set(value.id, (counts.get(value.id) || 0) + 1);
+        realmNodeCounts.set(value.id, (realmNodeCounts.get(value.id) || 0) + 1);
+      }
+      return true;
+    }, [realm]);
+  }
+  return { counts, realmCounts };
+}
+
+function formatPath(path) {
+  return `/${path.map((part) => String(part).replaceAll('~', '~0').replaceAll('/', '~1')).join('/')}`;
+}
+
+function validateJsfn(value, path, jsfnCount, issues) {
+  if (!Array.isArray(value.val)) {
+    issues.push(createIssue(
+      'JSFN_VALUE_ARRAY',
+      'BLOCKER',
+      'jsfn val must be [sourceCode, ...parameterNames]',
+      { index: jsfnCount, path: formatPath(path) },
+    ));
+    return;
+  }
+
+  const [code, ...parameters] = value.val;
+  if (typeof code !== 'string' || code.length === 0) {
+    issues.push(createIssue('JSFN_CODE_REQUIRED', 'BLOCKER', 'jsfn has no source code', {
+      index: jsfnCount,
+      path: formatPath(path),
+    }));
+    return;
+  }
+
+  const args = value.args ?? [];
+  if (Array.isArray(args) && args.length !== parameters.length) {
+    issues.push(createIssue('JSFN_ARGUMENT_ARITY', 'BLOCKER', 'jsfn parameter and argument counts differ', {
+      index: jsfnCount,
+      path: formatPath(path),
+      parameterCount: parameters.length,
+      argumentCount: args.length,
+    }));
+  }
+
+  if (parameters.some((parameter) => typeof parameter !== 'string' || parameter.length === 0)) {
+    issues.push(createIssue('JSFN_PARAMETER_INVALID', 'BLOCKER', 'jsfn parameter names must be non-empty strings', {
+      index: jsfnCount,
+      path: formatPath(path),
+    }));
+    return;
+  }
+
+  try {
+    Function(...parameters, `"use strict"; return (${code});`);
+  } catch (error) {
+    issues.push(createIssue('JSFN_SYNTAX', 'BLOCKER', 'jsfn source code or parameter list is not valid JavaScript', {
+      index: jsfnCount,
+      path: formatPath(path),
+      error: error.message,
+      code: code.slice(0, 500),
+    }));
+  }
+}
+
+function collectDuplicateNodeIdsByRealm(realmCounts) {
+  const duplicates = [];
+  for (const [realm, counts] of realmCounts) {
+    for (const [id, count] of counts) {
+      if (count > 1) duplicates.push({ realm, id, count });
     }
-  });
-  return counts;
+  }
+  return duplicates;
 }
 
 function createIssue(rule, severity, message, evidence = {}) {
@@ -40,7 +131,7 @@ function createIssue(rule, severity, message, evidence = {}) {
 function validateAstNodes(work, issues) {
   let astNodeCount = 0;
   let jsfnCount = 0;
-  walkObjectGraph(work, (value) => {
+  walkObjectGraph(work, (value, path) => {
     if (Array.isArray(value) || !Object.hasOwn(value, 'op')) return;
     astNodeCount += 1;
     if (typeof value.op !== 'string' || value.op.length === 0) {
@@ -51,20 +142,7 @@ function validateAstNodes(work, issues) {
     }
     if (value.op === 'jsfn') {
       jsfnCount += 1;
-      const code = typeof value.val === 'string' ? value.val : value.code;
-      if (typeof code !== 'string' || code.length === 0) {
-        issues.push(createIssue('JSFN_CODE_REQUIRED', 'BLOCKER', 'jsfn has no source code', { index: jsfnCount }));
-      } else {
-        try {
-          Function(`"use strict"; return (${code});`);
-        } catch (error) {
-          issues.push(createIssue('JSFN_SYNTAX', 'BLOCKER', 'jsfn source code is not valid JavaScript', {
-            index: jsfnCount,
-            error: error.message,
-            code: code.slice(0, 500),
-          }));
-        }
-      }
+      validateJsfn(value, path, jsfnCount, issues);
     }
   });
   return { astNodeCount, jsfnCount };
@@ -91,16 +169,16 @@ export function validateConvertedCase({ v4CaseJson, v5CaseJson } = {}) {
     ));
   }
 
-  const sourceIds = collectNodeIds(v4CaseJson);
-  const targetIds = collectNodeIds(v5CaseJson);
-  const missingSourceIds = [...sourceIds.keys()].filter((id) => !targetIds.has(id));
+  const sourceNodes = collectNodeIds(v4CaseJson);
+  const targetNodes = collectNodeIds(v5CaseJson);
+  const missingSourceIds = [...sourceNodes.counts.keys()].filter((id) => !targetNodes.counts.has(id));
   if (missingSourceIds.length > 0) {
     issues.push(createIssue('SOURCE_NODE_DROPPED', 'BLOCKER', 'Source node ids are missing from converted output', {
       count: missingSourceIds.length,
       sample: missingSourceIds.slice(0, 50),
     }));
   }
-  const duplicateTargetIds = [...targetIds.entries()].filter(([, count]) => count > 1).map(([id, count]) => ({ id, count }));
+  const duplicateTargetIds = collectDuplicateNodeIdsByRealm(targetNodes.realmCounts);
   if (duplicateTargetIds.length > 0) {
     issues.push(createIssue('TARGET_NODE_ID_DUPLICATE', 'ERROR', 'Converted output contains duplicate node ids', {
       count: duplicateTargetIds.length,
@@ -118,8 +196,8 @@ export function validateConvertedCase({ v4CaseJson, v5CaseJson } = {}) {
     summary: {
       issueCount: issues.length,
       blockerCount: blockers.length,
-      sourceNodeCount: sourceIds.size,
-      targetNodeCount: targetIds.size,
+      sourceNodeCount: sourceNodes.counts.size,
+      targetNodeCount: targetNodes.counts.size,
       astNodeCount: ast.astNodeCount,
       jsfnCount: ast.jsfnCount,
       targetSignals: physical.signals,
