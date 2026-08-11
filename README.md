@@ -4,7 +4,7 @@ This project is the distributable local workflow used by Codex or Claude Code. I
 
 ## Current status
 
-Version `0.3.1` is the first public-distribution candidate. It provides:
+Version `0.3.2` is the public-distribution reliability update. It provides:
 
 - private global Job storage with atomic state writes and per-Job locks;
 - metadata + physical work version classification;
@@ -136,7 +136,7 @@ After reviewing the generated plan, a clean, pushed, public repository may be pu
 
 ```bash
 npm run release:publish -- \
-  --plan ./release-out/workflow-0.3.1/github-release-plan.json \
+  --plan ./release-out/workflow-0.3.2/github-release-plan.json \
   --confirm PUBLISH_STABLE_RELEASE
 ```
 
@@ -174,7 +174,7 @@ The workflow writes the bounded report to `reports/converter-diagnostics.json` a
 
 ## Update model
 
-Workflow and Converter releases are immutable and independently versioned. `setup` trusts the embedded Ed25519 public key and configures the two public `release-channel` manifests. The stable Launcher is installed once; `update apply` then updates the managed Workflow, Converter, and Agent adapters without another Git checkout or global npm installation. A managed Job checks release policy before starting, verifies artifact hashes, installs into a new version directory, then atomically switches `current.json`. A Workflow change requests a command restart; a Converter change can be activated in the same invocation. Running Jobs keep their pinned versions.
+Workflow and Converter releases are immutable and independently versioned. `setup` trusts the embedded Ed25519 public key and configures the two public `release-channel` manifests. The stable Launcher is installed once; `update apply` then updates the managed Workflow, Converter, and Agent adapters without another Git checkout or global npm installation. Signed manifests and runtime artifacts use bounded retries for transient network failures, while permanent HTTP failures remain immediate structured errors. A managed Job checks release policy before starting, verifies artifact hashes, installs into a new version directory, then atomically switches `current.json`. A Workflow change requests a command restart; a Converter change can be activated in the same invocation. Running Jobs keep their pinned versions.
 
 ## Safety boundary
 

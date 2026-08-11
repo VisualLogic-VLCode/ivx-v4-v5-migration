@@ -5,13 +5,16 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { WorkflowError, invariant } from '../errors.js';
 import { ensurePrivateDir, sha256File, writePrivateJson } from '../fs/secure-json.js';
+import { fetchBytes } from './http-fetch.js';
 import { RuntimeRegistry } from './runtime-registry.js';
 
 async function downloadArtifact(location, target) {
   if (/^https:\/\//i.test(location)) {
-    const response = await fetch(location);
-    if (!response.ok) throw new WorkflowError('RUNTIME_DOWNLOAD_FAILED', `Runtime artifact returned HTTP ${response.status}`);
-    fs.writeFileSync(target, Buffer.from(await response.arrayBuffer()), { mode: 0o600 });
+    const bytes = await fetchBytes(location, {
+      errorCode: 'RUNTIME_DOWNLOAD_FAILED',
+      label: 'Runtime artifact',
+    });
+    fs.writeFileSync(target, bytes, { mode: 0o600 });
     return;
   }
   const source = /^file:\/\//i.test(location) ? fileURLToPath(location) : path.resolve(location);

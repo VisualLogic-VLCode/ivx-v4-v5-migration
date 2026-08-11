@@ -45,7 +45,7 @@ ivx-migrate rollback --kind workflow
 ivx-migrate rollback --kind converter
 ```
 
-The default policy is `prompt`. With `auto`, a new runtime is downloaded, its signed descriptor and SHA-256 are verified, npm lifecycle scripts are disabled, and the installed directory is atomically activated. Workflow activation requests a command restart. Converter activation may continue in the same invocation. Existing Jobs keep their pinned versions.
+The default policy is `prompt`. With `auto`, a new runtime is downloaded, its signed descriptor and SHA-256 are verified, npm lifecycle scripts are disabled, and the installed directory is atomically activated. Manifest and artifact downloads retry bounded transient network/HTTP failures; permanent failures report a structured code and a query-free URL. Workflow activation requests a command restart. Converter activation may continue in the same invocation. Existing Jobs keep their pinned versions.
 
 Normal migrations resolve the active Converter from `~/.ivx-v4-v5/current.json`. `--converter-path` is only a development override.
 

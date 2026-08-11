@@ -3,14 +3,16 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WorkflowError, invariant } from '../errors.js';
+import { fetchBytes } from './http-fetch.js';
 
 async function readLocation(location) {
   if (/^https:\/\//i.test(location)) {
-    const response = await fetch(location, { headers: { Accept: 'application/json' } });
-    if (!response.ok) {
-      throw new WorkflowError('RELEASE_MANIFEST_FETCH_FAILED', `Release manifest returned HTTP ${response.status}`);
-    }
-    return { bytes: Buffer.from(await response.arrayBuffer()), local: false };
+    const bytes = await fetchBytes(location, {
+      headers: { Accept: 'application/json' },
+      errorCode: 'RELEASE_MANIFEST_FETCH_FAILED',
+      label: 'Release manifest',
+    });
+    return { bytes, local: false };
   }
   if (/^file:\/\//i.test(location)) return { bytes: fs.readFileSync(fileURLToPath(location)), local: true };
   return { bytes: fs.readFileSync(path.resolve(location)), local: true };
