@@ -4,11 +4,12 @@ This project is the distributable local workflow used by Codex or Claude Code. I
 
 ## Current status
 
-Version `0.2.0` is a local Platform Adapter preview. It provides:
+Version `0.3.0` is a local Platform Adapter preview. It provides:
 
 - private global Job storage with atomic state writes and per-Job locks;
 - metadata + physical work version classification;
 - a version-pinned local converter provider;
+- versioned converter-process diagnostics with conservative save gating;
 - deterministic baseline validation and structured issue files;
 - bounded AI issue-classification and JSON Patch contracts;
 - signed Workflow/Converter release manifests, hash verification, installation, activation, and rollback foundations;
@@ -127,22 +128,31 @@ Unsigned manifests are rejected. For local release-protocol tests only, set `all
 
 ## Converter contract
 
-The minimum converter package exports:
+The legacy minimum converter package exports:
 
 ```js
 export function loadRuntimeMaps() {}
 export function convertV4CaseJsonToV5CaseJson({ v4CaseJson, ntype }) {}
 ```
 
-The preferred future public API is:
+New migrations require the detailed public API before they can pass the save gate:
 
 ```js
 export function convertV4CaseJsonToV5CaseJsonDetailed({ v4CaseJson, ntype }) {
-  return { v5CaseJson, diagnostics };
+  return {
+    v5CaseJson,
+    diagnostics: {
+      schemaVersion: 1,
+      kind: 'tov5parser-conversion-diagnostics',
+      summary,
+      limits,
+      records,
+    },
+  };
 }
 ```
 
-The workflow reports diagnostics capability explicitly. It does not import private converter files.
+The workflow writes the bounded report to `reports/converter-diagnostics.json` and merges only its risk summary and a small sample into `reports/validation.json`. Missing diagnostics, dropped logic, or truncated diagnostics stop at `ISSUES_CLASSIFIED`; custom-expression `jsfn` fallbacks remain visible warnings and are not automatically labeled converter defects. The workflow never imports private converter files.
 
 ## Update model
 

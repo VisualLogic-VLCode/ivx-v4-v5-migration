@@ -3,6 +3,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { WorkflowError, invariant } from '../errors.js';
 import { sha256File } from '../fs/secure-json.js';
+import { normalizeConverterDiagnostics } from './diagnostics-contract.js';
 
 export class LocalConverterProvider {
   constructor({ packagePath, expectedVersion, expectedSha256 } = {}) {
@@ -60,7 +61,7 @@ export class LocalConverterProvider {
       invariant(result?.v5CaseJson, 'CONVERTER_INVALID_RESULT', 'Detailed converter did not return v5CaseJson');
       return {
         v5CaseJson: result.v5CaseJson,
-        diagnostics: Array.isArray(result.diagnostics) ? result.diagnostics : [],
+        diagnostics: normalizeConverterDiagnostics(result.diagnostics),
         descriptor: this.descriptor,
       };
     }

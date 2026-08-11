@@ -77,6 +77,21 @@ test('CLI platform migration uses caller token, converts, saves, checkpoints, an
       output.case.events.list = [{ ast: { op: 'root', args: [] } }];
       return output;
     }
+    export function convertV4CaseJsonToV5CaseJsonDetailed(args) {
+      return {
+        v5CaseJson: convertV4CaseJsonToV5CaseJson(args),
+        diagnostics: {
+          schemaVersion: 1,
+          kind: 'tov5parser-conversion-diagnostics',
+          summary: {
+            total: 0, droppedTotal: 0, customExprTotal: 0, uniqueTotal: 0,
+            returnedRecordCount: 0, truncated: false,
+            categoryTruncated: false, phaseTruncated: false,
+          },
+          records: [],
+        },
+      };
+    }
   `);
 
   const server = http.createServer(async (request, response) => {

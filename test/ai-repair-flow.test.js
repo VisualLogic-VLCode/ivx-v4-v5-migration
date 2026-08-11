@@ -29,6 +29,21 @@ test('Agent classification and constrained Patch return a dry-run Job to validat
       output.case.events.list = [{ ast: { op: 'root', args: [{ op: 'jsfn', val: ['(() =>'], args: [] }] } }];
       return output;
     }
+    export function convertV4CaseJsonToV5CaseJsonDetailed(args) {
+      return {
+        v5CaseJson: convertV4CaseJsonToV5CaseJson(args),
+        diagnostics: {
+          schemaVersion: 1,
+          kind: 'tov5parser-conversion-diagnostics',
+          summary: {
+            total: 0, droppedTotal: 0, customExprTotal: 0, uniqueTotal: 0,
+            returnedRecordCount: 0, truncated: false,
+            categoryTruncated: false, phaseTruncated: false,
+          },
+          records: [],
+        },
+      };
+    }
   `);
   const input = path.join(temporary, 'app.json');
   fs.writeFileSync(input, JSON.stringify({

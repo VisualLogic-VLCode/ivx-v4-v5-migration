@@ -16,6 +16,7 @@ import { evaluateRelease } from './releases/release-policy.js';
 import { RuntimeRegistry } from './releases/runtime-registry.js';
 import { performUpdatePreflight } from './releases/update-preflight.js';
 import { validateConvertedCase } from './validation/basic-validator.js';
+import { mergeConverterDiagnostics } from './validation/converter-diagnostics.js';
 import { applyRepairPatch, validateIssueClassification } from './workflow/patch-policy.js';
 import { classifyCaseVersion } from './workflow/version-classifier.js';
 
@@ -158,11 +159,14 @@ async function runDryRun(options, context) {
     schemaVersion: 1,
     converter: converted.descriptor,
     diagnosticsAvailable: converted.diagnostics !== null,
-    diagnosticCount: converted.diagnostics?.length ?? null,
+    diagnosticCount: converted.diagnostics?.summary?.total ?? null,
+    droppedDiagnosticCount: converted.diagnostics?.summary?.droppedTotal ?? null,
     inputSha256: sha256File(path.join(context.jobs.jobDir(job.jobId), 'v4', 'app.json')),
     outputSha256: sha256File(outputPath),
   });
-  if (converted.diagnostics !== null) context.jobs.writeArtifact(job.jobId, 'reports/diagnostics.json', converted.diagnostics);
+  if (converted.diagnostics !== null) {
+    context.jobs.writeArtifact(job.jobId, 'reports/converter-diagnostics.json', converted.diagnostics);
+  }
   state = context.jobs.transition(job.jobId, 'CONVERTED', {
     reason: 'converter-completed',
     patch: {
@@ -172,7 +176,10 @@ async function runDryRun(options, context) {
       },
     },
   });
-  const validation = validateConvertedCase({ v4CaseJson: work, v5CaseJson: converted.v5CaseJson });
+  const validation = mergeConverterDiagnostics(
+    validateConvertedCase({ v4CaseJson: work, v5CaseJson: converted.v5CaseJson }),
+    converted.diagnostics,
+  );
   context.jobs.writeArtifact(job.jobId, 'reports/validation.json', validation);
   state = context.jobs.transition(job.jobId, 'VALIDATED', { reason: validation.passed ? 'basic-validation-passed' : 'basic-validation-needs-analysis' });
   state = context.jobs.transition(job.jobId, 'ISSUES_CLASSIFIED', {
@@ -257,16 +264,22 @@ async function runPlatformMigration(options, context) {
     schemaVersion: 1,
     converter: converted.descriptor,
     diagnosticsAvailable: converted.diagnostics !== null,
-    diagnosticCount: converted.diagnostics?.length ?? null,
+    diagnosticCount: converted.diagnostics?.summary?.total ?? null,
+    droppedDiagnosticCount: converted.diagnostics?.summary?.droppedTotal ?? null,
     inputSha256: sha256File(inputPath),
     outputSha256: sha256File(outputPath),
   });
-  if (converted.diagnostics !== null) context.jobs.writeArtifact(job.jobId, 'reports/diagnostics.json', converted.diagnostics);
+  if (converted.diagnostics !== null) {
+    context.jobs.writeArtifact(job.jobId, 'reports/converter-diagnostics.json', converted.diagnostics);
+  }
   state = context.jobs.transition(job.jobId, 'CONVERTED', {
     reason: 'converter-completed',
     patch: { target: { artifact: 'v5/app.v5.json', outputSha256: sha256File(outputPath) } },
   });
-  const validation = validateConvertedCase({ v4CaseJson: work, v5CaseJson: converted.v5CaseJson });
+  const validation = mergeConverterDiagnostics(
+    validateConvertedCase({ v4CaseJson: work, v5CaseJson: converted.v5CaseJson }),
+    converted.diagnostics,
+  );
   context.jobs.writeArtifact(job.jobId, 'reports/validation.json', validation);
   state = context.jobs.transition(job.jobId, 'VALIDATED', { reason: validation.passed ? 'basic-validation-passed' : 'basic-validation-needs-analysis' });
   state = context.jobs.transition(job.jobId, 'ISSUES_CLASSIFIED', {
@@ -321,7 +334,14 @@ async function handleJob(positionals, options, context) {
       reason: 'policy-approved-json-patch-applied',
       patch: { target: { ...state.target, artifact: 'v5/app.v5.patched.json', outputSha256: sha256File(patchedPath) } },
     });
-    const validation = validateConvertedCase({ v4CaseJson: v4, v5CaseJson: patched });
+    const manifest = readJson(path.join(context.jobs.jobDir(options.job), 'reports', 'conversion-manifest.json'));
+    const converterDiagnostics = manifest.diagnosticsAvailable
+      ? readJson(path.join(context.jobs.jobDir(options.job), 'reports', 'converter-diagnostics.json'))
+      : null;
+    const validation = mergeConverterDiagnostics(
+      validateConvertedCase({ v4CaseJson: v4, v5CaseJson: patched }),
+      converterDiagnostics,
+    );
     context.jobs.writeArtifact(options.job, 'reports/validation-after-repair.json', validation);
     state = context.jobs.transition(options.job, 'VALIDATED', { reason: validation.passed ? 'repair-validation-passed' : 'repair-validation-failed' });
     state = context.jobs.transition(options.job, 'ISSUES_CLASSIFIED', {
