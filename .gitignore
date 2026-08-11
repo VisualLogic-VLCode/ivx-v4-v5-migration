@@ -1,6 +1,7 @@
 node_modules/
 coverage/
 *.tgz
+release-out/
 .DS_Store
 
 # Planning and local execution data do not belong in the distribution package.

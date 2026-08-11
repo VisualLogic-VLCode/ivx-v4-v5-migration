@@ -1,75 +1,122 @@
-# Runtime release and user synchronization
+# Public runtime releases and user synchronization
 
-The stable Launcher, Workflow Runtime, and Converter Runtime have separate release lifecycles.
+The stable Launcher, Workflow Runtime, Converter Runtime, and Agent protocol have separate responsibilities. Users install the Launcher once; they never update from a Git checkout.
 
-## What users install once
+## Public channel
 
-Users install the distribution package once to obtain the stable `ivx-migrate` Launcher. The Launcher reads `~/.ivx-v4-v5/current.json` and delegates to the activated, immutable Workflow Runtime. It does not run a Git checkout and never uses `git pull`.
+Versioned npm tarballs are public GitHub Release assets. Signed channel manifests live on the protected `release-channel` branch:
 
-The user's private configuration points at two HTTPS manifests:
-
-```json
-{
-  "releaseManifests": {
-    "workflow": "https://releases.example.com/ivx/workflow/stable.json",
-    "converter": "https://releases.example.com/ivx/converter/stable.json"
-  },
-  "releasePublicKeyPem": "-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----\n",
-  "update": {
-    "channel": "stable",
-    "workflowPolicy": "prompt",
-    "converterPolicy": "prompt"
-  }
-}
+```text
+https://raw.githubusercontent.com/VisualLogic-VLCode/ivx-v4-v5-migration/release-channel/workflow-stable.json
+https://raw.githubusercontent.com/VisualLogic-VLCode/tov5parser/release-channel/converter-stable.json
 ```
 
-## Publishing a new Workflow
+`ivx-migrate setup` writes these URLs and the embedded Ed25519 public key to the user's private config, installs both latest runtimes, activates them, and synchronizes the Agent adapters.
 
-1. Increase the Workflow package version and run the complete test suite.
-2. Build an npm tarball. Upload it to an immutable HTTPS URL.
-3. Calculate the tarball SHA-256.
-4. Add the new version descriptor to the Workflow release payload and set `latest`.
-5. Sign the payload with the offline Ed25519 release private key:
+The release private key is never committed, uploaded, bundled, copied into user config, or stored under a Job. The maintainer default path is:
+
+```text
+~/.ivx-v4-v5-maintainer/keys/release-private-key.pem
+```
+
+It must remain mode `0600`. The distributed public-key SHA-256 fingerprint is:
+
+```text
+f567525b290d2a6cf1be05875f4933920fe4808b5833b67ef88018dbb50e9fa4
+```
+
+## User update flow
+
+First installation uses the immutable Launcher asset from the first public Workflow Release:
 
 ```bash
-ivx-migrate release sign \
-  --payload ./workflow-stable.payload.json \
-  --private-key /secure/offline/release-private-key.pem \
-  --output ./workflow-stable.json
+npm install --global \
+  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.3.1/ivx-v4-v5-migration-0.3.1.tgz
+ivx-migrate setup
 ```
 
-6. Verify the signed manifest with the public key in a clean test home.
-7. Upload the signed manifest last. Replacing this small file is the atomic promotion step.
-
-The private key must never be committed, bundled, copied into user configuration, or stored under the Workflow Job directory.
-
-## What happens on the user's machine
-
-Before each new Job, the Workflow checks both signed manifests. With the default `prompt` policy it reports that an update is available and does not begin the Job until the user installs it or explicitly elects to use a still-supported current version. Revoked or below-minimum versions cannot be bypassed.
-
-With `auto`, the runtime is downloaded, hash-checked, installed with package scripts disabled, and atomically activated. A Workflow update requests one command restart so that the stable Launcher loads the new runtime. Running Jobs keep the Workflow and Converter versions recorded in their state and are not silently switched mid-run.
-
-## Converter-only releases
-
-A Converter release uses its own tarball and signed manifest. This lets the converter maintainer publish fixes without republishing the Workflow or Agent instructions. The version descriptor declares compatible Workflow versions and capabilities, including whether structured conversion diagnostics are available.
-
-## Agent instruction synchronization
-
-Ordinary Workflow or Converter fixes do not require replacing Codex/Claude instructions. When the agent protocol changes, include the new adapter files in the Workflow package, increase `agentProtocolVersion`, and have the user run:
+After that one-time bootstrap, users do not clone either repository and normally do not reinstall the global package. They use the signed runtime channels:
 
 ```bash
-ivx-migrate agents sync
+ivx-migrate update check
+ivx-migrate update apply
+ivx-migrate update apply --kind converter
+ivx-migrate rollback --kind workflow
+ivx-migrate rollback --kind converter
 ```
 
-The installer refuses to overwrite manual edits. `--force` first creates a backup and should only be used after review.
+The default policy is `prompt`. With `auto`, a new runtime is downloaded, its signed descriptor and SHA-256 are verified, npm lifecycle scripts are disabled, and the installed directory is atomically activated. Workflow activation requests a command restart. Converter activation may continue in the same invocation. Existing Jobs keep their pinned versions.
 
-## Rollback
+Normal migrations resolve the active Converter from `~/.ivx-v4-v5/current.json`. `--converter-path` is only a development override.
 
-Previously installed immutable runtimes remain available:
+## Agent protocol
+
+Codex and Claude adapters are bundled with Workflow releases. Ordinary Workflow internals and all Converter-only changes leave `agentProtocolVersion` unchanged. When Agent procedure changes:
+
+1. update both `agents/codex/SKILL.md` and `agents/claude/SKILL.md`;
+2. increase `AGENT_PROTOCOL_VERSION`;
+3. publish a new Workflow descriptor with that protocol version.
+
+`update apply` synchronizes adapters from the activated Workflow. Unmodified managed files update automatically. A manually modified file causes `AGENT_FILE_CONFLICT`; `--force` backs it up before replacement.
+
+## Prepare a Workflow release
+
+1. Update package version and Agent protocol when applicable.
+2. Run the complete test suite and clean-home distribution test.
+3. Commit and push the exact source commit to the public repository.
+4. Prepare review artifacts locally:
 
 ```bash
-ivx-migrate release rollback --kind workflow
-ivx-migrate release rollback --kind converter
+npm run release:prepare -- \
+  --kind workflow \
+  --compatible-converter ">=1.2.0 <2.0.0"
 ```
 
-If a release is unsafe, add it to `revoked` in a newly signed manifest. New Jobs then refuse to use it even when a caller asks to continue with the current version.
+The command creates, without network mutation:
+
+```text
+release-out/workflow-<version>/
+├── ivx-v4-v5-migration-<version>.tgz
+├── workflow-stable.payload.json
+├── workflow-stable.json
+└── github-release-plan.json
+```
+
+It records source state, artifact URL/hash, compatibility, capabilities, Agent protocol, signed manifest hash, and channel promotion target.
+
+## Prepare a Converter release
+
+Run from this repository while pointing at the independently maintained Converter checkout:
+
+```bash
+npm run release:prepare -- \
+  --kind converter \
+  --package-dir ../tov5parser \
+  --compatible-workflow ">=0.3.1 <1.0.0"
+```
+
+To retain older version descriptors and revocations, pass the last raw payload with `--previous-payload`. The signed envelope is not used as this input.
+
+## Publish after review
+
+Publication requires a clean source tree, the same prepared commit, a public GitHub repository, a commit already visible in that repository, unchanged hashes/signature, and literal confirmation:
+
+```bash
+npm run release:publish -- \
+  --plan ./release-out/workflow-<version>/github-release-plan.json \
+  --confirm PUBLISH_STABLE_RELEASE
+```
+
+The publisher performs this order:
+
+1. create a Draft GitHub Release at the prepared source commit;
+2. upload the versioned tarball and signed manifest;
+3. verify both Draft assets;
+4. publish the Release;
+5. create/update only the signed manifest on `release-channel` last.
+
+The final channel update is the stable promotion signal. A pushed source commit, tag, tarball, or published Release without channel promotion does not update users.
+
+## Rollback and revocation
+
+Users may immediately activate a previously installed runtime with `rollback`. For global protection, prepare a new signed payload that adds the unsafe version to `revoked` and points `latest` to a fixed version. Publish that signed channel update. New Jobs refuse revoked or below-minimum runtimes even when `--use-current` is requested.

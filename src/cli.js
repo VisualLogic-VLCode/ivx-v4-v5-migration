@@ -1,9 +1,11 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { AgentInstaller } from './agents/installer.js';
 import { loadConfig, saveConfig, DEFAULT_CONFIG } from './config.js';
 import { LocalConverterProvider } from './converter/local-provider.js';
+import { AGENT_PROTOCOL_VERSION, PUBLIC_RELEASE_PROFILE } from './distribution-profile.js';
 import { WorkflowError, invariant } from './errors.js';
 import { readJson, sha256File, writePrivateJson } from './fs/secure-json.js';
 import { JobStore } from './jobs/job-store.js';
@@ -14,6 +16,7 @@ import { ArtifactInstaller } from './releases/artifact-installer.js';
 import { createSignedReleaseEnvelope, loadReleaseEnvelope } from './releases/release-envelope.js';
 import { evaluateRelease } from './releases/release-policy.js';
 import { RuntimeRegistry } from './releases/runtime-registry.js';
+import { UpdateManager } from './releases/update-manager.js';
 import { performUpdatePreflight } from './releases/update-preflight.js';
 import { validateConvertedCase } from './validation/basic-validator.js';
 import { mergeConverterDiagnostics } from './validation/converter-diagnostics.js';
@@ -58,6 +61,53 @@ function readRequiredJson(file, label) {
   return JSON.parse(fs.readFileSync(path.resolve(file), 'utf8'));
 }
 
+function optionBoolean(value, fallback = false) {
+  if (value === undefined) return fallback;
+  if (value === true || value === 'true') return true;
+  if (value === false || value === 'false') return false;
+  throw new WorkflowError('CLI_ARGUMENT_INVALID', `Expected a boolean option, received: ${value}`);
+}
+
+function runtimeAgentInstaller(context, workflow = context.registry.readCurrent().workflow) {
+  return new AgentInstaller({
+    appPaths: context.appPaths,
+    packageRoot: workflow?.packagePath || packageRoot,
+  });
+}
+
+function agentProtocolVersion(workflow = null) {
+  return workflow?.compatibility?.agentProtocolVersion || AGENT_PROTOCOL_VERSION;
+}
+
+function agentStatus(context, workflow = context.registry.readCurrent().workflow) {
+  return runtimeAgentInstaller(context, workflow).status({
+    protocolVersion: agentProtocolVersion(workflow),
+  });
+}
+
+function reconcileAgentsForJob(context) {
+  const workflow = context.registry.readCurrent().workflow;
+  if (!workflow) return { skipped: true, reason: 'managed-workflow-not-active' };
+  const installer = runtimeAgentInstaller(context, workflow);
+  const protocolVersion = agentProtocolVersion(workflow);
+  const status = installer.status({ protocolVersion });
+  if (status.current) return status;
+  const policy = context.config.update.agentPolicy;
+  if (policy === 'never') return { ...status, skipped: true, reason: 'agent-update-policy-never' };
+  if (policy === 'auto') {
+    const synced = installer.sync({ protocolVersion });
+    return {
+      ...installer.status({ protocolVersion }),
+      synced,
+    };
+  }
+  throw new WorkflowError('AGENT_UPDATE_AVAILABLE', 'Managed Agent adapters must be synchronized before starting a new Job', {
+    protocolVersion,
+    conflicts: status.conflicts,
+    hint: 'Run ivx-migrate update apply or ivx-migrate agents sync.',
+  });
+}
+
 function terminalForVersion(classification) {
   if (classification.reason === 'ALREADY_V5') return 'SKIPPED_ALREADY_V5';
   if (classification.reason === 'SOURCE_VERSION_OUT_OF_SCOPE') return 'SKIPPED_OUT_OF_SCOPE';
@@ -66,19 +116,31 @@ function terminalForVersion(classification) {
 }
 
 async function loadConverterForJob(options, context) {
-  invariant(options['converter-path'], 'CLI_ARGUMENT_REQUIRED', '--converter-path is required');
-  let provider = new LocalConverterProvider({ packagePath: options['converter-path'] });
+  const explicitPackagePath = options['converter-path'] ? path.resolve(options['converter-path']) : null;
+  const activatedAtStart = context.registry.readCurrent().converter;
+  const packagePath = explicitPackagePath || activatedAtStart?.packagePath;
+  invariant(
+    packagePath,
+    'CONVERTER_RUNTIME_NOT_INSTALLED',
+    'No managed Converter is active; run ivx-migrate setup or pass --converter-path for development',
+  );
+  let provider = new LocalConverterProvider({
+    packagePath,
+    expectedVersion: explicitPackagePath ? null : activatedAtStart.version,
+  });
   let converterDescriptor = await provider.load();
+  const activeWorkflowVersion = context.registry.readCurrent().workflow?.version || packageJson.version;
   const updateCheck = await performUpdatePreflight({
     config: context.config,
     registry: context.registry,
     installer: context.installer,
-    workflowVersion: packageJson.version,
+    workflowVersion: activeWorkflowVersion,
     converterVersion: converterDescriptor.version,
     allowCurrent: Boolean(options['use-current']),
   });
   const activatedConverter = context.registry.readCurrent().converter;
   if (
+    !explicitPackagePath &&
     updateCheck.checks.converter?.status === 'AUTO_UPDATED' &&
     activatedConverter?.version && activatedConverter.version !== converterDescriptor.version
   ) {
@@ -88,7 +150,8 @@ async function loadConverterForJob(options, context) {
     });
     converterDescriptor = await provider.load();
   }
-  return { provider, converterDescriptor, updateCheck };
+  const agents = explicitPackagePath ? { skipped: true, reason: 'development-converter-override' } : reconcileAgentsForJob(context);
+  return { provider, converterDescriptor, updateCheck: { ...updateCheck, agents } };
 }
 
 function createPlatformAdapter(options, context, { write = false } = {}) {
@@ -360,6 +423,100 @@ async function handleJob(positionals, options, context) {
   throw new WorkflowError('CLI_COMMAND_UNKNOWN', `Unknown job action: ${action || ''}`);
 }
 
+function createUpdateManager(context) {
+  return new UpdateManager({
+    config: context.config,
+    registry: context.registry,
+    installer: context.installer,
+    bundledWorkflowVersion: packageJson.version,
+  });
+}
+
+function selectedRuntimeKinds(options) {
+  if (!options.kind) return ['workflow', 'converter'];
+  const kinds = String(options.kind).split(',').map((value) => value.trim()).filter(Boolean);
+  invariant(kinds.length > 0, 'CLI_ARGUMENT_INVALID', '--kind must name workflow, converter, or both');
+  return kinds;
+}
+
+async function handleSetup(options, context) {
+  const publicKeyPem = options['public-key-file']
+    ? fs.readFileSync(path.resolve(options['public-key-file']), 'utf8')
+    : PUBLIC_RELEASE_PROFILE.publicKeyPem;
+  const runtimePolicy = options['update-policy'] || context.config.update.workflowPolicy || 'prompt';
+  const agentPolicy = options['agent-policy'] || context.config.update.agentPolicy || 'prompt';
+  const config = saveConfig({
+    ...context.config,
+    releaseManifestUrl: null,
+    releaseManifests: {
+      workflow: options['workflow-manifest'] || PUBLIC_RELEASE_PROFILE.manifests.workflow,
+      converter: options['converter-manifest'] || PUBLIC_RELEASE_PROFILE.manifests.converter,
+    },
+    releasePublicKeyPem: publicKeyPem,
+    allowUnsignedLocalManifests: optionBoolean(options['allow-unsigned-local'], false),
+    update: {
+      ...context.config.update,
+      channel: PUBLIC_RELEASE_PROFILE.channel,
+      workflowPolicy: runtimePolicy,
+      converterPolicy: runtimePolicy,
+      agentPolicy,
+    },
+  }, context.appPaths);
+  context.config = config;
+  const applied = await createUpdateManager(context).apply();
+  const workflow = context.registry.readCurrent().workflow;
+  invariant(workflow, 'WORKFLOW_RUNTIME_NOT_INSTALLED', 'Setup did not activate a Workflow runtime');
+  const protocolVersion = agentProtocolVersion(workflow);
+  const agents = runtimeAgentInstaller(context, workflow).sync({
+    force: optionBoolean(options.force, false),
+    protocolVersion,
+  });
+  return {
+    configured: true,
+    appHome: context.appHome,
+    releaseManifests: config.releaseManifests,
+    publicKeyFingerprintSha256: crypto.createHash('sha256').update(publicKeyPem).digest('hex'),
+    update: config.update,
+    runtimes: applied,
+    agents: {
+      protocolVersion,
+      files: agents,
+    },
+  };
+}
+
+async function handleUpdate(positionals, options, context) {
+  const action = positionals[1] || 'check';
+  if (action === 'check') {
+    return {
+      ...(await createUpdateManager(context).check()),
+      agents: agentStatus(context),
+    };
+  }
+  if (action === 'apply') {
+    const runtimes = await createUpdateManager(context).apply({ kinds: selectedRuntimeKinds(options) });
+    const workflow = context.registry.readCurrent().workflow;
+    let agents = { skipped: true, reason: 'workflow-runtime-not-installed' };
+    if (workflow && !optionBoolean(options['skip-agents'], false)) {
+      const protocolVersion = agentProtocolVersion(workflow);
+      const installer = runtimeAgentInstaller(context, workflow);
+      const files = installer.sync({
+        force: optionBoolean(options.force, false),
+        protocolVersion,
+      });
+      agents = { ...installer.status({ protocolVersion }), filesChanged: files };
+    }
+    return { runtimes, agents };
+  }
+  if (action === 'rollback') {
+    const kinds = selectedRuntimeKinds(options);
+    invariant(kinds.length === 1, 'CLI_ARGUMENT_INVALID', 'update rollback requires exactly one --kind');
+    const current = context.registry.rollback(kinds[0]);
+    return { kind: kinds[0], current, restartRequired: kinds[0] === 'workflow' };
+  }
+  throw new WorkflowError('CLI_COMMAND_UNKNOWN', `Unknown update action: ${action}`);
+}
+
 async function handleRelease(positionals, options, context) {
   const action = positionals[1];
   if (action === 'sign') {
@@ -421,7 +578,11 @@ export async function runCli(argv) {
     installer: new ArtifactInstaller({ appPaths, registry }),
   };
   let result;
-  if (command === 'version') result = { packageName: packageJson.name, version: packageJson.version };
+  if (command === 'version') result = {
+    packageName: packageJson.name,
+    version: packageJson.version,
+    agentProtocolVersion: AGENT_PROTOCOL_VERSION,
+  };
   else if (command === 'doctor') {
     const current = registry.readCurrent();
     const tokenEnv = config.platform.tokenEnv;
@@ -436,7 +597,12 @@ export async function runCli(argv) {
       converter: current.converter,
       update: config.update,
       releaseManifests: config.releaseManifests,
+      agents: agentStatus(context, current.workflow),
     };
+  } else if (command === 'setup') result = await handleSetup(options, context);
+  else if (command === 'update') result = await handleUpdate(positionals, options, context);
+  else if (command === 'rollback') {
+    result = await handleUpdate(['update', 'rollback'], options, context);
   } else if (command === 'config' && positionals[1] === 'show') result = config;
   else if (command === 'config' && positionals[1] === 'init') {
     result = saveConfig(DEFAULT_CONFIG, appPaths);
@@ -452,21 +618,35 @@ export async function runCli(argv) {
     result = await createPlatformAdapter(options, context).preflightSaveAs({ nid: options.nid, gid: options.gid });
   }
   else if (command === 'release') result = await handleRelease(positionals, options, context);
-  else if (command === 'agents' && positionals[1] === 'sync') {
-    result = { files: new AgentInstaller({ appPaths }).sync({ force: Boolean(options.force) }) };
+  else if (command === 'agents' && positionals[1] === 'status') {
+    result = agentStatus(context);
+  } else if (command === 'agents' && positionals[1] === 'sync') {
+    const workflow = registry.readCurrent().workflow;
+    const protocolVersion = agentProtocolVersion(workflow);
+    const installer = runtimeAgentInstaller(context, workflow);
+    result = {
+      protocolVersion,
+      files: installer.sync({ force: optionBoolean(options.force, false), protocolVersion }),
+      status: installer.status({ protocolVersion }),
+    };
   } else if (command === 'help') {
     result = {
       usage: [
         'ivx-migrate doctor',
-        'ivx-migrate dry-run --input <app.json> --nid <nid> --converter-path <package> [--metadata <json>]',
+        'ivx-migrate setup',
+        'ivx-migrate update check',
+        'ivx-migrate update apply [--kind workflow|converter] [--force]',
+        'ivx-migrate rollback --kind workflow|converter',
+        'ivx-migrate dry-run --input <app.json> --nid <nid> [--converter-path <development-package>] [--metadata <json>]',
         'ivx-migrate platform preflight --nid <nid> [--gid <gid>]',
-        'ivx-migrate migrate --nid <nid> [--gid <gid>] --converter-path <package> [--save --confirm-live-write SAVE_V5]',
+        'ivx-migrate migrate --nid <nid> [--gid <gid>] [--converter-path <development-package>] [--save --confirm-live-write SAVE_V5]',
         'ivx-migrate job status --job <jobId>',
         'ivx-migrate job classify --job <jobId> --file <classification.json>',
         'ivx-migrate job apply-patch --job <jobId> --file <patch.json>',
         'ivx-migrate job resume-save --job <jobId> --confirm-live-write SAVE_V5',
         'ivx-migrate release sign --payload <payload.json> --private-key <key.pem> --output <manifest.json>',
         'ivx-migrate release check|install|list|activate|rollback --kind workflow|converter',
+        'ivx-migrate agents status',
         'ivx-migrate agents sync [--force]',
       ],
       note: 'Platform writes require config platform.writeMode=explicit and the per-command SAVE_V5 confirmation.',

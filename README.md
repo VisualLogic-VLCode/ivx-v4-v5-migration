@@ -4,7 +4,7 @@ This project is the distributable local workflow used by Codex or Claude Code. I
 
 ## Current status
 
-Version `0.3.0` is a local Platform Adapter preview. It provides:
+Version `0.3.1` is the first public-distribution candidate. It provides:
 
 - private global Job storage with atomic state writes and per-Job locks;
 - metadata + physical work version classification;
@@ -14,6 +14,7 @@ Version `0.3.0` is a local Platform Adapter preview. It provides:
 - bounded AI issue-classification and JSON Patch contracts;
 - signed Workflow/Converter release manifests, hash verification, installation, activation, and rollback foundations;
 - managed Codex and Claude Code Skill installation;
+- one-time public-channel setup plus unified Workflow/Converter/Agent updates;
 - an editor-compatible binary work codec;
 - bearer-token metadata/load/config adapters with token redaction;
 - permission preflight, source revision checks, resumable Save As checkpoints, final nid rewrite, and post-save read-back verification;
@@ -58,68 +59,85 @@ Configure the platform URL and token environment-variable name in private `confi
 
 ## Commands
 
+Install the stable Launcher once from the immutable GitHub Release asset, then initialize the signed public channel:
+
 ```bash
-node ./bin/ivx-migrate.js doctor
-node ./bin/ivx-migrate.js agents sync
-node ./bin/ivx-migrate.js classify --work ./app.json --metadata ./metadata.json
-node ./bin/ivx-migrate.js platform preflight --nid 12345678
+npm install --global \
+  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.3.1/ivx-v4-v5-migration-0.3.1.tgz
 ```
 
-Run the offline non-writing workflow against a converter package checkout:
+```bash
+ivx-migrate setup
+ivx-migrate doctor
+ivx-migrate update check
+```
+
+`setup` installs and activates the latest signed Workflow and Converter, then installs the managed Codex/Claude Agent adapters. Normal users never pass a converter path.
+
+Run the offline non-writing workflow with the managed Converter:
 
 ```bash
-node ./bin/ivx-migrate.js dry-run \
+ivx-migrate dry-run \
   --nid 12345678 \
   --input ./app.json \
-  --metadata ./metadata.json \
-  --converter-path /path/to/tov5parser
+  --metadata ./metadata.json
 ```
+
+Maintainers may override the Converter for an explicit development run with `--converter-path /path/to/tov5parser`. This skips managed Agent enforcement for that Job and must not be used as the end-user installation model.
 
 Inspect and resume a Job:
 
 ```bash
-node ./bin/ivx-migrate.js job list
-node ./bin/ivx-migrate.js job status --job <jobId>
-node ./bin/ivx-migrate.js job classify --job <jobId> --file ./classification.json
-node ./bin/ivx-migrate.js job apply-patch --job <jobId> --file ./repair.patch.json
+ivx-migrate job list
+ivx-migrate job status --job <jobId>
+ivx-migrate job classify --job <jobId> --file ./classification.json
+ivx-migrate job apply-patch --job <jobId> --file ./repair.patch.json
 ```
 
 Load the current work with the caller's token, classify it, convert only supported V4, and stop at the save gate:
 
 ```bash
 export IVX_MIGRATION_TOKEN='<current-user-token>'
-node ./bin/ivx-migrate.js migrate \
+ivx-migrate migrate \
   --nid 12345678 \
-  --gid 25391 \
-  --converter-path /path/to/released/converter
+  --gid 25391
 ```
 
 After reviewing `READY_TO_SAVE`, enable `platform.writeMode: "explicit"` and resume the same Job:
 
 ```bash
-node ./bin/ivx-migrate.js job resume-save \
+ivx-migrate job resume-save \
   --job <jobId> \
   --confirm-live-write SAVE_V5
 ```
 
 The one-command form adds `--save --confirm-live-write SAVE_V5` to `migrate`. The token is read from the configured environment variable and is never written to the Job.
 
-Release runtime commands:
+Update and rollback commands:
 
 ```bash
-node ./bin/ivx-migrate.js release check --kind converter --manifest ./stable.json
-node ./bin/ivx-migrate.js release install --kind converter --manifest ./stable.json
-node ./bin/ivx-migrate.js release list --kind converter
-node ./bin/ivx-migrate.js release rollback --kind converter
+ivx-migrate update check
+ivx-migrate update apply
+ivx-migrate update apply --kind converter
+ivx-migrate rollback --kind converter
 ```
 
-Maintainers sign a release payload before publishing its manifest:
+The default policy prompts before updates. `auto` may be configured independently for Workflow, Converter, and Agent adapters. Managed Agent files are updated only when unmodified; `--force` creates a backup before replacement.
+
+Maintainers prepare a signed GitHub Release locally without publishing it:
 
 ```bash
-node ./bin/ivx-migrate.js release sign \
-  --payload ./workflow-stable.payload.json \
-  --private-key /secure/offline/release-private-key.pem \
-  --output ./workflow-stable.json
+npm run release:prepare -- \
+  --kind workflow \
+  --private-key ~/.ivx-v4-v5-maintainer/keys/release-private-key.pem
+```
+
+After reviewing the generated plan, a clean, pushed, public repository may be published with an explicit confirmation:
+
+```bash
+npm run release:publish -- \
+  --plan ./release-out/workflow-0.3.1/github-release-plan.json \
+  --confirm PUBLISH_STABLE_RELEASE
 ```
 
 The complete promotion, user synchronization, and rollback procedure is in [docs/RELEASING.md](docs/RELEASING.md). Platform behavior, recovery limits, and remaining real-permission verification are in [docs/PLATFORM-INTEGRATION.md](docs/PLATFORM-INTEGRATION.md).
@@ -156,7 +174,7 @@ The workflow writes the bounded report to `reports/converter-diagnostics.json` a
 
 ## Update model
 
-Workflow and Converter releases are immutable and independently versioned. A stable Launcher checks a signed stable/canary manifest before each new Job, verifies artifact hashes, installs into a new version directory, runs smoke checks, then atomically switches `current.json`. Running Jobs keep their pinned versions.
+Workflow and Converter releases are immutable and independently versioned. `setup` trusts the embedded Ed25519 public key and configures the two public `release-channel` manifests. The stable Launcher is installed once; `update apply` then updates the managed Workflow, Converter, and Agent adapters without another Git checkout or global npm installation. A managed Job checks release policy before starting, verifies artifact hashes, installs into a new version directory, then atomically switches `current.json`. A Workflow change requests a command restart; a Converter change can be activated in the same invocation. Running Jobs keep their pinned versions.
 
 ## Safety boundary
 

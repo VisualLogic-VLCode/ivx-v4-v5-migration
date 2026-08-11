@@ -1,4 +1,5 @@
 export { loadConfig, saveConfig, DEFAULT_CONFIG } from './config.js';
+export { AGENT_PROTOCOL_VERSION, PUBLIC_RELEASE_PROFILE } from './distribution-profile.js';
 export { createAppPaths, resolveAppHome } from './paths.js';
 export { JobStore } from './jobs/job-store.js';
 export { classifyCaseVersion, classifyMetadataVersion, scanWorkVersionSignals } from './workflow/version-classifier.js';
@@ -8,3 +9,5 @@ export { validateRepairPatch, applyRepairPatch } from './workflow/patch-policy.j
 export { encodePlatformWork, decodePlatformWork } from './platform/work-codec.js';
 export { IvxPlatformAdapter, mergeSaveAsConfig } from './platform/http-adapter.js';
 export { SaveAsOrchestrator, prepareInitialSaveAsWork, rewriteCaseNidForFinalSave } from './platform/save-as-orchestrator.js';
+export { AgentInstaller } from './agents/installer.js';
+export { UpdateManager } from './releases/update-manager.js';

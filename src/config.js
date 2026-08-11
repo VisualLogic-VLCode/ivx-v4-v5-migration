@@ -15,6 +15,7 @@ export const DEFAULT_CONFIG = Object.freeze({
     channel: 'stable',
     workflowPolicy: 'prompt',
     converterPolicy: 'prompt',
+    agentPolicy: 'prompt',
     checkIntervalHours: 24,
   },
   platform: {
@@ -48,7 +49,7 @@ function mergeConfig(base, value) {
 }
 
 export function validateConfig(config) {
-  for (const key of ['workflowPolicy', 'converterPolicy']) {
+  for (const key of ['workflowPolicy', 'converterPolicy', 'agentPolicy']) {
     if (!UPDATE_POLICIES.has(config.update?.[key])) {
       throw new WorkflowError(
         'INVALID_CONFIG',
