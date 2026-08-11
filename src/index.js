@@ -5,3 +5,6 @@ export { classifyCaseVersion, classifyMetadataVersion, scanWorkVersionSignals } 
 export { LocalConverterProvider } from './converter/local-provider.js';
 export { validateConvertedCase } from './validation/basic-validator.js';
 export { validateRepairPatch, applyRepairPatch } from './workflow/patch-policy.js';
+export { encodePlatformWork, decodePlatformWork } from './platform/work-codec.js';
+export { IvxPlatformAdapter, mergeSaveAsConfig } from './platform/http-adapter.js';
+export { SaveAsOrchestrator, prepareInitialSaveAsWork, rewriteCaseNidForFinalSave } from './platform/save-as-orchestrator.js';

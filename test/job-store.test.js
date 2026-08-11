@@ -32,3 +32,22 @@ test('JobStore never accepts an invalid source nid', () => {
     fs.rmSync(temporary, { recursive: true, force: true });
   }
 });
+
+test('JobStore reclaims a dead-process operation lease but not a live lease', async () => {
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'ivx-job-lock-'));
+  try {
+    const paths = createAppPaths(path.join(temporary, 'home'));
+    const jobs = new JobStore(paths);
+    const job = jobs.create({ sourceNid: 123 });
+    const lockPath = path.join(paths.locks, `${job.jobId}.save-as.lock`);
+    fs.writeFileSync(lockPath, JSON.stringify({ pid: 2147483647, operation: 'save-as' }), { mode: 0o600 });
+    assert.equal(await jobs.withOperationLease(job.jobId, 'save-as', async () => 'recovered'), 'recovered');
+    fs.writeFileSync(lockPath, JSON.stringify({ pid: process.pid, operation: 'save-as' }), { mode: 0o600 });
+    await assert.rejects(
+      Promise.resolve().then(() => jobs.withOperationLease(job.jobId, 'save-as', async () => 'not-run')),
+      { code: 'JOB_OPERATION_LOCKED' },
+    );
+  } finally {
+    fs.rmSync(temporary, { recursive: true, force: true });
+  }
+});

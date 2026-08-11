@@ -18,6 +18,48 @@ function normalizePositiveInteger(value, name, { optional = false } = {}) {
   return number;
 }
 
+function lockOwnerIsDead(lockPath) {
+  let metadata;
+  try {
+    metadata = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
+  } catch {
+    return false;
+  }
+  const pid = Number(metadata?.pid);
+  if (!Number.isSafeInteger(pid) || pid <= 0 || pid === process.pid) return false;
+  try {
+    process.kill(pid, 0);
+    return false;
+  } catch (error) {
+    return error?.code === 'ESRCH';
+  }
+}
+
+function acquireLock(lockPath, metadata, code, message) {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const handle = fs.openSync(lockPath, 'wx', 0o600);
+      fs.writeFileSync(handle, `${JSON.stringify(metadata)}\n`);
+      return handle;
+    } catch (error) {
+      if (error?.code !== 'EEXIST') throw error;
+      if (attempt === 0 && lockOwnerIsDead(lockPath)) {
+        try { fs.unlinkSync(lockPath); } catch (unlinkError) {
+          if (unlinkError?.code !== 'ENOENT') throw unlinkError;
+        }
+        continue;
+      }
+      throw new WorkflowError(code, message);
+    }
+  }
+  throw new WorkflowError(code, message);
+}
+
+function releaseLock(lockPath, handle) {
+  try { fs.closeSync(handle); } catch {}
+  try { fs.unlinkSync(lockPath); } catch {}
+}
+
 export class JobStore {
   constructor(appPaths = createAppPaths()) {
     this.paths = appPaths;
@@ -124,21 +166,37 @@ export class JobStore {
 
   withLock(jobId, callback) {
     const lockPath = path.join(this.paths.locks, `${jobId}.lock`);
-    let handle;
-    try {
-      handle = fs.openSync(lockPath, 'wx', 0o600);
-      fs.writeFileSync(handle, `${JSON.stringify({ pid: process.pid, at: new Date().toISOString() })}\n`);
-    } catch (error) {
-      if (error?.code === 'EEXIST') {
-        throw new WorkflowError('JOB_LOCKED', `Job is already being modified: ${jobId}`);
-      }
-      throw error;
-    }
+    const handle = acquireLock(
+      lockPath,
+      { pid: process.pid, at: new Date().toISOString() },
+      'JOB_LOCKED',
+      `Job is already being modified: ${jobId}`,
+    );
     try {
       return callback();
     } finally {
-      try { fs.closeSync(handle); } catch {}
-      try { fs.unlinkSync(lockPath); } catch {}
+      releaseLock(lockPath, handle);
+    }
+  }
+
+  withOperationLease(jobId, operation, callback) {
+    invariant(/^[a-z][a-z0-9-]*$/.test(operation), 'INVALID_OPERATION', 'Invalid operation lease name');
+    const lockPath = path.join(this.paths.locks, `${jobId}.${operation}.lock`);
+    const handle = acquireLock(
+      lockPath,
+      { pid: process.pid, operation, at: new Date().toISOString() },
+      'JOB_OPERATION_LOCKED',
+      `Job operation is already running: ${operation}`,
+    );
+    const release = () => releaseLock(lockPath, handle);
+    try {
+      const result = callback();
+      if (result && typeof result.then === 'function') return result.finally(release);
+      release();
+      return result;
+    } catch (error) {
+      release();
+      throw error;
     }
   }
 

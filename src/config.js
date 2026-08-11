@@ -20,6 +20,8 @@ export const DEFAULT_CONFIG = Object.freeze({
   platform: {
     baseUrl: null,
     tokenEnv: 'IVX_MIGRATION_TOKEN',
+    writeMode: 'disabled',
+    allowInsecureLocalhost: false,
   },
   jobs: {
     createWorkspaceReference: false,
@@ -59,6 +61,9 @@ export function validateConfig(config) {
       'TOKEN_PERSISTENCE_FORBIDDEN',
       'User tokens must not be stored in config.json',
     );
+  }
+  if (!['disabled', 'explicit'].includes(config.platform?.writeMode)) {
+    throw new WorkflowError('INVALID_CONFIG', 'platform.writeMode must be disabled or explicit');
   }
   return config;
 }

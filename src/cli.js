@@ -8,6 +8,8 @@ import { WorkflowError, invariant } from './errors.js';
 import { readJson, sha256File, writePrivateJson } from './fs/secure-json.js';
 import { JobStore } from './jobs/job-store.js';
 import { createAppPaths, resolveAppHome } from './paths.js';
+import { IvxPlatformAdapter } from './platform/http-adapter.js';
+import { SaveAsOrchestrator } from './platform/save-as-orchestrator.js';
 import { ArtifactInstaller } from './releases/artifact-installer.js';
 import { createSignedReleaseEnvelope, loadReleaseEnvelope } from './releases/release-envelope.js';
 import { evaluateRelease } from './releases/release-policy.js';
@@ -62,13 +64,8 @@ function terminalForVersion(classification) {
   return 'VERSION_AMBIGUOUS';
 }
 
-async function runDryRun(options, context) {
-  invariant(options.input, 'CLI_ARGUMENT_REQUIRED', '--input is required');
-  invariant(options.nid, 'CLI_ARGUMENT_REQUIRED', '--nid is required');
+async function loadConverterForJob(options, context) {
   invariant(options['converter-path'], 'CLI_ARGUMENT_REQUIRED', '--converter-path is required');
-  const workPath = path.resolve(options.input);
-  const metadata = options.metadata ? readRequiredJson(options.metadata, 'metadata') : {};
-  const work = readRequiredJson(workPath, 'input');
   let provider = new LocalConverterProvider({ packagePath: options['converter-path'] });
   let converterDescriptor = await provider.load();
   const updateCheck = await performUpdatePreflight({
@@ -90,6 +87,33 @@ async function runDryRun(options, context) {
     });
     converterDescriptor = await provider.load();
   }
+  return { provider, converterDescriptor, updateCheck };
+}
+
+function createPlatformAdapter(options, context, { write = false } = {}) {
+  const platform = context.config.platform;
+  invariant(platform.baseUrl, 'PLATFORM_NOT_CONFIGURED', 'platform.baseUrl is not configured');
+  const tokenEnv = platform.tokenEnv;
+  invariant(tokenEnv && process.env[tokenEnv], 'PLATFORM_TOKEN_REQUIRED', `Platform token is required in environment variable ${tokenEnv || '(not configured)'}`);
+  if (write) {
+    invariant(platform.writeMode === 'explicit', 'PLATFORM_WRITES_DISABLED', 'platform.writeMode is not explicit');
+    invariant(options['confirm-live-write'] === 'SAVE_V5', 'LIVE_WRITE_CONFIRMATION_REQUIRED', '--confirm-live-write SAVE_V5 is required');
+  }
+  return new IvxPlatformAdapter({
+    baseUrl: platform.baseUrl,
+    token: process.env[tokenEnv],
+    writesEnabled: write,
+    allowInsecureLocalhost: platform.allowInsecureLocalhost === true,
+  });
+}
+
+async function runDryRun(options, context) {
+  invariant(options.input, 'CLI_ARGUMENT_REQUIRED', '--input is required');
+  invariant(options.nid, 'CLI_ARGUMENT_REQUIRED', '--nid is required');
+  const workPath = path.resolve(options.input);
+  const metadata = options.metadata ? readRequiredJson(options.metadata, 'metadata') : {};
+  const work = readRequiredJson(workPath, 'input');
+  const { provider, converterDescriptor, updateCheck } = await loadConverterForJob(options, context);
   const job = context.jobs.create({
     sourceNid: options.nid,
     gid: options.gid,
@@ -159,6 +183,103 @@ async function runDryRun(options, context) {
   return state;
 }
 
+async function runPlatformMigration(options, context) {
+  invariant(options.nid, 'CLI_ARGUMENT_REQUIRED', '--nid is required');
+  const { provider, converterDescriptor, updateCheck } = await loadConverterForJob(options, context);
+  const adapter = createPlatformAdapter(options, context);
+  const job = context.jobs.create({
+    sourceNid: options.nid,
+    gid: options.gid,
+    mode: 'platform',
+    workspaceReference: Boolean(options['workspace-ref']),
+    workflowRuntime: { version: packageJson.version, packageName: packageJson.name },
+    converterRuntime: converterDescriptor,
+  });
+  let state = context.jobs.transition(job.jobId, 'UPDATE_CHECKED', {
+    reason: 'platform-update-preflight-complete',
+    patch: { updateCheck },
+  });
+  let currentUser;
+  try {
+    currentUser = await adapter.getCurrentUser();
+  } catch (error) {
+    if (['PLATFORM_AUTH_FAILED', 'PLATFORM_PERMISSION_DENIED'].includes(error?.code)) {
+      return context.jobs.transition(job.jobId, 'AUTH_FAILED', { reason: 'platform-token-rejected' });
+    }
+    context.jobs.transition(job.jobId, 'FAILED', { reason: error?.code || 'platform-auth-check-failed' });
+    throw error;
+  }
+  state = context.jobs.transition(job.jobId, 'AUTHORIZED', { reason: 'platform-token-authenticated' });
+  let preflight;
+  try {
+    preflight = await adapter.preflightSaveAs({ nid: options.nid, gid: options.gid, currentUser });
+  } catch (error) {
+    if (error?.code === 'PLATFORM_PERMISSION_DENIED') {
+      return context.jobs.transition(job.jobId, 'SOURCE_PERMISSION_DENIED', { reason: 'platform-source-not-readable' });
+    }
+    context.jobs.transition(job.jobId, 'FAILED', { reason: error?.code || 'platform-preflight-failed' });
+    throw error;
+  }
+  context.jobs.writeArtifact(job.jobId, 'reports/platform-permission-preflight.json', {
+    schemaVersion: 1,
+    decision: preflight.decision,
+    allowed: preflight.allowed,
+    reason: preflight.reason,
+    evidence: preflight.evidence || null,
+  });
+  if (preflight.decision === 'DENIED') {
+    return context.jobs.transition(job.jobId, 'SOURCE_PERMISSION_DENIED', { reason: preflight.reason });
+  }
+  const metadata = preflight.source;
+  const work = await adapter.loadWork({ nid: options.nid, workId: metadata.workId });
+  const classification = classifyCaseVersion({ metadata, work });
+  context.jobs.writeArtifact(job.jobId, 'reports/version-classification.json', classification);
+  state = context.jobs.transition(job.jobId, 'VERSION_CLASSIFIED', {
+    reason: classification.reason,
+    patch: {
+      source: {
+        ...state.source,
+        workId: metadata.workId,
+        version: classification,
+        permissionDecision: preflight.decision,
+      },
+    },
+  });
+  if (!classification.convertible) return context.jobs.transition(job.jobId, terminalForVersion(classification), { reason: classification.reason });
+  const inputPath = context.jobs.writeArtifact(job.jobId, 'v4/app.json', work, { pretty: false });
+  state = context.jobs.transition(job.jobId, 'SOURCE_LOADED', {
+    reason: 'platform-source-snapshot-written',
+    patch: { source: { ...state.source, inputSha256: sha256File(inputPath) } },
+  });
+  const converted = await provider.convert({ v4CaseJson: work, ntype: options.ntype ?? metadata.ntype });
+  const outputPath = context.jobs.writeArtifact(job.jobId, 'v5/app.v5.json', converted.v5CaseJson, { pretty: false });
+  context.jobs.writeArtifact(job.jobId, 'reports/conversion-manifest.json', {
+    schemaVersion: 1,
+    converter: converted.descriptor,
+    diagnosticsAvailable: converted.diagnostics !== null,
+    diagnosticCount: converted.diagnostics?.length ?? null,
+    inputSha256: sha256File(inputPath),
+    outputSha256: sha256File(outputPath),
+  });
+  if (converted.diagnostics !== null) context.jobs.writeArtifact(job.jobId, 'reports/diagnostics.json', converted.diagnostics);
+  state = context.jobs.transition(job.jobId, 'CONVERTED', {
+    reason: 'converter-completed',
+    patch: { target: { artifact: 'v5/app.v5.json', outputSha256: sha256File(outputPath) } },
+  });
+  const validation = validateConvertedCase({ v4CaseJson: work, v5CaseJson: converted.v5CaseJson });
+  context.jobs.writeArtifact(job.jobId, 'reports/validation.json', validation);
+  state = context.jobs.transition(job.jobId, 'VALIDATED', { reason: validation.passed ? 'basic-validation-passed' : 'basic-validation-needs-analysis' });
+  state = context.jobs.transition(job.jobId, 'ISSUES_CLASSIFIED', {
+    reason: validation.passed ? 'no-blocking-validation-issues' : 'awaiting-local-agent-classification',
+    patch: { issues: { summary: validation.summary } },
+  });
+  if (!validation.passed) return state;
+  state = context.jobs.transition(job.jobId, 'READY_TO_SAVE', { reason: 'validated-platform-migration-ready' });
+  if (!options.save) return state;
+  const writeAdapter = createPlatformAdapter(options, context, { write: true });
+  return new SaveAsOrchestrator({ jobs: context.jobs, adapter: writeAdapter }).run(job.jobId);
+}
+
 async function handleJob(positionals, options, context) {
   const action = positionals[1];
   if (action === 'create') {
@@ -208,7 +329,13 @@ async function handleJob(positionals, options, context) {
       patch: { issues: { summary: validation.summary } },
     });
     if (validation.passed && state.mode === 'local-file') state = context.jobs.transition(options.job, 'DRY_RUN_SUCCEEDED', { reason: 'offline-repair-dry-run-complete' });
+    if (validation.passed && state.mode === 'platform') state = context.jobs.transition(options.job, 'READY_TO_SAVE', { reason: 'platform-repair-validated-and-ready' });
     return state;
+  }
+  if (action === 'save' || action === 'resume-save') {
+    invariant(options.job, 'CLI_ARGUMENT_REQUIRED', '--job is required');
+    const adapter = createPlatformAdapter(options, context, { write: true });
+    return new SaveAsOrchestrator({ jobs: context.jobs, adapter }).run(options.job);
   }
   throw new WorkflowError('CLI_COMMAND_UNKNOWN', `Unknown job action: ${action || ''}`);
 }
@@ -300,6 +427,10 @@ export async function runCli(argv) {
       work: options.work ? readRequiredJson(options.work, 'work') : undefined,
     });
   } else if (command === 'dry-run') result = await runDryRun(options, context);
+  else if (command === 'migrate') result = await runPlatformMigration(options, context);
+  else if (command === 'platform' && positionals[1] === 'preflight') {
+    result = await createPlatformAdapter(options, context).preflightSaveAs({ nid: options.nid, gid: options.gid });
+  }
   else if (command === 'release') result = await handleRelease(positionals, options, context);
   else if (command === 'agents' && positionals[1] === 'sync') {
     result = { files: new AgentInstaller({ appPaths }).sync({ force: Boolean(options.force) }) };
@@ -308,14 +439,17 @@ export async function runCli(argv) {
       usage: [
         'ivx-migrate doctor',
         'ivx-migrate dry-run --input <app.json> --nid <nid> --converter-path <package> [--metadata <json>]',
+        'ivx-migrate platform preflight --nid <nid> [--gid <gid>]',
+        'ivx-migrate migrate --nid <nid> [--gid <gid>] --converter-path <package> [--save --confirm-live-write SAVE_V5]',
         'ivx-migrate job status --job <jobId>',
         'ivx-migrate job classify --job <jobId> --file <classification.json>',
         'ivx-migrate job apply-patch --job <jobId> --file <patch.json>',
+        'ivx-migrate job resume-save --job <jobId> --confirm-live-write SAVE_V5',
         'ivx-migrate release sign --payload <payload.json> --private-key <key.pem> --output <manifest.json>',
         'ivx-migrate release check|install|list|activate|rollback --kind workflow|converter',
         'ivx-migrate agents sync [--force]',
       ],
-      note: 'Platform load and Save As are intentionally not enabled in the non-writing MVP.',
+      note: 'Platform writes require config platform.writeMode=explicit and the per-command SAVE_V5 confirmation.',
     };
   } else {
     throw new WorkflowError('CLI_COMMAND_UNKNOWN', `Unknown command: ${positionals.join(' ')}`);

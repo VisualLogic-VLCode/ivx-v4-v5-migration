@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "iVX migration platform Save As journal",
+  "type": "object",
+  "required": ["schemaVersion", "jobId", "phase", "source", "target", "config", "finalSave", "verification", "attempts"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "jobId": { "type": "string", "pattern": "^mig_[A-Za-z0-9_]+$" },
+    "phase": { "type": "string" },
+    "source": { "type": "object" },
+    "target": { "type": "object" },
+    "config": {
+      "type": "object",
+      "properties": {
+        "expectedSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "appliedAt": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "finalSave": { "type": "object" },
+    "verification": { "type": "object" },
+    "attempts": { "type": "array" }
+  },
+  "additionalProperties": true
+}

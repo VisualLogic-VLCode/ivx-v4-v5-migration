@@ -1,33 +1,56 @@
-# Platform integration boundary
+# Platform integration and recovery boundary
 
-The current MVP deliberately stops before platform writes. The next phase must implement these operations behind a single Platform Adapter while preserving the state machine already present in the CLI.
+Version `0.2.0` implements the Platform Adapter and Save As state machine. The complete flow is exercised against a local HTTP platform simulator; no real platform write was made during development.
 
-## Required adapter operations
+## Implemented operations
 
-1. Authenticate the caller's existing platform token in memory; never persist it.
-2. Read source metadata and the current `workId` for the supplied `nid` and optional `gid`.
-3. Preflight source read permission and target Save As permission separately.
-4. Load and decode the complete current work, then re-run physical version classification.
-5. Before saving, re-read the source version/work identity to detect concurrent changes.
-6. Reproduce the VxEditor41 V5 Save As sequence: create the derived case, migrate required settings, replace the source nid where allowed, preserve `modDbId` behavior, save the final V5 work, and read it back.
-7. Record each remote mutation response so `SAVE_INCOMPLETE` can resume without creating a duplicate case.
+1. Authenticate the caller's existing platform token in memory without persisting it.
+2. Read source metadata and the current `workId` for `nid` and optional `gid`.
+3. Separate authentication, source-read permission, and target Save As preflight.
+4. Load and decode the complete current work, then run physical version classification.
+5. Re-read the source revision before saving to detect concurrent changes.
+6. Reproduce the VxEditor41 sequence: create the derived case, merge user defaults with source `customVars`, replace source nid while preserving `modDbId`, save final V5 work, and read it back.
+7. Journal every remote mutation so recognized `SAVE_INCOMPLETE` states can resume without duplicating a known target.
 
-## Permission rules that must be verified
+The binary codec is compatible with VxEditor41's SJCL/pako framing. The adapter sends `Authorization: Bearer <token>` only in memory and redacts it from errors.
 
-Source readability does not imply target write permission. A participant may be able to load a group case but be unable to save a new case into that group. Integration tests must cover owner, ordinary participant, group owner, group participant, removed participant, and personal-copy fallback behavior using real API responses.
+## Permission boundary
 
-The Workflow must never broaden the caller's permissions or substitute the maintainer's identity. If the requested destination is unavailable, it returns `TARGET_PERMISSION_DENIED` and leaves the local Job and evidence intact.
+Source readability does not imply target write permission. Local tests cover owner, developer, guest/denied, group-owner, and group-participant-unknown decisions.
+
+Before broad release, a controlled real-platform matrix must still cover owner, ordinary participant, group owner, group participant, removed participant, the AdminEid exception, and any personal-copy fallback using real API responses.
+
+The Workflow never broadens the caller's permissions or substitutes the maintainer's identity. A non-owner group participant returns `UNKNOWN_SERVER_POLICY`; live Save As does not begin. A definite denial returns `SOURCE_PERMISSION_DENIED` or `TARGET_PERMISSION_DENIED` and leaves the private Job evidence intact.
 
 ## Save gate
 
 Remote Save As may start only when:
 
 - the source is confirmed to be a supported V4 work;
-- the exact Workflow and Converter versions are pinned;
-- deterministic validation has passed;
+- exact Workflow and Converter versions are pinned;
+- deterministic validation passed;
 - no issue is owned by `CONVERTER` or `UNKNOWN`;
-- every approved non-converter repair has been applied through the Patch policy and revalidated;
-- source identity has not changed since it was loaded; and
-- the destination permission preflight succeeds.
+- every approved source repair went through Patch policy and revalidation;
+- source `workId` is unchanged; and
+- destination preflight is `ALLOWED`.
 
-Until these API contracts and permission tests are completed, no CLI command should expose a live Save As switch.
+## Recovery semantics
+
+- Target creation is checkpointed immediately after `nid/workId` is received.
+- If target creation was sent but no response arrived, automatic replay is forbidden. The current API has no idempotency key, so replay could create a duplicate case.
+- Work config may contain environment values; only its hash is journaled. Config writes are checked by read-back.
+- Before final save, the expected final-work hash and current target revision are journaled.
+- If the final-save response is lost, resume first loads the known target. Matching content closes the save without another write.
+- Post-save content mismatch becomes reconciliation-required and is not overwritten again automatically.
+
+## Live-write gate
+
+The default is `platform.writeMode: "disabled"`. Live writes require all of:
+
+- `platform.writeMode: "explicit"` in private config;
+- `--confirm-live-write SAVE_V5` on that command;
+- a Job in `READY_TO_SAVE` or a recognized resumable save state;
+- an `ALLOWED` permission decision; and
+- unchanged source revision.
+
+Until the controlled real-platform permission matrix is complete, keep `writeMode` disabled for general users.
