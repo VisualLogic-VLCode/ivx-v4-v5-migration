@@ -77,6 +77,58 @@ test('platform writes are disabled by default and errors redact the token', asyn
   });
 });
 
+test('platform adapter normalizes the real HTTP 203 login filter before endpoint consumers', async () => {
+  const realLoginFilter = {
+    id: 'filter',
+    code: 203,
+    detail: '请先登陆',
+    status: 'Non-Authoritative Information',
+  };
+  const adapter = new IvxPlatformAdapter({
+    baseUrl: 'http://localhost:3000',
+    token: 'expired-token-must-not-leak',
+    allowInsecureLocalhost: true,
+    fetchImpl: async () => response(realLoginFilter, { status: 203 }),
+  });
+  for (const operation of [
+    () => adapter.getCaseInfo(10),
+    () => adapter.loadWork({ nid: 10, workId: 'work-1' }),
+  ]) {
+    await assert.rejects(operation(), (error) => {
+      assert.equal(error.code, 'PLATFORM_AUTH_FAILED');
+      assert.equal(error.details.status, 203);
+      assert.equal(error.details.outcome, 'REJECTED');
+      assert.match(error.details.detail, /请先登陆/);
+      assert.equal(JSON.stringify(error).includes('expired-token-must-not-leak'), false);
+      return true;
+    });
+  }
+
+  const writeAdapter = new IvxPlatformAdapter({
+    baseUrl: 'http://localhost:3000',
+    token: 'expired-write-token',
+    writesEnabled: true,
+    allowInsecureLocalhost: true,
+    fetchImpl: async () => response(realLoginFilter, { status: 203 }),
+  });
+  await assert.rejects(writeAdapter.saveAsV5({ sourceNid: 10, work }), (error) => {
+    assert.equal(error.code, 'PLATFORM_AUTH_FAILED');
+    assert.equal(error.details.outcome, 'UNKNOWN_AFTER_WRITE_ATTEMPT');
+    assert.equal(JSON.stringify(error).includes('expired-write-token'), false);
+    return true;
+  });
+});
+
+test('platform adapter does not treat an unrelated HTTP 203 JSON response as authentication failure', async () => {
+  const adapter = new IvxPlatformAdapter({
+    baseUrl: 'http://localhost:3000',
+    token: 'token',
+    allowInsecureLocalhost: true,
+    fetchImpl: async () => response({ id: 'other', code: 203, detail: 'partial result' }, { status: 203 }),
+  });
+  assert.deepEqual(await adapter.getCaseInfo(10), { id: 'other', code: 203, detail: 'partial result' });
+});
+
 test('Save As config merge keeps source customVars over user defaults', () => {
   assert.deepEqual(
     mergeSaveAsConfig({ default: true, wechat: { noJs: false }, customVars: { old: 1 } }, { customVars: { source: 2 } }),

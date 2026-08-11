@@ -206,7 +206,7 @@ test('CLI reports an existing V5 case and never calls the converter or Save As',
   }
 });
 
-test('CLI distinguishes token rejection from source permission denial without persisting either token', async () => {
+test('CLI distinguishes HTTP and application token rejection from source permission denial without persisting tokens', async () => {
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'ivx-platform-permissions-'));
   const converter = path.join(temporary, 'converter');
   fs.mkdirSync(converter, { recursive: true });
@@ -217,6 +217,14 @@ test('CLI distinguishes token rejection from source permission denial without pe
     const url = new URL(request.url, 'http://127.0.0.1');
     if (url.pathname === '/ih5/app/user/userinfo') {
       if (token === 'rejected-token') return sendJson(response, { detail: 'not authenticated' }, 401);
+      if (token === 'platform-203-token') {
+        return sendJson(response, {
+          id: 'filter',
+          code: 203,
+          detail: '请先登陆',
+          status: 'Non-Authoritative Information',
+        }, 203);
+      }
       return sendJson(response, { id: 900 });
     }
     if (url.pathname === '/ih5/editor/work/get') return sendJson(response, { detail: 'not a member' }, 403);
@@ -224,8 +232,12 @@ test('CLI distinguishes token rejection from source permission denial without pe
   });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   try {
-    for (const [token, expected] of [['rejected-token', 'AUTH_FAILED'], ['source-denied-token', 'SOURCE_PERMISSION_DENIED']]) {
-      const home = path.join(temporary, expected.toLowerCase());
+    for (const [token, expected] of [
+      ['rejected-token', 'AUTH_FAILED'],
+      ['platform-203-token', 'AUTH_FAILED'],
+      ['source-denied-token', 'SOURCE_PERMISSION_DENIED'],
+    ]) {
+      const home = path.join(temporary, token);
       fs.mkdirSync(home, { recursive: true });
       fs.writeFileSync(path.join(home, 'config.json'), JSON.stringify({
         platform: {

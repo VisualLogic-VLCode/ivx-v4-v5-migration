@@ -18,6 +18,13 @@ function parseJsonText(text, label) {
   }
 }
 
+function isPlatformAuthenticationFilter(status, value) {
+  if (status !== 203 || !value || typeof value !== 'object' || Array.isArray(value)) return false;
+  if (value.id !== 'filter' || Number(value.code) !== 203) return false;
+  const detail = String(value.detail ?? value.message ?? '');
+  return /请先登[录陆]|\b(?:login|log in|authenticated|authentication)\b/i.test(detail);
+}
+
 function safeErrorDetail(text, token) {
   return String(text || '')
     .replaceAll(token, '[REDACTED]')
@@ -106,6 +113,23 @@ export class IvxPlatformAdapter {
         detail: safeErrorDetail(text, this.#token),
         outcome: write ? 'UNKNOWN_AFTER_WRITE_ATTEMPT' : 'REJECTED',
       });
+    }
+    if (result.status === 203) {
+      const buffered = Buffer.from(await result.arrayBuffer());
+      const text = buffered.toString('utf8');
+      let value = null;
+      try { value = JSON.parse(text); } catch { /* Preserve the requested response mode below. */ }
+      if (isPlatformAuthenticationFilter(result.status, value)) {
+        throw new WorkflowError('PLATFORM_AUTH_FAILED', 'Platform authentication failed', {
+          operation: `${method} ${pathname}`,
+          status: result.status,
+          detail: safeErrorDetail(text, this.#token),
+          outcome: write ? 'UNKNOWN_AFTER_WRITE_ATTEMPT' : 'REJECTED',
+        });
+      }
+      if (response === 'binary') return buffered;
+      if (response === 'text') return text;
+      return parseJsonText(text, pathname);
     }
     if (response === 'binary') return Buffer.from(await result.arrayBuffer());
     const text = await result.text();
