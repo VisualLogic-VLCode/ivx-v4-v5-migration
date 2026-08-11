@@ -27,11 +27,11 @@ f567525b290d2a6cf1be05875f4933920fe4808b5833b67ef88018dbb50e9fa4
 
 ## User update flow
 
-First installation uses the immutable Launcher asset from the first public Workflow Release:
+First installation uses the current stable immutable Launcher asset:
 
 ```bash
 npm install --global \
-  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.3.1/ivx-v4-v5-migration-0.3.1.tgz
+  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.3.2/ivx-v4-v5-migration-0.3.2.tgz
 ivx-migrate setup
 ```
 

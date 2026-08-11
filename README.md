@@ -63,7 +63,7 @@ Install the stable Launcher once from the immutable GitHub Release asset, then i
 
 ```bash
 npm install --global \
-  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.3.1/ivx-v4-v5-migration-0.3.1.tgz
+  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.3.2/ivx-v4-v5-migration-0.3.2.tgz
 ```
 
 ```bash
