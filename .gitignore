@@ -1,0 +1,10 @@
+node_modules/
+coverage/
+*.tgz
+.DS_Store
+
+# Planning and local execution data do not belong in the distribution package.
+task_plan.md
+findings.md
+progress.md
+.ivx-migration/

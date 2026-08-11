@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "iVX migration Job state",
+  "type": "object",
+  "required": ["schemaVersion", "jobId", "status", "input", "runtime", "createdAt", "updatedAt", "history"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "jobId": { "type": "string", "pattern": "^mig_[A-Za-z0-9_]+$" },
+    "status": { "type": "string" },
+    "input": {
+      "type": "object",
+      "required": ["sourceNid", "gid"],
+      "properties": {
+        "sourceNid": { "type": "integer", "minimum": 1 },
+        "gid": { "type": ["integer", "null"], "minimum": 1 }
+      },
+      "additionalProperties": false
+    },
+    "runtime": { "type": "object" },
+    "history": { "type": "array" }
+  },
+  "additionalProperties": true
+}

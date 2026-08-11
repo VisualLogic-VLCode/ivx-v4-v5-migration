@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Signed iVX migration release envelope",
+  "type": "object",
+  "required": ["schemaVersion", "payload", "signature"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "payload": { "type": "string", "contentEncoding": "base64" },
+    "signature": {
+      "type": "object",
+      "required": ["algorithm", "value"],
+      "properties": {
+        "algorithm": { "const": "ed25519" },
+        "value": { "type": "string", "contentEncoding": "base64" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
