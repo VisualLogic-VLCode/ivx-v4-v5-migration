@@ -10,7 +10,7 @@ import { WorkflowError, invariant } from './errors.js';
 import { readJson, sha256File, writePrivateJson } from './fs/secure-json.js';
 import { JobStore } from './jobs/job-store.js';
 import { createAppPaths, resolveAppHome } from './paths.js';
-import { IvxPlatformAdapter } from './platform/http-adapter.js';
+import { IvxPlatformAdapter, normalizePlatformBaseUrl } from './platform/http-adapter.js';
 import { SaveAsOrchestrator } from './platform/save-as-orchestrator.js';
 import { ArtifactInstaller } from './releases/artifact-installer.js';
 import { createSignedReleaseEnvelope, loadReleaseEnvelope } from './releases/release-envelope.js';
@@ -445,6 +445,13 @@ async function handleSetup(options, context) {
     : PUBLIC_RELEASE_PROFILE.publicKeyPem;
   const runtimePolicy = options['update-policy'] || context.config.update.workflowPolicy || 'prompt';
   const agentPolicy = options['agent-policy'] || context.config.update.agentPolicy || 'prompt';
+  const requestedPlatformBaseUrl = options['platform-base-url']
+    || context.config.platform.baseUrl
+    || PUBLIC_RELEASE_PROFILE.platformBaseUrl;
+  const platformBaseUrl = normalizePlatformBaseUrl(
+    requestedPlatformBaseUrl,
+    context.config.platform.allowInsecureLocalhost === true,
+  );
   const config = saveConfig({
     ...context.config,
     releaseManifestUrl: null,
@@ -460,6 +467,10 @@ async function handleSetup(options, context) {
       workflowPolicy: runtimePolicy,
       converterPolicy: runtimePolicy,
       agentPolicy,
+    },
+    platform: {
+      ...context.config.platform,
+      baseUrl: platformBaseUrl,
     },
   }, context.appPaths);
   context.config = config;
@@ -477,6 +488,11 @@ async function handleSetup(options, context) {
     releaseManifests: config.releaseManifests,
     publicKeyFingerprintSha256: crypto.createHash('sha256').update(publicKeyPem).digest('hex'),
     update: config.update,
+    platform: {
+      baseUrl: config.platform.baseUrl,
+      tokenEnv: config.platform.tokenEnv,
+      writeMode: config.platform.writeMode,
+    },
     runtimes: applied,
     agents: {
       protocolVersion,
@@ -591,6 +607,7 @@ export async function runCli(argv) {
       node: process.version,
       appHome,
       platformConfigured: Boolean(config.platform.baseUrl),
+      platformBaseUrl: config.platform.baseUrl,
       tokenAvailable: Boolean(tokenEnv && process.env[tokenEnv]),
       tokenEnv,
       workflow: current.workflow || { packageName: packageJson.name, version: packageJson.version, bundled: true },
@@ -633,7 +650,7 @@ export async function runCli(argv) {
     result = {
       usage: [
         'ivx-migrate doctor',
-        'ivx-migrate setup',
+        'ivx-migrate setup [--platform-base-url https://dev.ivx.cn]',
         'ivx-migrate update check',
         'ivx-migrate update apply [--kind workflow|converter] [--force]',
         'ivx-migrate rollback --kind workflow|converter',

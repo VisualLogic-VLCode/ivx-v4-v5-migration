@@ -146,7 +146,32 @@ test('setup, managed converter updates, Agent protocol sync, and rollback work i
       'converter:1.0.0',
     ]);
     assert.equal(setup.agents.protocolVersion, 1);
+    assert.equal(setup.platform.baseUrl, 'https://dev.ivx.cn');
+    assert.equal(JSON.parse(fs.readFileSync(path.join(home, 'config.json'), 'utf8')).platform.baseUrl, 'https://dev.ivx.cn');
     assert.equal(fs.readFileSync(path.join(codexHome, 'skills', 'v4-to-v5-workflow', 'SKILL.md'), 'utf8'), 'codex protocol 1\n');
+
+    const initialDoctor = run(['doctor'], env);
+    assert.equal(initialDoctor.platformConfigured, true);
+    assert.equal(initialDoctor.platformBaseUrl, 'https://dev.ivx.cn');
+
+    const customizedSetup = run([
+      'setup',
+      '--workflow-manifest', workflowManifest,
+      '--converter-manifest', converterManifest,
+      '--allow-unsigned-local', 'true',
+      '--platform-base-url', 'https://editor.example.test/',
+    ], env);
+    assert.equal(customizedSetup.platform.baseUrl, 'https://editor.example.test');
+    assert.equal(run(['doctor'], env).platformBaseUrl, 'https://editor.example.test');
+
+    const repeatedSetup = run([
+      'setup',
+      '--workflow-manifest', workflowManifest,
+      '--converter-manifest', converterManifest,
+      '--allow-unsigned-local', 'true',
+    ], env);
+    assert.equal(repeatedSetup.platform.baseUrl, 'https://editor.example.test');
+    assert.equal(JSON.parse(fs.readFileSync(path.join(home, 'config.json'), 'utf8')).platform.baseUrl, 'https://editor.example.test');
 
     const workFile = path.join(temporary, 'work.json');
     const metadataFile = path.join(temporary, 'metadata.json');
@@ -239,6 +264,27 @@ test('setup rejects an incompatible runtime pair before installing either packag
     assert.equal(fs.existsSync(path.join(home, 'current.json')), false);
     assert.deepEqual(fs.readdirSync(path.join(home, 'workflows')), []);
     assert.deepEqual(fs.readdirSync(path.join(home, 'converters')), []);
+  } finally {
+    fs.rmSync(temporary, { recursive: true, force: true });
+  }
+});
+
+test('setup rejects an insecure external platform address before installing runtimes', () => {
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'ivx-distribution-insecure-platform-'));
+  const home = path.join(temporary, 'home');
+  const env = {
+    ...process.env,
+    IVX_MIGRATION_HOME: home,
+    CODEX_HOME: path.join(temporary, 'codex'),
+    CLAUDE_HOME: path.join(temporary, 'claude'),
+  };
+  try {
+    const failure = runFailure([
+      'setup',
+      '--platform-base-url', 'http://dev.ivx.cn',
+    ], env);
+    assert.equal(failure.code, 'PLATFORM_BASE_URL_INSECURE');
+    assert.equal(fs.existsSync(path.join(home, 'config.json')), false);
   } finally {
     fs.rmSync(temporary, { recursive: true, force: true });
   }

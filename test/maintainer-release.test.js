@@ -5,8 +5,40 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { prepareRelease } from '../scripts/prepare-release.mjs';
-import { publishRelease } from '../scripts/publish-release.mjs';
+import { publishRelease, validateRepositoryReleaseHardening } from '../scripts/publish-release.mjs';
 import { loadReleaseEnvelope } from '../src/releases/release-envelope.js';
+
+const protectedRulesets = [
+  {
+    target: 'branch',
+    enforcement: 'active',
+    conditions: { ref_name: { include: ['refs/heads/main', 'refs/heads/release-channel'], exclude: [] } },
+    rules: [{ type: 'deletion' }, { type: 'non_fast_forward' }],
+    bypass_actors: [],
+  },
+  {
+    target: 'tag',
+    enforcement: 'active',
+    conditions: { ref_name: { include: ['refs/tags/v*'], exclude: [] } },
+    rules: [{ type: 'deletion' }, { type: 'non_fast_forward' }],
+    bypass_actors: [],
+  },
+];
+
+test('release hardening requires immutable releases and protected channel/tag history', () => {
+  assert.doesNotThrow(() => validateRepositoryReleaseHardening({
+    immutableReleases: { enabled: true },
+    rulesets: protectedRulesets,
+  }));
+  assert.throws(() => validateRepositoryReleaseHardening({
+    immutableReleases: { enabled: false },
+    rulesets: protectedRulesets,
+  }), /immutable Releases/);
+  assert.throws(() => validateRepositoryReleaseHardening({
+    immutableReleases: { enabled: true },
+    rulesets: protectedRulesets.map((ruleset) => ({ ...ruleset, bypass_actors: [{ id: 1 }] })),
+  }), /without bypass actors/);
+});
 
 test('maintainer preparation builds, hashes, signs, and plans a GitHub Release without publishing it', async () => {
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'ivx-maintainer-release-'));

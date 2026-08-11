@@ -2,6 +2,7 @@ export const AGENT_PROTOCOL_VERSION = 1;
 
 export const PUBLIC_RELEASE_PROFILE = Object.freeze({
   channel: 'stable',
+  platformBaseUrl: 'https://dev.ivx.cn',
   manifests: Object.freeze({
     workflow: 'https://raw.githubusercontent.com/VisualLogic-VLCode/ivx-v4-v5-migration/release-channel/workflow-stable.json',
     converter: 'https://raw.githubusercontent.com/VisualLogic-VLCode/tov5parser/release-channel/converter-stable.json',

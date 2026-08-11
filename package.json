@@ -1,6 +1,6 @@
 {
   "name": "@visuallogic-vlcode/ivx-v4-v5-migration",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "Local, resumable V4-to-V5 case migration workflow for Codex and Claude Code.",
   "type": "module",
   "bin": {

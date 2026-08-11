@@ -11,7 +11,7 @@ https://raw.githubusercontent.com/VisualLogic-VLCode/ivx-v4-v5-migration/release
 https://raw.githubusercontent.com/VisualLogic-VLCode/tov5parser/release-channel/converter-stable.json
 ```
 
-`ivx-migrate setup` writes these URLs and the embedded Ed25519 public key to the user's private config, installs both latest runtimes, activates them, and synchronizes the Agent adapters.
+`ivx-migrate setup` writes these URLs, the embedded Ed25519 public key, and the default platform origin `https://dev.ivx.cn` to the user's private config. It installs both latest runtimes, activates them, and synchronizes the Agent adapters. An explicit `--platform-base-url` overrides the platform origin; a later setup preserves that existing override. `ivx-migrate doctor` displays the effective origin.
 
 The release private key is never committed, uploaded, bundled, copied into user config, or stored under a Job. The maintainer default path is:
 
@@ -25,14 +25,34 @@ It must remain mode `0600`. The distributed public-key SHA-256 fingerprint is:
 f567525b290d2a6cf1be05875f4933920fe4808b5833b67ef88018dbb50e9fa4
 ```
 
+The maintainer Mac also keeps an encrypted recovery copy in the login Keychain under service `cn.ivx.v4-v5-migration.release-signing-key`, account `ed25519-primary`. Verify recovery against the public-key fingerprint without printing or pasting the private key. This protects against accidental deletion on the same Mac; it is not an offline backup. Keep a separately encrypted copy on an offline device, with the decryption secret held independently, and test recovery before relying on it.
+
+## Repository hardening
+
+Both public repositories use these GitHub controls:
+
+- immutable Releases for all newly published Releases;
+- active branch rulesets for `main` and `release-channel` that block deletion and non-fast-forward history changes;
+- an active tag ruleset for `v*` that blocks deletion and non-fast-forward tag changes;
+- restricted direct write access, with no extra direct collaborators or teams.
+
+The rules intentionally permit ordinary fast-forward source pushes and the signed `release-channel` promotion. Do not add bypass actors or weaken the rules during routine publication. Older Releases created before immutable-release mode may still be marked mutable by GitHub, but their protected version tags and signed artifact hashes remain guarded.
+
 ## User update flow
 
-First installation uses the current stable immutable Launcher asset:
+First installation uses the current stable Launcher asset. After Workflow `0.3.3` is published, new Releases are immutable at the repository level:
 
 ```bash
 npm install --global \
-  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.3.2/ivx-v4-v5-migration-0.3.2.tgz
+  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.3.3/ivx-v4-v5-migration-0.3.3.tgz
 ivx-migrate setup
+```
+
+For an advanced platform deployment:
+
+```bash
+ivx-migrate setup --platform-base-url https://other-origin.example.com
+ivx-migrate doctor
 ```
 
 After that one-time bootstrap, users do not clone either repository and normally do not reinstall the global package. They use the signed runtime channels:
@@ -107,7 +127,7 @@ npm run release:publish -- \
   --confirm PUBLISH_STABLE_RELEASE
 ```
 
-The publisher performs this order:
+Before any mutation, the publisher checks that immutable Releases and both required no-bypass rulesets are still active. It then performs this order:
 
 1. create a Draft GitHub Release at the prepared source commit;
 2. upload the versioned tarball and signed manifest;

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { IvxPlatformAdapter, mergeSaveAsConfig } from '../src/platform/http-adapter.js';
+import { IvxPlatformAdapter, mergeSaveAsConfig, normalizePlatformBaseUrl } from '../src/platform/http-adapter.js';
 import { encodePlatformWork } from '../src/platform/work-codec.js';
 
 const work = {
@@ -15,6 +15,15 @@ function response(value, { status = 200, binary = false } = {}) {
     headers: { 'Content-Type': binary ? 'application/octet-stream' : 'application/json' },
   });
 }
+
+test('platform origins are normalized and unsafe overrides are rejected', () => {
+  assert.equal(normalizePlatformBaseUrl('https://dev.ivx.cn/'), 'https://dev.ivx.cn');
+  assert.equal(normalizePlatformBaseUrl('http://127.0.0.1:3000/', true), 'http://127.0.0.1:3000');
+  assert.throws(() => normalizePlatformBaseUrl('http://dev.ivx.cn'), { code: 'PLATFORM_BASE_URL_INSECURE' });
+  assert.throws(() => normalizePlatformBaseUrl('https://user:secret@dev.ivx.cn'), { code: 'PLATFORM_BASE_URL_INVALID' });
+  assert.throws(() => normalizePlatformBaseUrl('https://dev.ivx.cn/editor'), { code: 'PLATFORM_BASE_URL_INVALID' });
+  assert.throws(() => normalizePlatformBaseUrl('https://dev.ivx.cn?target=other'), { code: 'PLATFORM_BASE_URL_INVALID' });
+});
 
 test('platform adapter uses an in-memory bearer token and decodes work', async () => {
   const calls = [];

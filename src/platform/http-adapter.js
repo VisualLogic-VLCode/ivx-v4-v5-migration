@@ -63,7 +63,7 @@ function safeErrorDetail(text, token) {
     .slice(0, 2000);
 }
 
-function assertPlatformBaseUrl(value, allowInsecureLocalhost) {
+export function normalizePlatformBaseUrl(value, allowInsecureLocalhost = false) {
   let url;
   try {
     url = new URL(value);
@@ -72,8 +72,10 @@ function assertPlatformBaseUrl(value, allowInsecureLocalhost) {
   }
   const local = ['localhost', '127.0.0.1', '::1'].includes(url.hostname);
   invariant(url.protocol === 'https:' || (allowInsecureLocalhost && local && url.protocol === 'http:'), 'PLATFORM_BASE_URL_INSECURE', 'Platform base URL must use HTTPS');
-  url.pathname = url.pathname.replace(/\/$/, '');
-  return url;
+  invariant(!url.username && !url.password, 'PLATFORM_BASE_URL_INVALID', 'Platform base URL must not contain credentials');
+  invariant(!url.search && !url.hash, 'PLATFORM_BASE_URL_INVALID', 'Platform base URL must not contain a query or fragment');
+  invariant(url.pathname === '/' || url.pathname === '', 'PLATFORM_BASE_URL_INVALID', 'Platform base URL must be an origin without a path');
+  return url.origin;
 }
 
 export function mergeSaveAsConfig(defaultConfig, sourceConfig) {
@@ -96,7 +98,7 @@ export class IvxPlatformAdapter {
   constructor({ baseUrl, token, fetchImpl = globalThis.fetch, writesEnabled = false, allowInsecureLocalhost = false } = {}) {
     invariant(typeof token === 'string' && token.trim(), 'PLATFORM_TOKEN_REQUIRED', 'A platform token is required in memory');
     invariant(typeof fetchImpl === 'function', 'PLATFORM_FETCH_REQUIRED', 'A fetch implementation is required');
-    this.baseUrl = assertPlatformBaseUrl(baseUrl, allowInsecureLocalhost);
+    this.baseUrl = normalizePlatformBaseUrl(baseUrl, allowInsecureLocalhost);
     this.#token = token.trim();
     this.#fetch = fetchImpl;
     this.writesEnabled = writesEnabled === true;

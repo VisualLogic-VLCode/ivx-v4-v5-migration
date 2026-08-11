@@ -55,6 +55,38 @@ function assertFileHash(file, expected, label) {
   if (actual !== expected) throw new Error(`${label} SHA-256 changed after preparation`);
 }
 
+function rulesetProtects(ruleset, target, requiredRefs) {
+  if (ruleset?.enforcement !== 'active' || ruleset.target !== target) return false;
+  const includes = new Set(ruleset.conditions?.ref_name?.include || []);
+  const ruleTypes = new Set((ruleset.rules || []).map((rule) => rule.type));
+  return requiredRefs.every((ref) => includes.has(ref))
+    && ruleTypes.has('deletion')
+    && ruleTypes.has('non_fast_forward')
+    && (ruleset.bypass_actors || []).length === 0;
+}
+
+export function validateRepositoryReleaseHardening({ immutableReleases, rulesets }) {
+  if (immutableReleases?.enabled !== true) {
+    throw new Error('GitHub immutable Releases must be enabled before publication');
+  }
+  if (!rulesets.some((ruleset) => rulesetProtects(ruleset, 'branch', [
+    'refs/heads/main',
+    'refs/heads/release-channel',
+  ]))) {
+    throw new Error('Active branch rules must protect main and release-channel from deletion and non-fast-forward updates without bypass actors');
+  }
+  if (!rulesets.some((ruleset) => rulesetProtects(ruleset, 'tag', ['refs/tags/v*']))) {
+    throw new Error('Active tag rules must protect v* from deletion and non-fast-forward updates without bypass actors');
+  }
+}
+
+function assertRepositoryReleaseHardening(repo) {
+  const immutableReleases = ghJson(['api', `repos/${repo}/immutable-releases`]);
+  const summaries = ghJson(['api', `repos/${repo}/rulesets`]) || [];
+  const rulesets = summaries.map((ruleset) => ghJson(['api', `repos/${repo}/rulesets/${ruleset.id}`]));
+  validateRepositoryReleaseHardening({ immutableReleases, rulesets });
+}
+
 function createChannelBranch(repo, branch, channelPath, manifestBytes, message) {
   const blob = apiJson('POST', `repos/${repo}/git/blobs`, {
     content: manifestBytes.toString('base64'),
@@ -112,6 +144,7 @@ async function publishRelease(options) {
   const repository = ghJson(['repo', 'view', plan.repo, '--json', 'visibility,url']);
   if (repository.visibility !== 'PUBLIC') throw new Error(`GitHub repository must be public before publication: ${plan.repo}`);
   run('gh', ['api', `repos/${plan.repo}/commits/${head}`]);
+  assertRepositoryReleaseHardening(plan.repo);
   const existingRelease = run('gh', ['release', 'view', plan.tag, '--repo', plan.repo, '--json', 'isDraft,assets'], { allowFailure: true });
   if (existingRelease.status === 0) throw new Error(`GitHub Release already exists: ${plan.repo} ${plan.tag}`);
 

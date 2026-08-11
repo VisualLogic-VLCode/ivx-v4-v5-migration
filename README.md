@@ -4,7 +4,7 @@ This project is the distributable local workflow used by Codex or Claude Code. I
 
 ## Current status
 
-Version `0.3.2` is the public-distribution reliability update. It provides:
+Version `0.3.3` is the public-distribution security and platform-default update. It provides:
 
 - private global Job storage with atomic state writes and per-Job locks;
 - metadata + physical work version classification;
@@ -44,12 +44,14 @@ export IVX_MIGRATION_HOME=/private/test/location
 
 Directories are created with mode `0700`; persisted Job/config/artifact files use `0600`. Tokens are not accepted in config or Job input.
 
-Configure the platform URL and token environment-variable name in private `config.json`; store only the variable name, never its value:
+`ivx-migrate setup` writes `https://dev.ivx.cn` as the default platform origin. It preserves an existing override; advanced users may explicitly replace it with `--platform-base-url https://other-origin.example.com`. Only an HTTPS origin is accepted (no credentials, path, query, or fragment). `ivx-migrate doctor` reports the effective address as `platformBaseUrl`.
+
+The private `config.json` stores the platform origin and token environment-variable name; it stores only the variable name, never its value:
 
 ```json
 {
   "platform": {
-    "baseUrl": "https://your-platform.example.com",
+    "baseUrl": "https://dev.ivx.cn",
     "tokenEnv": "IVX_MIGRATION_TOKEN",
     "writeMode": "disabled",
     "allowInsecureLocalhost": false
@@ -63,7 +65,7 @@ Install the stable Launcher once from the immutable GitHub Release asset, then i
 
 ```bash
 npm install --global \
-  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.3.2/ivx-v4-v5-migration-0.3.2.tgz
+  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.3.3/ivx-v4-v5-migration-0.3.3.tgz
 ```
 
 ```bash
@@ -72,7 +74,7 @@ ivx-migrate doctor
 ivx-migrate update check
 ```
 
-`setup` installs and activates the latest signed Workflow and Converter, then installs the managed Codex/Claude Agent adapters. Normal users never pass a converter path.
+`setup` installs and activates the latest signed Workflow and Converter, installs the managed Codex/Claude Agent adapters, and defaults the platform to `https://dev.ivx.cn`. Normal users never pass a converter path. An advanced deployment can use `ivx-migrate setup --platform-base-url https://other-origin.example.com`; later `setup` runs preserve that override unless another address is supplied.
 
 Run the offline non-writing workflow with the managed Converter:
 
@@ -136,7 +138,7 @@ After reviewing the generated plan, a clean, pushed, public repository may be pu
 
 ```bash
 npm run release:publish -- \
-  --plan ./release-out/workflow-0.3.2/github-release-plan.json \
+  --plan ./release-out/workflow-0.3.3/github-release-plan.json \
   --confirm PUBLISH_STABLE_RELEASE
 ```
 
@@ -174,7 +176,7 @@ The workflow writes the bounded report to `reports/converter-diagnostics.json` a
 
 ## Update model
 
-Workflow and Converter releases are immutable and independently versioned. `setup` trusts the embedded Ed25519 public key and configures the two public `release-channel` manifests. The stable Launcher is installed once; `update apply` then updates the managed Workflow, Converter, and Agent adapters without another Git checkout or global npm installation. Signed manifests and runtime artifacts use bounded retries for transient network failures, while permanent HTTP failures remain immediate structured errors. A managed Job checks release policy before starting, verifies artifact hashes, installs into a new version directory, then atomically switches `current.json`. A Workflow change requests a command restart; a Converter change can be activated in the same invocation. Running Jobs keep their pinned versions.
+Workflow and Converter releases are independently versioned. Repository immutable-release mode applies to newly published Releases; protected `v*` tags prevent deletion or history replacement, including for existing versions. Protected `main` and `release-channel` history rejects deletion and non-fast-forward updates. `setup` trusts the embedded Ed25519 public key and configures the two public `release-channel` manifests. The stable Launcher is installed once; `update apply` then updates the managed Workflow, Converter, and Agent adapters without another Git checkout or global npm installation. Signed manifests and runtime artifacts use bounded retries for transient network failures, while permanent HTTP failures remain immediate structured errors. A managed Job checks release policy before starting, verifies artifact hashes, installs into a new version directory, then atomically switches `current.json`. A Workflow change requests a command restart; a Converter change can be activated in the same invocation. Running Jobs keep their pinned versions.
 
 ## Safety boundary
 
