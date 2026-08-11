@@ -134,5 +134,18 @@ test('Save As config merge keeps source customVars over user defaults', () => {
     mergeSaveAsConfig({ default: true, wechat: { noJs: false }, customVars: { old: 1 } }, { customVars: { source: 2 } }),
     { wechat: { noJs: false }, customVars: { source: 2 } },
   );
-  assert.throws(() => mergeSaveAsConfig(null, {}), { code: 'PLATFORM_DEFAULT_CONFIG_UNAVAILABLE' });
+});
+
+test('Save As config merge mirrors the editor fallback when user defaults are empty', () => {
+  const expectedKeys = [
+    'alipay', 'alipayApp', 'android', 'applet', 'azure', 'byteDance',
+    'custom', 'dingding', 'emailConfig', 'h5microApp', 'harmony', 'hy',
+    'ios', 'iot', 'jpush', 'live', 'mac', 'merchant', 'paypal',
+    'publicService', 'qq', 'qqmap', 'wechat', 'wechatApp', 'windows', 'wxopen',
+  ];
+  const fallback = mergeSaveAsConfig({}, { customVars: { source: 2 } });
+  assert.deepEqual(Object.keys(fallback).sort(), [...expectedKeys, 'customVars'].sort());
+  assert.deepEqual(fallback.wechat, { authorize: 'Base' });
+  assert.deepEqual(fallback.customVars, { source: 2 });
+  assert.deepEqual(mergeSaveAsConfig(null, {}).wechat, { authorize: 'Base' });
 });

@@ -3,6 +3,37 @@ import { decodePlatformWork, encodePlatformWork } from './work-codec.js';
 
 const EDIT_ROLES = new Set([1, 2, 3]);
 
+// Mirrors VxEditor41 src/stores/globalConfig.js defaultWorkConfig. The editor
+// uses this exact fallback when getDefaultConfig returns null or an empty object.
+const EDITOR_DEFAULT_WORK_CONFIG = Object.freeze({
+  wechat: {},
+  applet: {},
+  merchant: {},
+  wxopen: {},
+  wechatApp: {},
+  live: {},
+  alipay: {},
+  dingding: {},
+  alipayApp: {},
+  h5microApp: {},
+  byteDance: {},
+  ios: {},
+  android: {},
+  windows: {},
+  mac: {},
+  iot: {},
+  emailConfig: {},
+  qqmap: {},
+  jpush: {},
+  publicService: {},
+  qq: {},
+  custom: {},
+  azure: {},
+  paypal: {},
+  hy: {},
+  harmony: {},
+});
+
 function positiveInteger(value, label) {
   const number = Number(value);
   invariant(Number.isSafeInteger(number) && number > 0, 'PLATFORM_INPUT_INVALID', `${label} must be a positive integer`);
@@ -46,12 +77,12 @@ function assertPlatformBaseUrl(value, allowInsecureLocalhost) {
 }
 
 export function mergeSaveAsConfig(defaultConfig, sourceConfig) {
-  invariant(
-    defaultConfig && typeof defaultConfig === 'object' && !Array.isArray(defaultConfig) && Object.keys(defaultConfig).length > 0,
-    'PLATFORM_DEFAULT_CONFIG_UNAVAILABLE',
-    'Platform returned no default work configuration; Save As cannot safely reproduce editor defaults',
-  );
-  const defaults = structuredClone(defaultConfig);
+  const hasUserDefaults = defaultConfig
+    && typeof defaultConfig === 'object'
+    && !Array.isArray(defaultConfig)
+    && Object.keys(defaultConfig).length > 0;
+  const defaults = structuredClone(hasUserDefaults ? defaultConfig : EDITOR_DEFAULT_WORK_CONFIG);
+  if (!hasUserDefaults) defaults.wechat.authorize = 'Base';
   delete defaults.default;
   const customVars = sourceConfig && typeof sourceConfig === 'object' ? sourceConfig.customVars : undefined;
   if (customVars !== undefined) defaults.customVars = structuredClone(customVars);
