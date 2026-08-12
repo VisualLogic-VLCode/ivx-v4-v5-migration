@@ -79,6 +79,8 @@ Codex and Claude adapters are bundled with Workflow releases. Ordinary Workflow 
 
 Workflow `0.3.4` uses Agent protocol 2 because the managed procedure now forbids Agents from opening Token files and relies exclusively on redacted doctor status.
 
+The Workflow `0.3.5` candidate uses Agent protocol 3 because the managed procedure adds the separately authorized known-issues diagnostic-copy path and requires Agents to distinguish `DIAGNOSTIC_COPY_CREATED` from normal success.
+
 `update apply` synchronizes adapters from the activated Workflow. Unmodified managed files update automatically. A manually modified file causes `AGENT_FILE_CONFLICT`; `--force` backs it up before replacement.
 
 ## Prepare a Workflow release

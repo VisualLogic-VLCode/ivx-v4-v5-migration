@@ -33,6 +33,24 @@ test('JobStore never accepts an invalid source nid', () => {
   }
 });
 
+test('classified Converter, Source, and Unknown issue states can enter only the dedicated diagnostic-save state', () => {
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'ivx-job-diagnostic-save-'));
+  try {
+    const store = new JobStore(createAppPaths(temporary));
+    for (const issueStatus of ['BLOCKED_CONVERTER_DEFECT', 'AI_REPAIR_REQUIRED', 'NEEDS_REVIEW']) {
+      let job = store.create({ sourceNid: 123, mode: 'platform' });
+      for (const status of ['UPDATE_CHECKED', 'AUTHORIZED', 'VERSION_CLASSIFIED', 'SOURCE_LOADED', 'CONVERTED', 'VALIDATED', 'ISSUES_CLASSIFIED', issueStatus]) {
+        job = store.transition(job.jobId, status);
+      }
+      assert.throws(() => store.transition(job.jobId, 'READY_TO_SAVE'), /Cannot transition/);
+      job = store.transition(job.jobId, 'READY_TO_SAVE_DIAGNOSTIC_COPY');
+      assert.equal(job.status, 'READY_TO_SAVE_DIAGNOSTIC_COPY');
+    }
+  } finally {
+    fs.rmSync(temporary, { recursive: true, force: true });
+  }
+});
+
 test('JobStore reclaims a dead-process operation lease but not a live lease', async () => {
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'ivx-job-lock-'));
   try {

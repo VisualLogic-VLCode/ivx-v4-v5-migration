@@ -94,7 +94,9 @@ ivx-migrate migrate --nid 12226286 --gid 25391
 - `READY_TO_SAVE`：判版、转换、诊断和验证通过，等待用户确认另存；
 - `SKIPPED_ALREADY_V5`：源案例已经是 V5，没有调用转换器；
 - `ISSUES_CLASSIFIED`：需要 Agent 判断问题归属；
-- `BLOCKED_CONVERTER_DEFECT`：确认属于转换器问题，只报告，不在工作流中修复；
+- `BLOCKED_CONVERTER_DEFECT`：确认属于转换器问题，先停止并报告；工作流不修复转换器，但可在用户另行授权后创建带已知问题的诊断副本；
+- `AI_REPAIR_REQUIRED`：源案例问题可由 AI 按策略修复，也可经用户另行授权创建诊断副本；
+- `NEEDS_REVIEW`：包含未知或不可自动修复的问题，可人工审阅，也可经用户另行授权创建诊断副本；
 - `AUTH_FAILED` / `SOURCE_PERMISSION_DENIED`：Token 无效或当前用户没有读取权限。
 
 查看 Job：
@@ -128,7 +130,30 @@ ivx-migrate job resume-save \
 
 只有 CLI 完成保存后读回验证并返回成功终态，才算转换成功。网络结果不明确时不要重新创建；应按 Job 的可恢复状态继续。
 
-## 7. 更新和回滚
+## 7. 存在已知问题时创建诊断副本
+
+如果 Agent 已经完成问题归属，用户可以选择先在编辑器里打开转换结果定位问题：
+
+- `CONVERTER`：通常停在 `BLOCKED_CONVERTER_DEFECT`；转换器不会在工作流中修复；
+- `SOURCE`：通常停在 `AI_REPAIR_REQUIRED`，用户可选择先由 AI 修复，也可先创建诊断副本；
+- `UNKNOWN`：通常停在 `NEEDS_REVIEW`，可以保留未知风险创建诊断副本；
+- `PLATFORM`、`AUTHORIZATION`：不允许通过诊断另存绕过，必须先解决。
+
+对这个具体 Job 再次明确授权：
+
+```bash
+ivx-migrate job resume-diagnostic-save \
+  --job <jobId> \
+  --confirm-live-write SAVE_V5_WITH_KNOWN_ISSUES
+```
+
+该命令仍要求 `platform.writeMode` 为 `explicit`，仍会重新检查当前用户的另存权限、源案例版本是否变化，并在保存后读回验证。分类可以包含 `CONVERTER`、`SOURCE`、`UNKNOWN` 的任意组合，但不能包含 `PLATFORM` 或 `AUTHORIZATION`。
+
+完成时状态是 `DIAGNOSTIC_COPY_CREATED`，返回的 `target.nid` 可用于打开新案例。这个状态只证明“平台上的诊断副本与本地转换产物一致”，不证明转换语义正确，也不能汇报为转换成功。Job 中会保留各问题归属数量、`reports/diagnostic-save-authorization.json` 和带诊断意图的保存日志。问题修复后，应重新转换源案例获得正式结果。
+
+普通 `resume-save ... SAVE_V5` 不能绕过 `BLOCKED_CONVERTER_DEFECT`；诊断命令也不能用于普通 `READY_TO_SAVE` Job。
+
+## 8. 更新和回滚
 
 ```bash
 ivx-migrate update check
@@ -140,7 +165,9 @@ ivx-migrate rollback --kind converter
 
 工作流和转换器独立发布。转换器问题必须等待维护者发布新 Converter；普通用户和 Agent 不应修改已安装 Converter。
 
-## 8. 常见 Token 文件错误
+首次在维护者电脑之外验证公开安装、普通参与者权限与默认不保存边界时，请严格按 [外部普通用户验收清单](EXTERNAL-USER-ACCEPTANCE.md) 执行，并使用其中的脱敏结果模板。外部验收的第一阶段禁止创建或保存 V5 案例。
+
+## 9. 常见 Token 文件错误
 
 | 错误码 | 处理方式 |
 |---|---|
@@ -150,4 +177,4 @@ ivx-migrate rollback --kind converter
 | `TOKEN_FILE_CONTENT_INVALID` | 文件只保留一个裸 Token，可有一个末尾换行 |
 | `PLATFORM_TOKEN_REQUIRED` | 配置安全 Token 文件，或临时设置 `IVX_MIGRATION_TOKEN` |
 
-需要更完整的安全、恢复和发布说明，请参阅 [PLATFORM-INTEGRATION.md](PLATFORM-INTEGRATION.md) 和 [RELEASING.md](RELEASING.md)。
+需要更完整的安全、恢复、外部验收和发布说明，请参阅 [PLATFORM-INTEGRATION.md](PLATFORM-INTEGRATION.md)、[EXTERNAL-USER-ACCEPTANCE.md](EXTERNAL-USER-ACCEPTANCE.md) 和 [RELEASING.md](RELEASING.md)。

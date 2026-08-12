@@ -5,7 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { createAppPaths } from '../src/paths.js';
 import { JobStore } from '../src/jobs/job-store.js';
-import { SaveAsOrchestrator, rewriteCaseNidForFinalSave } from '../src/platform/save-as-orchestrator.js';
+import { SAVE_INTENTS, SaveAsOrchestrator, rewriteCaseNidForFinalSave } from '../src/platform/save-as-orchestrator.js';
 
 const sourceNid = 123;
 const targetNid = 456;
@@ -26,6 +26,34 @@ function readyJob(jobs) {
   job = jobs.transition(job.jobId, 'VALIDATED');
   job = jobs.transition(job.jobId, 'ISSUES_CLASSIFIED');
   return jobs.transition(job.jobId, 'READY_TO_SAVE');
+}
+
+function diagnosticReadyJob(jobs) {
+  let job = jobs.create({ sourceNid, workflowRuntime: { version: '1.0.0' }, converterRuntime: { version: '2.0.0' }, mode: 'platform' });
+  job = jobs.transition(job.jobId, 'UPDATE_CHECKED');
+  job = jobs.transition(job.jobId, 'AUTHORIZED');
+  job = jobs.transition(job.jobId, 'VERSION_CLASSIFIED');
+  job = jobs.transition(job.jobId, 'SOURCE_LOADED', { patch: { source: { workId: 'source-work-7', inputSha256: 'a'.repeat(64) } } });
+  job = jobs.transition(job.jobId, 'CONVERTED', { patch: { target: { artifact: 'v5/app.v5.json' } } });
+  jobs.writeArtifact(job.jobId, 'v5/app.v5.json', converted, { pretty: false });
+  job = jobs.transition(job.jobId, 'VALIDATED');
+  job = jobs.transition(job.jobId, 'ISSUES_CLASSIFIED');
+  job = jobs.transition(job.jobId, 'BLOCKED_CONVERTER_DEFECT');
+  jobs.writeArtifact(job.jobId, 'reports/diagnostic-save-authorization.json', {
+    schemaVersion: 1,
+    kind: 'known-issues-diagnostic-save-authorization',
+    jobId: job.jobId,
+    sourceStatus: 'BLOCKED_CONVERTER_DEFECT',
+    confirmation: 'SAVE_V5_WITH_KNOWN_ISSUES',
+  });
+  return jobs.transition(job.jobId, 'READY_TO_SAVE_DIAGNOSTIC_COPY', {
+    patch: {
+      diagnosticSave: {
+        kind: SAVE_INTENTS.KNOWN_ISSUES_DIAGNOSTIC,
+        authorizationArtifact: 'reports/diagnostic-save-authorization.json',
+      },
+    },
+  });
 }
 
 class FakeAdapter {
@@ -91,6 +119,7 @@ test('resumable Save As completes creation, config, nid rewrite, save, and read-
   try {
     const result = await context.orchestrator.run(context.job.jobId);
     assert.equal(result.status, 'SUCCEEDED');
+    assert.equal(result.target.nid, targetNid);
     assert.deepEqual(context.adapter.calls, { create: 1, config: 1, save: 1 });
     assert.equal(context.adapter.targetWork.case.props.nid, targetNid);
     assert.equal(context.adapter.targetWork.stage.props.ref, 'n456_table');
@@ -101,6 +130,71 @@ test('resumable Save As completes creation, config, nid rewrite, save, and read-
     assert.equal(JSON.stringify(journal).includes('kept'), false);
   } finally {
     fs.rmSync(context.temporary, { recursive: true, force: true });
+  }
+});
+
+test('diagnostic Save As preserves its intent and completes as a diagnostic copy instead of success', async () => {
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'ivx-diagnostic-save-as-'));
+  const jobs = new JobStore(createAppPaths(path.join(temporary, 'home')));
+  const job = diagnosticReadyJob(jobs);
+  const adapter = new FakeAdapter();
+  const diagnostic = new SaveAsOrchestrator({
+    jobs,
+    adapter,
+    saveIntent: SAVE_INTENTS.KNOWN_ISSUES_DIAGNOSTIC,
+  });
+  try {
+    const result = await diagnostic.run(job.jobId);
+    assert.equal(result.status, 'DIAGNOSTIC_COPY_CREATED');
+    assert.equal(result.target.nid, targetNid);
+    assert.equal(result.diagnosticSave.result, 'CREATED');
+    const journal = JSON.parse(fs.readFileSync(diagnostic.journalFile(job.jobId), 'utf8'));
+    assert.equal(journal.intent.kind, SAVE_INTENTS.KNOWN_ISSUES_DIAGNOSTIC);
+    assert.equal(journal.intent.authorizationArtifact, 'reports/diagnostic-save-authorization.json');
+  } finally {
+    fs.rmSync(temporary, { recursive: true, force: true });
+  }
+});
+
+test('validated and diagnostic Save As paths cannot resume each other', async () => {
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'ivx-save-intent-'));
+  const jobs = new JobStore(createAppPaths(path.join(temporary, 'home')));
+  const job = diagnosticReadyJob(jobs);
+  const adapter = new FakeAdapter();
+  const diagnostic = new SaveAsOrchestrator({
+    jobs,
+    adapter,
+    saveIntent: SAVE_INTENTS.KNOWN_ISSUES_DIAGNOSTIC,
+  });
+  adapter.failFinalOnceAfterWrite = true;
+  try {
+    await assert.rejects(diagnostic.run(job.jobId), { code: 'FINAL_SAVE_OUTCOME_UNKNOWN' });
+    assert.equal(jobs.load(job.jobId).status, 'SAVE_INCOMPLETE');
+    await assert.rejects(new SaveAsOrchestrator({ jobs, adapter }).run(job.jobId), { code: 'SAVE_INTENT_MISMATCH' });
+    const result = await diagnostic.run(job.jobId);
+    assert.equal(result.status, 'DIAGNOSTIC_COPY_CREATED');
+    assert.equal(adapter.calls.create, 1);
+    assert.equal(adapter.calls.save, 1);
+  } finally {
+    fs.rmSync(temporary, { recursive: true, force: true });
+  }
+});
+
+test('diagnostic Save As refuses to start without its persisted authorization', async () => {
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'ivx-save-authorization-'));
+  const jobs = new JobStore(createAppPaths(path.join(temporary, 'home')));
+  const job = diagnosticReadyJob(jobs);
+  const adapter = new FakeAdapter();
+  fs.unlinkSync(path.join(jobs.jobDir(job.jobId), 'reports', 'diagnostic-save-authorization.json'));
+  try {
+    await assert.rejects(new SaveAsOrchestrator({
+      jobs,
+      adapter,
+      saveIntent: SAVE_INTENTS.KNOWN_ISSUES_DIAGNOSTIC,
+    }).run(job.jobId), { code: 'DIAGNOSTIC_SAVE_AUTHORIZATION_MISSING' });
+    assert.deepEqual(adapter.calls, { create: 0, config: 0, save: 0 });
+  } finally {
+    fs.rmSync(temporary, { recursive: true, force: true });
   }
 });
 

@@ -4,9 +4,18 @@
   "type": "object",
   "required": ["schemaVersion", "jobId", "phase", "source", "target", "config", "finalSave", "verification", "attempts"],
   "properties": {
-    "schemaVersion": { "const": 1 },
+    "schemaVersion": { "enum": [1, 2] },
     "jobId": { "type": "string", "pattern": "^mig_[A-Za-z0-9_]+$" },
     "phase": { "type": "string" },
+    "intent": {
+      "type": "object",
+      "required": ["kind", "authorizationArtifact"],
+      "properties": {
+        "kind": { "enum": ["validated", "known-issues-diagnostic"] },
+        "authorizationArtifact": { "type": ["string", "null"] }
+      },
+      "additionalProperties": false
+    },
     "source": { "type": "object" },
     "target": { "type": "object" },
     "config": {
@@ -21,5 +30,11 @@
     "verification": { "type": "object" },
     "attempts": { "type": "array" }
   },
-  "additionalProperties": true
+  "additionalProperties": true,
+  "allOf": [
+    {
+      "if": { "properties": { "schemaVersion": { "const": 2 } } },
+      "then": { "required": ["intent"] }
+    }
+  ]
 }

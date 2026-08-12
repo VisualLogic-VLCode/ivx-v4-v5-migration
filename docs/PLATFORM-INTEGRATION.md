@@ -36,7 +36,7 @@ The Workflow never broadens the caller's permissions or substitutes the maintain
 
 ## Save gate
 
-Remote Save As may start only when:
+Normal remote Save As may start only when:
 
 - the source is confirmed to be a supported V4 work;
 - exact Workflow and Converter versions are pinned;
@@ -45,6 +45,8 @@ Remote Save As may start only when:
 - every approved source repair went through Patch policy and revalidation;
 - source `workId` is unchanged; and
 - destination preflight is `ALLOWED`.
+
+Classified known issues have one explicit exception for diagnosis. The Job must be `BLOCKED_CONVERTER_DEFECT`, `AI_REPAIR_REQUIRED`, or an eligible `NEEDS_REVIEW`; every issue must be owned by `CONVERTER`, `SOURCE`, or `UNKNOWN`; and the caller must use `resume-diagnostic-save` with `SAVE_V5_WITH_KNOWN_ISSUES`. Any `PLATFORM` or `AUTHORIZATION` issue refuses the operation. The workflow persists a bounded authorization artifact and diagnostic save intent. All permission, revision, checkpoint, config, nid-rewrite, and read-back protections remain unchanged. Completion is `DIAGNOSTIC_COPY_CREATED`, not `SUCCEEDED`.
 
 ## Recovery semantics
 
@@ -64,5 +66,14 @@ The default is `platform.writeMode: "disabled"`. Live writes require all of:
 - a Job in `READY_TO_SAVE` or a recognized resumable save state;
 - an `ALLOWED` permission decision; and
 - unchanged source revision.
+
+For the diagnostic-copy exception, the path-specific requirements replace the normal command/status pair:
+
+- `--confirm-live-write SAVE_V5_WITH_KNOWN_ISSUES`;
+- a Job in `BLOCKED_CONVERTER_DEFECT`, `AI_REPAIR_REQUIRED`, or eligible `NEEDS_REVIEW`, followed by `READY_TO_SAVE_DIAGNOSTIC_COPY`, or a recognized resumable state whose journal has diagnostic intent;
+- a valid `reports/diagnostic-save-authorization.json`; and
+- no classified issue outside `CONVERTER`, `SOURCE`, or `UNKNOWN` ownership.
+
+The normal and diagnostic save intents cannot resume each other.
 
 Until the controlled real-platform permission matrix is complete, keep `writeMode` disabled for general users.

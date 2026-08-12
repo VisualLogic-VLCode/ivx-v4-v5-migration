@@ -4,7 +4,7 @@ This project is the distributable local workflow used by Codex or Claude Code. I
 
 ## Current status
 
-Version `0.3.4` is the secure local-credential and user-onboarding update. It provides:
+The source tree is the `0.3.5` candidate; public stable remains `0.3.4` until this candidate is reviewed and published. It provides:
 
 - private global Job storage with atomic state writes and per-Job locks;
 - metadata + physical work version classification;
@@ -18,9 +18,10 @@ Version `0.3.4` is the secure local-credential and user-onboarding update. It pr
 - an editor-compatible binary work codec;
 - bearer-token metadata/load/config adapters with token redaction and strict `0600` Token-file support;
 - permission preflight, source revision checks, resumable Save As checkpoints, final nid rewrite, and post-save read-back verification;
+- a separately authorized diagnostic Save As path that creates an editor-openable V5 copy for classified Converter, source, or unknown issues without reporting normal success;
 - a complete local-file dry run and a mock-platform integration-tested online flow.
 
-Platform writes remain disabled by default. Enabling them requires private config `platform.writeMode: "explicit"` and the literal per-command confirmation `--confirm-live-write SAVE_V5`. Non-owner group participants remain blocked as `UNKNOWN_SERVER_POLICY` until their deployment-specific server permission is verified.
+Platform writes remain disabled by default. A verified save requires private config `platform.writeMode: "explicit"` and `--confirm-live-write SAVE_V5`. A Job with classified `CONVERTER`, `SOURCE`, or `UNKNOWN` issues may use the separate command and confirmation `SAVE_V5_WITH_KNOWN_ISSUES`; it finishes as `DIAGNOSTIC_COPY_CREATED`, never `SUCCEEDED`. `PLATFORM` and `AUTHORIZATION` issues remain ineligible. Non-owner group participants remain blocked as `UNKNOWN_SERVER_POLICY` until their deployment-specific server permission is verified.
 
 ## Data location
 
@@ -116,6 +117,16 @@ ivx-migrate job resume-save \
 
 The one-command form adds `--save --confirm-live-write SAVE_V5` to `migrate`. Token resolution order is an explicit `--token-file`, configured `platform.tokenFile`, then `platform.tokenEnv`. An invalid selected file fails instead of silently falling back. The Token is never written to config, a Job, diagnostics, or Agent analysis.
 
+When a Job is `BLOCKED_CONVERTER_DEFECT`, `AI_REPAIR_REQUIRED`, or eligible `NEEDS_REVIEW`, the user may explicitly request an editor-openable copy before the known issues are fixed. Eligible owners are `CONVERTER`, `SOURCE`, and `UNKNOWN`; any `PLATFORM` or `AUTHORIZATION` issue refuses the operation. Use the dedicated gate:
+
+```bash
+ivx-migrate job resume-diagnostic-save \
+  --job <jobId> \
+  --confirm-live-write SAVE_V5_WITH_KNOWN_ISSUES
+```
+
+The workflow writes `reports/diagnostic-save-authorization.json` with issue counts by owner, preserves the diagnostic intent in the resumable save journal, repeats permission and source-revision checks, and verifies the saved content by read-back. The result returns the target nid with status `DIAGNOSTIC_COPY_CREATED`; this means “copy created with known issues,” not “conversion verified.” Normal `resume-save` cannot resume this chain, and the diagnostic command cannot be used on an ordinary `READY_TO_SAVE` Job.
+
 Update and rollback commands:
 
 ```bash
@@ -139,11 +150,11 @@ After reviewing the generated plan, a clean, pushed, public repository may be pu
 
 ```bash
 npm run release:publish -- \
-  --plan ./release-out/workflow-0.3.4/github-release-plan.json \
+  --plan ./release-out/workflow-0.3.5/github-release-plan.json \
   --confirm PUBLISH_STABLE_RELEASE
 ```
 
-Start with the [Chinese user quick start](docs/QUICKSTART.md). The complete promotion, user synchronization, and rollback procedure is in [docs/RELEASING.md](docs/RELEASING.md). Platform behavior, Token handling, recovery limits, and remaining real-permission verification are in [docs/PLATFORM-INTEGRATION.md](docs/PLATFORM-INTEGRATION.md).
+Start with the [Chinese user quick start](docs/QUICKSTART.md). For the first ordinary-user test outside the maintainer's machine, follow the [external-user acceptance checklist](docs/EXTERNAL-USER-ACCEPTANCE.md) and its redacted [result template](docs/templates/EXTERNAL-USER-ACCEPTANCE-RESULT.md). The complete promotion, user synchronization, and rollback procedure is in [docs/RELEASING.md](docs/RELEASING.md). Platform behavior, Token handling, and recovery limits are in [docs/PLATFORM-INTEGRATION.md](docs/PLATFORM-INTEGRATION.md).
 
 Unsigned manifests are rejected. For local release-protocol tests only, set `allowUnsignedLocalManifests: true` in the private config file.
 
@@ -181,11 +192,11 @@ Workflow and Converter releases are independently versioned. Repository immutabl
 
 ## Safety boundary
 
-- `CONVERTER` issues stop and are never repaired here.
+- `CONVERTER` issues are never repaired here. `CONVERTER`, `SOURCE`, and `UNKNOWN` issues may be preserved in a separately authorized diagnostic copy, but its terminal state is never normal success.
 - AI may only submit schema-valid issue classifications and policy-approved RFC 6902 source repairs.
 - Generated V5 files cannot be edited directly by an Agent and then treated as verified.
 - Agents must use redacted `doctor` status and must never open, print, copy, hash, or inspect Token files.
-- Platform writes are opt-in twice: private config plus per-command confirmation.
+- Platform writes are opt-in twice: private config plus a path-specific per-command confirmation.
 - An unknown target-creation response is never replayed automatically because the current platform API has no idempotency key.
 - A known target can resume config/final-save work; unknown final-save responses are read back before retry.
 - Non-owner group participant permission remains `UNKNOWN` unless verified against that deployment's server policy.

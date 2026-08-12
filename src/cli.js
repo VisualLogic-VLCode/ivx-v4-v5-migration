@@ -12,7 +12,7 @@ import { JobStore } from './jobs/job-store.js';
 import { createAppPaths, resolveAppHome } from './paths.js';
 import { IvxPlatformAdapter, normalizePlatformBaseUrl } from './platform/http-adapter.js';
 import { inspectPlatformToken, normalizeTokenFilePath, readPlatformTokenFile, resolvePlatformToken } from './platform/token-source.js';
-import { SaveAsOrchestrator } from './platform/save-as-orchestrator.js';
+import { SAVE_INTENTS, SaveAsOrchestrator } from './platform/save-as-orchestrator.js';
 import { ArtifactInstaller } from './releases/artifact-installer.js';
 import { createSignedReleaseEnvelope, loadReleaseEnvelope } from './releases/release-envelope.js';
 import { evaluateRelease } from './releases/release-policy.js';
@@ -155,7 +155,7 @@ async function loadConverterForJob(options, context) {
   return { provider, converterDescriptor, updateCheck: { ...updateCheck, agents } };
 }
 
-function createPlatformAdapter(options, context, { write = false } = {}) {
+function createPlatformAdapter(options, context, { write = false, confirmation = 'SAVE_V5' } = {}) {
   const platform = context.config.platform;
   invariant(platform.baseUrl, 'PLATFORM_NOT_CONFIGURED', 'platform.baseUrl is not configured');
   const credential = resolvePlatformToken({
@@ -164,7 +164,7 @@ function createPlatformAdapter(options, context, { write = false } = {}) {
   });
   if (write) {
     invariant(platform.writeMode === 'explicit', 'PLATFORM_WRITES_DISABLED', 'platform.writeMode is not explicit');
-    invariant(options['confirm-live-write'] === 'SAVE_V5', 'LIVE_WRITE_CONFIRMATION_REQUIRED', '--confirm-live-write SAVE_V5 is required');
+    invariant(options['confirm-live-write'] === confirmation, 'LIVE_WRITE_CONFIRMATION_REQUIRED', `--confirm-live-write ${confirmation} is required`);
   }
   return new IvxPlatformAdapter({
     baseUrl: platform.baseUrl,
@@ -172,6 +172,93 @@ function createPlatformAdapter(options, context, { write = false } = {}) {
     writesEnabled: write,
     allowInsecureLocalhost: platform.allowInsecureLocalhost === true,
   });
+}
+
+function authorizeKnownIssuesDiagnosticSave(jobId, context) {
+  const state = context.jobs.load(jobId);
+  invariant(
+    ['BLOCKED_CONVERTER_DEFECT', 'AI_REPAIR_REQUIRED', 'NEEDS_REVIEW'].includes(state.status),
+    'JOB_STATE_MISMATCH',
+    'Job must have classified known issues before diagnostic Save As authorization',
+  );
+  invariant(state.mode === 'platform', 'DIAGNOSTIC_SAVE_PLATFORM_ONLY', 'Diagnostic Save As is only available for platform Jobs');
+  invariant(state.target?.artifact, 'SAVE_AS_ARTIFACT_MISSING', 'Job has no converted V5 artifact');
+  const validation = readJson(path.join(context.jobs.jobDir(jobId), 'reports', 'validation.json'));
+  const classification = validateIssueClassification(
+    readJson(path.join(context.jobs.jobDir(jobId), 'reports', 'issue-classification.json'), null),
+    validation,
+  );
+  const allowedOwners = new Set(['CONVERTER', 'SOURCE', 'UNKNOWN']);
+  const forbiddenIssues = classification.issues.filter((issue) => !allowedOwners.has(issue.owner));
+  invariant(classification.issues.length > 0, 'DIAGNOSTIC_SAVE_ISSUES_REQUIRED', 'Diagnostic Save As requires at least one classified issue');
+  invariant(forbiddenIssues.length === 0, 'DIAGNOSTIC_SAVE_OWNERS_FORBIDDEN', 'Platform or authorization issues must be resolved before creating a diagnostic copy', {
+    owners: [...new Set(forbiddenIssues.map((issue) => issue.owner))].sort(),
+  });
+  const issueCountsByOwner = Object.fromEntries(
+    [...allowedOwners].map((owner) => [owner, classification.issues.filter((issue) => issue.owner === owner).length]),
+  );
+  const authorizedAt = new Date().toISOString();
+  const authorization = {
+    schemaVersion: 1,
+    kind: 'known-issues-diagnostic-save-authorization',
+    jobId,
+    purpose: 'editor-diagnosis',
+    sourceStatus: state.status,
+    authorizedAt,
+    confirmation: 'SAVE_V5_WITH_KNOWN_ISSUES',
+    converter: {
+      packageName: state.runtime?.converter?.packageName || state.runtime?.converter?.name || null,
+      version: state.runtime?.converter?.version || null,
+    },
+    evidence: {
+      validationArtifact: 'reports/validation.json',
+      issueClassificationArtifact: 'reports/issue-classification.json',
+      validationPassed: validation?.passed === true,
+      validationSummary: validation?.summary || state.issues?.summary || null,
+      issueCount: classification.issues.length,
+      issueCountsByOwner,
+    },
+    output: {
+      artifact: state.target.artifact,
+      sha256: state.target.outputSha256 || null,
+      terminalStatus: 'DIAGNOSTIC_COPY_CREATED',
+    },
+  };
+  context.jobs.writeArtifact(jobId, 'reports/diagnostic-save-authorization.json', authorization);
+  return context.jobs.transition(jobId, 'READY_TO_SAVE_DIAGNOSTIC_COPY', {
+    reason: 'user-authorized-v5-diagnostic-copy-with-classified-known-issues',
+    patch: {
+      diagnosticSave: {
+        kind: SAVE_INTENTS.KNOWN_ISSUES_DIAGNOSTIC,
+        purpose: authorization.purpose,
+        authorizationArtifact: 'reports/diagnostic-save-authorization.json',
+        authorizedAt,
+        issueCount: classification.issues.length,
+        issueCountsByOwner,
+        result: 'AUTHORIZED',
+      },
+    },
+  });
+}
+
+function assertDiagnosticSaveResume(jobId, context) {
+  const state = context.jobs.load(jobId);
+  invariant(
+    ['READY_TO_SAVE_DIAGNOSTIC_COPY', 'SAVE_AS_CREATED', 'SAVE_INCOMPLETE', 'FINAL_SAVED', 'POST_SAVE_VERIFIED'].includes(state.status),
+    'JOB_STATE_MISMATCH',
+    'Job is not ready for diagnostic Save As or resume',
+  );
+  const authorization = readJson(path.join(context.jobs.jobDir(jobId), 'reports', 'diagnostic-save-authorization.json'));
+  invariant(
+    authorization?.schemaVersion === 1
+      && authorization.kind === 'known-issues-diagnostic-save-authorization'
+      && authorization.jobId === jobId
+      && authorization.confirmation === 'SAVE_V5_WITH_KNOWN_ISSUES'
+      && ['BLOCKED_CONVERTER_DEFECT', 'AI_REPAIR_REQUIRED', 'NEEDS_REVIEW'].includes(authorization.sourceStatus),
+    'DIAGNOSTIC_SAVE_AUTHORIZATION_MISSING',
+    'Diagnostic Save As authorization artifact is missing or invalid',
+  );
+  return state;
 }
 
 async function runDryRun(options, context) {
@@ -422,6 +509,23 @@ async function handleJob(positionals, options, context) {
     invariant(options.job, 'CLI_ARGUMENT_REQUIRED', '--job is required');
     const adapter = createPlatformAdapter(options, context, { write: true });
     return new SaveAsOrchestrator({ jobs: context.jobs, adapter }).run(options.job);
+  }
+  if (action === 'resume-diagnostic-save') {
+    invariant(options.job, 'CLI_ARGUMENT_REQUIRED', '--job is required');
+    let state = context.jobs.load(options.job);
+    invariant(options['confirm-live-write'] === 'SAVE_V5_WITH_KNOWN_ISSUES', 'LIVE_WRITE_CONFIRMATION_REQUIRED', '--confirm-live-write SAVE_V5_WITH_KNOWN_ISSUES is required');
+    if (!['BLOCKED_CONVERTER_DEFECT', 'AI_REPAIR_REQUIRED', 'NEEDS_REVIEW'].includes(state.status)) assertDiagnosticSaveResume(options.job, context);
+    const adapter = createPlatformAdapter(options, context, {
+      write: true,
+      confirmation: 'SAVE_V5_WITH_KNOWN_ISSUES',
+    });
+    if (['BLOCKED_CONVERTER_DEFECT', 'AI_REPAIR_REQUIRED', 'NEEDS_REVIEW'].includes(state.status)) state = authorizeKnownIssuesDiagnosticSave(options.job, context);
+    else state = assertDiagnosticSaveResume(options.job, context);
+    return new SaveAsOrchestrator({
+      jobs: context.jobs,
+      adapter,
+      saveIntent: SAVE_INTENTS.KNOWN_ISSUES_DIAGNOSTIC,
+    }).run(state.jobId);
   }
   throw new WorkflowError('CLI_COMMAND_UNKNOWN', `Unknown job action: ${action || ''}`);
 }
@@ -681,12 +785,13 @@ export async function runCli(argv) {
         'ivx-migrate job classify --job <jobId> --file <classification.json>',
         'ivx-migrate job apply-patch --job <jobId> --file <patch.json>',
         'ivx-migrate job resume-save --job <jobId> --confirm-live-write SAVE_V5',
+        'ivx-migrate job resume-diagnostic-save --job <jobId> --confirm-live-write SAVE_V5_WITH_KNOWN_ISSUES',
         'ivx-migrate release sign --payload <payload.json> --private-key <key.pem> --output <manifest.json>',
         'ivx-migrate release check|install|list|activate|rollback --kind workflow|converter',
         'ivx-migrate agents status',
         'ivx-migrate agents sync [--force]',
       ],
-      note: 'Platform writes require config platform.writeMode=explicit and the per-command SAVE_V5 confirmation.',
+      note: 'Platform writes require config platform.writeMode=explicit. Validated saves use SAVE_V5; a separately authorized diagnostic copy with CONVERTER, SOURCE, or UNKNOWN issues uses SAVE_V5_WITH_KNOWN_ISSUES and never reports normal success.',
     };
   } else {
     throw new WorkflowError('CLI_COMMAND_UNKNOWN', `Unknown command: ${positionals.join(' ')}`);

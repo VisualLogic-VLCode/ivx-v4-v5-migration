@@ -5,6 +5,24 @@ import { mergeSaveAsConfig } from './http-adapter.js';
 
 const JOURNAL_PATH = 'reports/platform-save-journal.json';
 
+export const SAVE_INTENTS = Object.freeze({
+  VALIDATED: 'validated',
+  KNOWN_ISSUES_DIAGNOSTIC: 'known-issues-diagnostic',
+});
+
+const SAVE_INTENT_CONFIG = Object.freeze({
+  [SAVE_INTENTS.VALIDATED]: {
+    readyStatus: 'READY_TO_SAVE',
+    completionStatus: 'SUCCEEDED',
+    completionReason: 'platform-v5-save-as-complete',
+  },
+  [SAVE_INTENTS.KNOWN_ISSUES_DIAGNOSTIC]: {
+    readyStatus: 'READY_TO_SAVE_DIAGNOSTIC_COPY',
+    completionStatus: 'DIAGNOSTIC_COPY_CREATED',
+    completionReason: 'platform-v5-diagnostic-copy-created-with-known-issues',
+  },
+});
+
 function stableValue(value) {
   if (Array.isArray(value)) return value.map(stableValue);
   if (value && typeof value === 'object') {
@@ -45,10 +63,12 @@ export function rewriteCaseNidForFinalSave(work, sourceNid, targetNid) {
 }
 
 export class SaveAsOrchestrator {
-  constructor({ jobs, adapter } = {}) {
+  constructor({ jobs, adapter, saveIntent = SAVE_INTENTS.VALIDATED } = {}) {
     invariant(jobs && adapter, 'SAVE_AS_DEPENDENCY_REQUIRED', 'Job store and platform adapter are required');
+    invariant(SAVE_INTENT_CONFIG[saveIntent], 'SAVE_INTENT_INVALID', `Unsupported Save As intent: ${saveIntent}`);
     this.jobs = jobs;
     this.adapter = adapter;
+    this.saveIntent = saveIntent;
   }
 
   journalFile(jobId) {
@@ -56,10 +76,17 @@ export class SaveAsOrchestrator {
   }
 
   loadJournal(jobId, job) {
-    return readJson(this.journalFile(jobId), {
-      schemaVersion: 1,
+    const existing = readJson(this.journalFile(jobId), null);
+    const journal = existing || {
+      schemaVersion: 2,
       jobId,
       phase: 'NOT_STARTED',
+      intent: {
+        kind: this.saveIntent,
+        authorizationArtifact: this.saveIntent === SAVE_INTENTS.KNOWN_ISSUES_DIAGNOSTIC
+          ? 'reports/diagnostic-save-authorization.json'
+          : null,
+      },
       source: {
         nid: job.input.sourceNid,
         workId: job.source.workId || null,
@@ -72,7 +99,26 @@ export class SaveAsOrchestrator {
       attempts: [],
       createdAt: now(),
       updatedAt: now(),
+    };
+    invariant(journal.jobId === jobId, 'SAVE_JOURNAL_JOB_MISMATCH', 'Persisted Save As journal belongs to a different Job');
+    const existingIntent = journal.intent?.kind || SAVE_INTENTS.VALIDATED;
+    invariant(existingIntent === this.saveIntent, 'SAVE_INTENT_MISMATCH', 'The requested Save As path does not match the persisted Job save intent', {
+      requested: this.saveIntent,
+      persisted: existingIntent,
     });
+    journal.schemaVersion = 2;
+    journal.intent = {
+      kind: existingIntent,
+      authorizationArtifact: journal.intent?.authorizationArtifact || null,
+    };
+    if (existingIntent === SAVE_INTENTS.KNOWN_ISSUES_DIAGNOSTIC) {
+      invariant(
+        journal.intent.authorizationArtifact === 'reports/diagnostic-save-authorization.json',
+        'DIAGNOSTIC_SAVE_AUTHORIZATION_MISSING',
+        'Diagnostic Save As journal has no valid authorization reference',
+      );
+    }
+    return journal;
   }
 
   persist(jobId, journal) {
@@ -86,10 +132,10 @@ export class SaveAsOrchestrator {
     journal.attempts = journal.attempts.slice(-100);
   }
 
-  transitionIfNeeded(jobId, status, reason) {
+  transitionIfNeeded(jobId, status, reason, patch) {
     const current = this.jobs.load(jobId);
     if (current.status === status) return current;
-    return this.jobs.transition(jobId, status, { reason });
+    return this.jobs.transition(jobId, status, { reason, patch });
   }
 
   async run(jobId) {
@@ -98,9 +144,24 @@ export class SaveAsOrchestrator {
 
   async #runLocked(jobId) {
     let job = this.jobs.load(jobId);
-    invariant(['READY_TO_SAVE', 'SAVE_AS_CREATED', 'SAVE_INCOMPLETE', 'FINAL_SAVED', 'POST_SAVE_VERIFIED'].includes(job.status), 'JOB_STATE_MISMATCH', 'Job is not ready for platform Save As or resume');
+    const intent = SAVE_INTENT_CONFIG[this.saveIntent];
+    invariant([intent.readyStatus, 'SAVE_AS_CREATED', 'SAVE_INCOMPLETE', 'FINAL_SAVED', 'POST_SAVE_VERIFIED'].includes(job.status), 'JOB_STATE_MISMATCH', 'Job is not ready for the requested platform Save As path or resume');
     const artifact = job.target?.artifact;
     invariant(artifact, 'SAVE_AS_ARTIFACT_MISSING', 'Job has no validated V5 artifact');
+    if (this.saveIntent === SAVE_INTENTS.KNOWN_ISSUES_DIAGNOSTIC) {
+      const authorizationPath = job.diagnosticSave?.authorizationArtifact;
+      invariant(authorizationPath === 'reports/diagnostic-save-authorization.json', 'DIAGNOSTIC_SAVE_AUTHORIZATION_MISSING', 'Job has no diagnostic Save As authorization reference');
+      const authorization = readJson(path.join(this.jobs.jobDir(jobId), authorizationPath), null);
+      invariant(
+        authorization?.schemaVersion === 1
+          && authorization.kind === 'known-issues-diagnostic-save-authorization'
+          && authorization.jobId === jobId
+          && authorization.confirmation === 'SAVE_V5_WITH_KNOWN_ISSUES'
+          && ['BLOCKED_CONVERTER_DEFECT', 'AI_REPAIR_REQUIRED', 'NEEDS_REVIEW'].includes(authorization.sourceStatus),
+        'DIAGNOSTIC_SAVE_AUTHORIZATION_MISSING',
+        'Diagnostic Save As authorization artifact is missing or invalid',
+      );
+    }
     const converted = readJson(path.join(this.jobs.jobDir(jobId), artifact));
     const initialWork = prepareInitialSaveAsWork(converted);
     const journal = this.loadJournal(jobId, job);
@@ -227,7 +288,24 @@ export class SaveAsOrchestrator {
     this.record(journal, 'post-save-verify', 'SUCCEEDED', journal.verification);
     this.persist(jobId, journal);
     this.transitionIfNeeded(jobId, 'POST_SAVE_VERIFIED', 'platform-readback-matches-validated-v5');
-    return this.transitionIfNeeded(jobId, 'SUCCEEDED', 'platform-v5-save-as-complete');
+    const current = this.jobs.load(jobId);
+    return this.transitionIfNeeded(jobId, intent.completionStatus, intent.completionReason, {
+      target: {
+        ...current.target,
+        nid: journal.target.nid,
+        workId: verified.info.workId,
+      },
+      ...(this.saveIntent === SAVE_INTENTS.KNOWN_ISSUES_DIAGNOSTIC
+        ? {
+          diagnosticSave: {
+            ...(current.diagnosticSave || {}),
+            result: 'CREATED',
+            targetNid: journal.target.nid,
+            verifiedAt: journal.verification.checkedAt,
+          },
+        }
+        : {}),
+    });
   }
 
   async #ensureConfig(jobId, journal, expectedConfig) {

@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "iVX known-issues diagnostic Save As authorization",
+  "type": "object",
+  "required": ["schemaVersion", "kind", "jobId", "purpose", "sourceStatus", "authorizedAt", "confirmation", "converter", "evidence", "output"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "kind": { "const": "known-issues-diagnostic-save-authorization" },
+    "jobId": { "type": "string", "pattern": "^mig_[a-zA-Z0-9_]+$" },
+    "purpose": { "const": "editor-diagnosis" },
+    "sourceStatus": { "enum": ["BLOCKED_CONVERTER_DEFECT", "AI_REPAIR_REQUIRED", "NEEDS_REVIEW"] },
+    "authorizedAt": { "type": "string", "format": "date-time" },
+    "confirmation": { "const": "SAVE_V5_WITH_KNOWN_ISSUES" },
+    "converter": { "type": "object" },
+    "evidence": { "type": "object" },
+    "output": { "type": "object" }
+  },
+  "additionalProperties": false
+}
