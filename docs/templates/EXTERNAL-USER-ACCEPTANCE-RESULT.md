@@ -13,7 +13,9 @@
 - 操作系统与架构：
 - Node.js 版本：
 - npm 版本：
-- 使用方式：Codex / Claude Code / 仅 CLI
+- 使用方式：Codex / Claude Code（本轮不接受仅 CLI）
+- 从 Agent-first 启动提示开始：是 / 否
+- 安装、检查、转换和摘要命令均由 Agent 执行：是 / 否
 - 网络环境摘要（例如公司网络、家庭网络；不要写代理凭据）：
 
 ## B. 案例条件
@@ -37,6 +39,7 @@
 - `tokenSource`：file / environment
 - `tokenError`：null / 错误码（不要附 Token）
 - Agent 配置 `current`：true / false
+- Agent 已读取受管 `v4-to-v5-workflow` Skill 后再执行迁移：是 / 否
 - Workflow 更新状态：CURRENT / 其他
 - Converter 更新状态：CURRENT / 其他
 - 是否发生更新：否 / 是，更新前后版本为：

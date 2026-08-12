@@ -4,7 +4,7 @@ This project is the distributable local workflow used by Codex or Claude Code. I
 
 ## Current status
 
-The source tree is the documentation-only `0.3.6` candidate. Public stable Workflow `0.3.5`, Converter `1.2.1`, and Agent protocol 3 remain unchanged until this candidate is reviewed and published. It provides:
+The source tree is the documentation-only `0.3.7` candidate. Public stable Workflow `0.3.6`, Converter `1.2.1`, and Agent protocol 3 remain unchanged until this candidate is reviewed and published. It provides:
 
 - private global Job storage with atomic state writes and per-Job locks;
 - metadata + physical work version classification;
@@ -62,13 +62,21 @@ The private `config.json` stores the platform origin, optional Token-file path, 
 }
 ```
 
-## Commands
+## Agent-first start
 
-Install the stable Launcher once from the immutable GitHub Release asset, then initialize the signed public channel:
+Ordinary users should start in Codex or Claude Code, not in a terminal. Give the local Agent the copyable [first-install and acceptance prompt](docs/templates/AI-AGENT-ACCEPTANCE-PROMPT.md). The Agent reads the immutable [bootstrap procedure](docs/AI-AGENT-BOOTSTRAP.md), performs installation, setup, update checks, preflight, migration, diagnostics, and validation, then hands control to the installed managed Skill.
+
+The user intervenes only to type their own Token into a non-echoing local terminal prompt. The Token is never pasted into Agent chat or command arguments, and the Agent never opens the Token file. First-stage migration is no-save by default; creating a V5 case always requires separate authorization for the exact Job.
+
+After first installation, a user can simply ask the Agent to migrate a nid. The managed Skill will automatically check the current runtime and apply the Workflow's version, permission, diagnosis, repair, and save gates.
+
+## CLI reference
+
+The commands below document what the Agent executes and remain available as a manual fallback. Install the stable Launcher once from the immutable GitHub Release asset, then initialize the signed public channel:
 
 ```bash
 npm install --global \
-  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.3.5/ivx-v4-v5-migration-0.3.5.tgz
+  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.3.6/ivx-v4-v5-migration-0.3.6.tgz
 ```
 
 ```bash
@@ -156,7 +164,7 @@ npm run release:publish -- \
   --confirm PUBLISH_STABLE_RELEASE
 ```
 
-Start with the [Chinese user quick start](docs/QUICKSTART.md). For the first ordinary-user test outside the maintainer's machine, follow the [external-user acceptance checklist](docs/EXTERNAL-USER-ACCEPTANCE.md), submit one redacted [no-save result](docs/templates/EXTERNAL-USER-ACCEPTANCE-RESULT.md) per case, and use the separate [Save As result](docs/templates/EXTERNAL-USER-SAVE-AS-RESULT.md) only after case-specific authorization. The complete promotion, user synchronization, and rollback procedure is in [docs/RELEASING.md](docs/RELEASING.md). Platform behavior, Token handling, and recovery limits are in [docs/PLATFORM-INTEGRATION.md](docs/PLATFORM-INTEGRATION.md).
+Start with the [Chinese user quick start](docs/QUICKSTART.md). For the first ordinary-user test outside the maintainer's machine, send the tester the [Agent starter prompt](docs/templates/AI-AGENT-ACCEPTANCE-PROMPT.md), follow the [external-user acceptance checklist](docs/EXTERNAL-USER-ACCEPTANCE.md), submit one redacted [no-save result](docs/templates/EXTERNAL-USER-ACCEPTANCE-RESULT.md) per case, and use the separate [Save As result](docs/templates/EXTERNAL-USER-SAVE-AS-RESULT.md) only after case-specific authorization. The complete promotion, user synchronization, and rollback procedure is in [docs/RELEASING.md](docs/RELEASING.md). Platform behavior, Token handling, and recovery limits are in [docs/PLATFORM-INTEGRATION.md](docs/PLATFORM-INTEGRATION.md).
 
 Unsigned manifests are rejected. For local release-protocol tests only, set `allowUnsignedLocalManifests: true` in the private config file.
 

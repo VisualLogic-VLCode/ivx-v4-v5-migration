@@ -2,18 +2,30 @@
 
 本工作流在用户本机运行，由 Codex 或 Claude Code 调用。它只会转换确认属于受支持 V4 格式的案例；已经是 V5、版本不明确或权限不足时会停止并给出原因。
 
-## 1. 安装
+## 推荐入口：从一开始交给 AI Agent
+
+普通用户不需要先打开终端学习命令。把[AI Agent 首次安装与验收提示](templates/AI-AGENT-ACCEPTANCE-PROMPT.md)交给本机 Codex 或 Claude Code，并填写要处理的 `nid`。Agent 会自行安装 Launcher、初始化签名运行时、检查更新、完成权限预检与转换，再按受管 `v4-to-v5-workflow` Skill 进行诊断和验证。
+
+用户只需在 Agent 打开的本地隐藏输入提示中输入自己的 Token；不要把 Token、Cookie 或 Authorization 内容发到聊天。第一阶段默认不保存，Agent 在没有获得具体 Job 的另存授权时不会创建 V5 案例。
+
+首次安装成功后，可以直接对 Agent 说：
+
+> 请使用 v4-to-v5-workflow，把 nid 12345678 转成 V5。先完成判版、权限预检、转换、诊断和验证；没有我针对具体 Job 的另存授权时不要创建 V5 案例。
+
+下面的命令用于说明 Agent 实际执行的流程，也可作为故障排查时的人工参考；Agent-first 用户不需要逐条复制。
+
+## 1. 命令行参考：安装
 
 需要 Node.js 20 或更高版本。通过不可变 GitHub Release 安装稳定 Launcher：
 
 ```bash
 npm install --global \
-  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.3.5/ivx-v4-v5-migration-0.3.5.tgz
+  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.3.6/ivx-v4-v5-migration-0.3.6.tgz
 ```
 
-## 2. 安全创建 Token 文件
+## 2. 命令行参考：安全创建 Token 文件
 
-推荐将 Token 放在用户全局私有目录，而不是当前项目目录。以下命令适用于 macOS/zsh；输入内容不会显示在终端，也不会出现在命令历史中：
+推荐将 Token 放在用户全局私有目录，而不是当前项目目录。Agent 应创建目录和空文件，再启动以下 macOS/zsh 隐藏输入；用户只输入 Token，不执行命令，输入内容不会显示在终端，也不会出现在命令历史中：
 
 ```bash
 token_file="$HOME/.ivx-v4-v5/secrets/platform-token"
@@ -185,7 +197,7 @@ ivx-migrate rollback --kind converter
 
 工作流和转换器独立发布。转换器问题必须等待维护者发布新 Converter；普通用户和 Agent 不应修改已安装 Converter。
 
-首次在维护者电脑之外验证公开安装、普通参与者权限与默认不保存边界时，请严格按 [外部普通用户验收清单](EXTERNAL-USER-ACCEPTANCE.md) 执行，并为每个案例提交一份脱敏的[第一阶段结果模板](templates/EXTERNAL-USER-ACCEPTANCE-RESULT.md)。外部验收第一阶段禁止创建或保存 V5 案例；维护者另行指定具体 Job 并授权后，第二阶段使用独立的[另存结果模板](templates/EXTERNAL-USER-SAVE-AS-RESULT.md)。
+首次在维护者电脑之外验证公开安装、普通参与者权限与默认不保存边界时，先把 [Agent 启动提示](templates/AI-AGENT-ACCEPTANCE-PROMPT.md)交给测试用户，再严格按[外部普通用户验收清单](EXTERNAL-USER-ACCEPTANCE.md)核对 Agent 的执行结果，并为每个案例提交一份脱敏的[第一阶段结果模板](templates/EXTERNAL-USER-ACCEPTANCE-RESULT.md)。外部验收第一阶段禁止创建或保存 V5 案例；维护者另行指定具体 Job 并授权后，第二阶段使用独立的[另存结果模板](templates/EXTERNAL-USER-SAVE-AS-RESULT.md)。
 
 ## 9. 常见 Token 文件错误
 

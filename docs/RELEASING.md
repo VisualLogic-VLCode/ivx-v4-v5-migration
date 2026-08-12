@@ -40,11 +40,13 @@ The rules intentionally permit ordinary fast-forward source pushes and the signe
 
 ## User update flow
 
-First installation uses the stable `0.3.5` Launcher asset. Workflow `0.3.4` and later Releases are immutable at the repository level:
+The recommended first installation is Agent-first. The maintainer sends the user the copyable [Agent starter prompt](templates/AI-AGENT-ACCEPTANCE-PROMPT.md), which points to the immutable tagged [bootstrap procedure](AI-AGENT-BOOTSTRAP.md). The user's local Codex or Claude Code executes every command, while the user only types the Token into a non-echoing local prompt. After setup, the installed managed Skill becomes authoritative.
+
+The bootstrap procedure currently uses the stable `0.3.6` Launcher asset. Workflow `0.3.4` and later Releases are immutable at the repository level:
 
 ```bash
 npm install --global \
-  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.3.5/ivx-v4-v5-migration-0.3.5.tgz
+  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.3.6/ivx-v4-v5-migration-0.3.6.tgz
 ivx-migrate setup --token-file "$HOME/.ivx-v4-v5/secrets/platform-token"
 ```
 
@@ -79,7 +81,7 @@ Codex and Claude adapters are bundled with Workflow releases. Ordinary Workflow 
 
 Workflow `0.3.4` introduced Agent protocol 2 because the managed procedure forbids Agents from opening Token files and relies exclusively on redacted doctor status.
 
-Public Workflow `0.3.5` uses Agent protocol 3 because the managed procedure adds the separately authorized known-issues diagnostic-copy path and requires Agents to distinguish `DIAGNOSTIC_COPY_CREATED` from normal success. Documentation-only Workflow `0.3.6` keeps protocol 3 unchanged.
+Public Workflow `0.3.5` uses Agent protocol 3 because the managed procedure adds the separately authorized known-issues diagnostic-copy path and requires Agents to distinguish `DIAGNOSTIC_COPY_CREATED` from normal success. Public Workflow `0.3.6` and the Agent-first documentation-only `0.3.7` candidate keep protocol 3 unchanged: the new bootstrap document operates only before Skill installation and does not change the managed migration procedure.
 
 `update apply` synchronizes adapters from the activated Workflow. Unmodified managed files update automatically. A manually modified file causes `AGENT_FILE_CONFLICT`; `--force` backs it up before replacement.
 
