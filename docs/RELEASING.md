@@ -40,11 +40,11 @@ The rules intentionally permit ordinary fast-forward source pushes and the signe
 
 ## User update flow
 
-First installation uses the current stable Launcher asset. Workflow `0.3.4` and later Releases are immutable at the repository level:
+First installation uses the stable `0.3.5` Launcher asset. Workflow `0.3.4` and later Releases are immutable at the repository level:
 
 ```bash
 npm install --global \
-  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.3.4/ivx-v4-v5-migration-0.3.4.tgz
+  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.3.5/ivx-v4-v5-migration-0.3.5.tgz
 ivx-migrate setup --token-file "$HOME/.ivx-v4-v5/secrets/platform-token"
 ```
 
@@ -77,9 +77,9 @@ Codex and Claude adapters are bundled with Workflow releases. Ordinary Workflow 
 2. increase `AGENT_PROTOCOL_VERSION`;
 3. publish a new Workflow descriptor with that protocol version.
 
-Workflow `0.3.4` uses Agent protocol 2 because the managed procedure now forbids Agents from opening Token files and relies exclusively on redacted doctor status.
+Workflow `0.3.4` introduced Agent protocol 2 because the managed procedure forbids Agents from opening Token files and relies exclusively on redacted doctor status.
 
-The Workflow `0.3.5` candidate uses Agent protocol 3 because the managed procedure adds the separately authorized known-issues diagnostic-copy path and requires Agents to distinguish `DIAGNOSTIC_COPY_CREATED` from normal success.
+Public Workflow `0.3.5` uses Agent protocol 3 because the managed procedure adds the separately authorized known-issues diagnostic-copy path and requires Agents to distinguish `DIAGNOSTIC_COPY_CREATED` from normal success. Documentation-only Workflow `0.3.6` keeps protocol 3 unchanged.
 
 `update apply` synchronizes adapters from the activated Workflow. Unmodified managed files update automatically. A manually modified file causes `AGENT_FILE_CONFLICT`; `--force` backs it up before replacement.
 

@@ -4,7 +4,7 @@ This project is the distributable local workflow used by Codex or Claude Code. I
 
 ## Current status
 
-The source tree is the `0.3.5` candidate; public stable remains `0.3.4` until this candidate is reviewed and published. It provides:
+The source tree is the documentation-only `0.3.6` candidate. Public stable Workflow `0.3.5`, Converter `1.2.1`, and Agent protocol 3 remain unchanged until this candidate is reviewed and published. It provides:
 
 - private global Job storage with atomic state writes and per-Job locks;
 - metadata + physical work version classification;
@@ -68,7 +68,7 @@ Install the stable Launcher once from the immutable GitHub Release asset, then i
 
 ```bash
 npm install --global \
-  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.3.4/ivx-v4-v5-migration-0.3.4.tgz
+  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.3.5/ivx-v4-v5-migration-0.3.5.tgz
 ```
 
 ```bash
@@ -115,6 +115,8 @@ ivx-migrate job resume-save \
   --confirm-live-write SAVE_V5
 ```
 
+Restore `platform.writeMode` to `"disabled"` immediately after every save attempt, including failures or interruptions. A normal save is successful only at `SUCCEEDED` after read-back verification. Re-running `migrate --nid <targetNid>` must classify the target as `SKIPPED_ALREADY_V5`; do not use a compatibility `edtVer` field by itself to decide the target format.
+
 The one-command form adds `--save --confirm-live-write SAVE_V5` to `migrate`. Token resolution order is an explicit `--token-file`, configured `platform.tokenFile`, then `platform.tokenEnv`. An invalid selected file fails instead of silently falling back. The Token is never written to config, a Job, diagnostics, or Agent analysis.
 
 When a Job is `BLOCKED_CONVERTER_DEFECT`, `AI_REPAIR_REQUIRED`, or eligible `NEEDS_REVIEW`, the user may explicitly request an editor-openable copy before the known issues are fixed. Eligible owners are `CONVERTER`, `SOURCE`, and `UNKNOWN`; any `PLATFORM` or `AUTHORIZATION` issue refuses the operation. Use the dedicated gate:
@@ -150,11 +152,11 @@ After reviewing the generated plan, a clean, pushed, public repository may be pu
 
 ```bash
 npm run release:publish -- \
-  --plan ./release-out/workflow-0.3.5/github-release-plan.json \
+  --plan ./release-out/workflow-<version>/github-release-plan.json \
   --confirm PUBLISH_STABLE_RELEASE
 ```
 
-Start with the [Chinese user quick start](docs/QUICKSTART.md). For the first ordinary-user test outside the maintainer's machine, follow the [external-user acceptance checklist](docs/EXTERNAL-USER-ACCEPTANCE.md) and its redacted [result template](docs/templates/EXTERNAL-USER-ACCEPTANCE-RESULT.md). The complete promotion, user synchronization, and rollback procedure is in [docs/RELEASING.md](docs/RELEASING.md). Platform behavior, Token handling, and recovery limits are in [docs/PLATFORM-INTEGRATION.md](docs/PLATFORM-INTEGRATION.md).
+Start with the [Chinese user quick start](docs/QUICKSTART.md). For the first ordinary-user test outside the maintainer's machine, follow the [external-user acceptance checklist](docs/EXTERNAL-USER-ACCEPTANCE.md), submit one redacted [no-save result](docs/templates/EXTERNAL-USER-ACCEPTANCE-RESULT.md) per case, and use the separate [Save As result](docs/templates/EXTERNAL-USER-SAVE-AS-RESULT.md) only after case-specific authorization. The complete promotion, user synchronization, and rollback procedure is in [docs/RELEASING.md](docs/RELEASING.md). Platform behavior, Token handling, and recovery limits are in [docs/PLATFORM-INTEGRATION.md](docs/PLATFORM-INTEGRATION.md).
 
 Unsigned manifests are rejected. For local release-protocol tests only, set `allowUnsignedLocalManifests: true` in the private config file.
 

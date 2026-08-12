@@ -8,7 +8,7 @@
 
 ```bash
 npm install --global \
-  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.3.4/ivx-v4-v5-migration-0.3.4.tgz
+  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.3.5/ivx-v4-v5-migration-0.3.5.tgz
 ```
 
 ## 2. 安全创建 Token 文件
@@ -110,7 +110,7 @@ Job 默认位于 `~/.ivx-v4-v5/jobs/`，不放在当前项目目录。Token 内�
 
 ## 6. 审核后另存 V5
 
-只有 Job 已到达 `READY_TO_SAVE` 且用户明确授权创建新案例时，才编辑已有的 `~/.ivx-v4-v5/config.json`。保留其他全部配置，只把已有 `platform.writeMode` 改为：
+只有 Job 已到达 `READY_TO_SAVE`，且用户对这个具体 Job 明确授权创建新案例时，才编辑已有的 `~/.ivx-v4-v5/config.json`。保留其他全部配置，只把已有 `platform.writeMode` 临时改为：
 
 ```json
 {
@@ -128,7 +128,25 @@ ivx-migrate job resume-save \
   --confirm-live-write SAVE_V5
 ```
 
-只有 CLI 完成保存后读回验证并返回成功终态，才算转换成功。网络结果不明确时不要重新创建；应按 Job 的可恢复状态继续。
+无论命令成功、失败还是被中断，完成本次操作后都必须立即把同一字段恢复为：
+
+```json
+{
+  "platform": {
+    "writeMode": "disabled"
+  }
+}
+```
+
+不要在两个 Job 之间保持 `explicit`。只有 CLI 完成保存后读回验证并返回 `SUCCEEDED`，才算转换成功。网络结果不明确时不要重新创建；应保留同一 Job，按它的可恢复状态继续。
+
+若命令返回目标 nid，再进行一次只读判版：
+
+```bash
+ivx-migrate migrate --nid <targetNid>
+```
+
+预期为 `SKIPPED_ALREADY_V5`。目标列表元数据可能为兼容旧链路继续显示 `edtVer: 4.1`；不得只凭这一字段判定为 V4。工作流会结合 `metadata.extra.ver` 与实际 JSON 中的 V5 AST/V4 结构信号进行判断。
 
 ## 7. 存在已知问题时创建诊断副本
 
@@ -151,6 +169,8 @@ ivx-migrate job resume-diagnostic-save \
 
 完成时状态是 `DIAGNOSTIC_COPY_CREATED`，返回的 `target.nid` 可用于打开新案例。这个状态只证明“平台上的诊断副本与本地转换产物一致”，不证明转换语义正确，也不能汇报为转换成功。Job 中会保留各问题归属数量、`reports/diagnostic-save-authorization.json` 和带诊断意图的保存日志。问题修复后，应重新转换源案例获得正式结果。
 
+诊断副本命令完成、失败或中断后，同样必须立即把 `platform.writeMode` 恢复为 `"disabled"`。如返回目标 nid，也可按上一节执行只读判版；`SKIPPED_ALREADY_V5` 只确认目标格式是 V5，不会消除已知问题，也不会把 `DIAGNOSTIC_COPY_CREATED` 提升为正常成功。
+
 普通 `resume-save ... SAVE_V5` 不能绕过 `BLOCKED_CONVERTER_DEFECT`；诊断命令也不能用于普通 `READY_TO_SAVE` Job。
 
 ## 8. 更新和回滚
@@ -165,7 +185,7 @@ ivx-migrate rollback --kind converter
 
 工作流和转换器独立发布。转换器问题必须等待维护者发布新 Converter；普通用户和 Agent 不应修改已安装 Converter。
 
-首次在维护者电脑之外验证公开安装、普通参与者权限与默认不保存边界时，请严格按 [外部普通用户验收清单](EXTERNAL-USER-ACCEPTANCE.md) 执行，并使用其中的脱敏结果模板。外部验收的第一阶段禁止创建或保存 V5 案例。
+首次在维护者电脑之外验证公开安装、普通参与者权限与默认不保存边界时，请严格按 [外部普通用户验收清单](EXTERNAL-USER-ACCEPTANCE.md) 执行，并为每个案例提交一份脱敏的[第一阶段结果模板](templates/EXTERNAL-USER-ACCEPTANCE-RESULT.md)。外部验收第一阶段禁止创建或保存 V5 案例；维护者另行指定具体 Job 并授权后，第二阶段使用独立的[另存结果模板](templates/EXTERNAL-USER-SAVE-AS-RESULT.md)。
 
 ## 9. 常见 Token 文件错误
 

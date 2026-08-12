@@ -74,6 +74,6 @@ For the diagnostic-copy exception, the path-specific requirements replace the no
 - a valid `reports/diagnostic-save-authorization.json`; and
 - no classified issue outside `CONVERTER`, `SOURCE`, or `UNKNOWN` ownership.
 
-The normal and diagnostic save intents cannot resume each other.
+The normal and diagnostic save intents cannot resume each other. After every authorized live-save attempt, restore `platform.writeMode` to `"disabled"` even when the command fails or is interrupted; never leave the global write gate open between Jobs.
 
 Until the controlled real-platform permission matrix is complete, keep `writeMode` disabled for general users.

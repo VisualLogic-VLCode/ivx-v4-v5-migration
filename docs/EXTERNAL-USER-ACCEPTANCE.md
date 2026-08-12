@@ -1,28 +1,32 @@
 # 外部普通用户验收清单
 
-本清单用于在维护者电脑之外验证公开分发链、普通参与者权限、V4 判版、转换诊断和默认不保存边界。首次验收只允许转换到 `READY_TO_SAVE` 或安全停止状态，**不得创建或保存 V5 案例**。
+本清单用于在维护者电脑之外验证公开分发链、个人案例权限、Group 普通参与者权限、V4 判版、转换诊断和默认不保存边界。第一阶段只允许转换到 `READY_TO_SAVE` 或安全停止状态，**不得创建或保存 V5 案例**。每个案例单独创建 Job、单独填写一份结果。
 
 本轮公开基线（2026-08-12）：
 
-- Launcher / Workflow：`0.3.4`
+- 稳定 Launcher / Workflow：`0.3.5`
 - Converter：`1.2.1`
-- Agent protocol：`2`
+- Agent protocol：`3`
 - 默认平台：`https://dev.ivx.cn`
 
 后续如稳定通道已经发布新版本，以签名通道和 `ivx-migrate doctor` 显示的当前版本为准，并在结果中记录实际版本。
 
 ## 1. 参与者与案例准备
 
-维护者先选择一位非维护者测试用户和一个案例。案例应满足：
+维护者先选择一位非维护者测试用户，以及两个互不相同的案例：
+
+- **案例 A（个人所有者）**：测试用户本人创建并拥有的个人 V4 案例；
+- **案例 B（Group 普通参与者）**：测试用户参与但不是创建者、也不是 Group 所有者的 V4 案例。
+
+两个案例都应满足：
 
 - 测试用户使用自己的 iVX Token，不能使用维护者的 Token；
 - 测试用户能够在 `https://dev.ivx.cn` 正常打开该案例；
 - 已由维护者确认案例属于当前 Converter 支持的 V4 格式；
-- 优先选择测试用户参与、但不是原始创建者的 Group 案例；
-- 首次命令只提供 `nid`，不提供 `gid`，用于验证工作流能否从平台元数据解析 Group；
+- 所有第一阶段平台命令只提供各自的 `nid`，不提供 `gid`；
 - 测试电脑至少有 Node.js 20 和足够保存一份 V4、一份 V5 Job 快照的磁盘空间，建议预留 500 MB。
 
-维护者只需要把案例 `nid` 发给测试用户。不要发送维护者的 Token、Cookie、配置文件或私钥。
+维护者只需要把两个案例的类型和 `nid` 发给测试用户。不要发送维护者的 Token、Cookie、配置文件或私钥。如果暂时没有案例 B，可以先完成案例 A，并把 Group 权限项记为“待补测”，但不能据此声称 Group 参与者权限已通过。
 
 ## 2. 安装公开 Launcher
 
@@ -31,7 +35,7 @@
 ```bash
 node --version
 npm install --global \
-  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.3.4/ivx-v4-v5-migration-0.3.4.tgz
+  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.3.5/ivx-v4-v5-migration-0.3.5.tgz
 ivx-migrate version
 ```
 
@@ -80,27 +84,31 @@ ivx-migrate update check
 
 ## 5. 只读权限预检
 
-将 `<NID>` 替换为维护者提供的数字。首次预检**不要传 `--gid`**：
+分别将 `<PERSONAL_NID>`、`<GROUP_NID>` 替换为维护者提供的数字。两个预检都**不要传 `--gid`**：
 
 ```bash
-ivx-migrate platform preflight --nid <NID>
+ivx-migrate platform preflight --nid <PERSONAL_NID>
+ivx-migrate platform preflight --nid <GROUP_NID>
 ```
 
-预期为 `allowed=true`、`decision=ALLOWED`。记录 `reason`，以及返回的源元数据中是否自动解析到 Group，但不要粘贴完整源元数据、案例标题、用户 ID 或 `workId`。
+案例 A 预期为 `allowed=true`、`decision=ALLOWED`，权限原因应说明当前用户是个人案例成员/所有者。案例 B 只有在当前部署的服务端策略确认普通参与者可另存时才预期 `ALLOWED`；`UNKNOWN_SERVER_POLICY` 是必须停止的安全结果，不能绕过，也不能算作 Group 权限通过。
+
+记录两个案例各自的 `decision` 和 `reason`，不要粘贴完整源元数据、案例标题、用户 ID、Group ID 或 `workId`。第一阶段输入和最终 Job 中的 `gid` 都应保持 `null`。
 
 安全停止规则：
 
 - `AUTH_FAILED`：测试用户在本机更新 Token 文件后可以重新预检一次，仍失败则停止；不要把 Token 发给维护者；
-- `SOURCE_PERMISSION_DENIED` 或 `UNKNOWN_SERVER_POLICY`：停止并提交结果，不尝试绕过权限；
-- 自动解析不到 Group：停止并记录，不在本轮改传 `gid` 掩盖问题；
+- `SOURCE_PERMISSION_DENIED` 或 `UNKNOWN_SERVER_POLICY`：只停止受影响的案例并提交结果，不尝试绕过权限；案例 A 不受影响时仍可继续；
+- Group 关系无法由平台权限结果确认：停止案例 B 并记录，不在本轮改传 `gid` 掩盖问题；
 - 任何未知平台错误：停止，不反复请求。
 
 ## 6. 转换但不保存
 
-只有预检为 `ALLOWED` 时执行：
+每个案例只有在自己的预检为 `ALLOWED` 时才执行：
 
 ```bash
-ivx-migrate migrate --nid <NID>
+ivx-migrate migrate --nid <PERSONAL_NID>
+ivx-migrate migrate --nid <GROUP_NID>
 ```
 
 本轮明确禁止添加以下参数：
@@ -112,7 +120,7 @@ ivx-migrate migrate --nid <NID>
 - `--converter-path`
 - `--use-current`
 
-预期完整验收结果是 `READY_TO_SAVE`。记录 `jobId` 后停止，不执行 `job resume-save` 或 `job resume-diagnostic-save`。
+每次命令执行完成后记录对应 `jobId`，不要混用两个 Job。完整转换结果是 `READY_TO_SAVE`；到达后停止，不执行 `job resume-save` 或 `job resume-diagnostic-save`。
 
 其他状态的处理：
 
@@ -135,7 +143,7 @@ Agent 可以读取 Job 的 `state.json` 和 `reports/`，但不得读取 Token �
 
 ## 8. 填写并提交结果
 
-复制 [外部用户验收结果模板](templates/EXTERNAL-USER-ACCEPTANCE-RESULT.md)，只填写模板要求的摘要。
+为每个实际执行的案例分别复制一份[外部用户验收结果模板](templates/EXTERNAL-USER-ACCEPTANCE-RESULT.md)，标明案例 A 或案例 B，只填写模板要求的摘要。案例 B 因权限安全停止时也提交一份模板。
 
 严禁提交：
 
@@ -149,11 +157,11 @@ Agent 可以读取 Job 的 `state.json` 和 `reports/`，但不得读取 Token �
 
 ## 9. 通过标准
 
-完整通过需要同时满足：
+案例 A 的第一阶段完整通过需要同时满足：
 
 - 公开 Launcher 可安装，签名 Workflow/Converter 可安装或更新；
 - `doctor` 的平台、Token 来源、运行时和 Agent 状态正常；
-- 只传 `nid` 的预检能够以测试用户自己的权限得到 `ALLOWED` 并解析 Group；
+- 只传 `nid` 的预检能够以测试用户自己的权限得到 `ALLOWED`；
 - 源案例被确认判定为受支持 V4；
 - Job 到达 `READY_TO_SAVE`，validation `blockerCount=0`；
 - diagnostics 可用，`droppedTotal=0`，所有 truncation 字段为 `false`；
@@ -162,8 +170,31 @@ Agent 可以读取 Job 的 `state.json` 和 `reports/`，但不得读取 Token �
 
 `ISSUES_CLASSIFIED` 等安全停止状态可以证明部分工作流边界有效，但不算完整转换验收通过。
 
+案例 B 另加以下标准：
+
+- 测试用户确实只是 Group 普通参与者，不是案例创建者或 Group 所有者；
+- 所有命令未传 `gid`，Job 输入 `gid=null`；
+- 若服务端返回 `ALLOWED`，后续转换也必须满足上述完整标准，才能记为“Group 参与者权限通过”；
+- 若返回 `UNKNOWN_SERVER_POLICY` 或明确拒绝，则记为“权限安全停止”；这证明工作流没有绕过权限，但不算 Group 权限通过。
+
 ## 10. 后续真实另存是独立阶段
 
-首次验收到此结束。只有维护者审阅结果、明确指定 Job 并授权创建 V5 案例后，测试用户才能按 [快速入门的“审核后另存 V5”](QUICKSTART.md#6-审核后另存-v5) 执行第二阶段。
+第一阶段到此结束。只有维护者审阅对应的第一阶段结果、明确指定一个 Job，并书面授权该 Job 创建 V5 案例后，测试用户才能执行第二阶段。授权不能从一个 Job 复用到另一个 Job，也不能因为案例 A 获准就默认案例 B 获准。
 
 未获得这次独立授权时，不得修改 `platform.writeMode`，不得添加 `--save`，不得执行 `job resume-save` 或 `job resume-diagnostic-save`。即使后续获准创建 `DIAGNOSTIC_COPY_CREATED`，它也只用于编辑器定位，不能算作本清单的转换正确性验收通过。
+
+获得授权后按以下顺序执行：
+
+1. 再次确认授权中写明的 Job ID 与本地 Job 一致；正常另存要求状态为 `READY_TO_SAVE`。
+2. 按[快速入门的“审核后另存 V5”](QUICKSTART.md#6-审核后另存-v5)临时将 `platform.writeMode` 改为 `explicit`。
+3. 对正常 Job 执行 `job resume-save ... SAVE_V5`。只有已完成问题分类、状态符合规则且授权明确要求“带已知问题的诊断副本”时，才能改用 `job resume-diagnostic-save ... SAVE_V5_WITH_KNOWN_ISSUES`。
+4. 无论成功、失败还是中断，立即把 `platform.writeMode` 恢复为 `disabled`。未知创建结果不得重新发起新建；保留同一 Job 走恢复流程。
+5. 正常另存必须返回 `SUCCEEDED`；诊断另存必须返回 `DIAGNOSTIC_COPY_CREATED`，并明确标注“带已知问题，非转换成功”。
+6. 返回目标 nid 后执行只读 `ivx-migrate migrate --nid <TARGET_NID>`，预期 `SKIPPED_ALREADY_V5`。平台列表中的兼容 `edtVer` 可能仍显示 `4.1`，不能单独作为 V4/V5 依据；以工作流对 `metadata.extra.ver` 和实际 JSON 结构的综合判版为准。
+7. 确认源案例修订未变化、保存日志意图与命令一致、平台回读通过、Token 未进入 Job，并提交独立的[第二阶段另存结果模板](templates/EXTERNAL-USER-SAVE-AS-RESULT.md)。
+
+建议把下面的文字交给已经安装受管 Skill 的本地 Agent，并将占位符替换为授权中写明的值：
+
+> 请按 v4-to-v5-workflow Skill 对 Job `<AUTHORIZED_JOB_ID>` 执行维护者已经明确授权的 `<普通已验证另存 / 带已知问题诊断副本>`。不要读取、打印、复制、哈希或分析 Token 文件；不要修改 Converter 或直接编辑 V5 JSON。先核对 Job 状态、权限和授权类型，只在实际保存期间临时启用写入开关，并确保无论成功、失败或中断都恢复为 disabled。结果未知时不要重新创建。返回目标 nid 后只读复检应为 SKIPPED_ALREADY_V5，并按第二阶段模板输出脱敏摘要。
+
+正常另存完整通过要求：`SUCCEEDED`、目标 nid 已返回、日志意图为 `validated`、最终阶段为 `POST_SAVE_VERIFIED`、目标复检为 `SKIPPED_ALREADY_V5`、源案例未变化，并且写入开关已恢复。诊断副本不参与正常转换通过率，只验证专用授权、保存与回读链是否按 `DIAGNOSTIC_COPY_CREATED` 安全完成。
