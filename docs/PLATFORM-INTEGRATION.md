@@ -14,6 +14,18 @@ Version `0.2.0` implements the Platform Adapter and Save As state machine. The c
 
 The binary codec is compatible with VxEditor41's SJCL/pako framing. The adapter sends `Authorization: Bearer <token>` only in memory and redacts it from errors.
 
+## Token sources
+
+For local users, the recommended source is a private Token file configured with `ivx-migrate setup --token-file <path>`. Config stores only the absolute path. Runtime precedence is:
+
+1. the command's explicit `--token-file`;
+2. configured `platform.tokenFile`;
+3. the environment variable named by `platform.tokenEnv`.
+
+A selected file never silently falls back to the environment. On macOS/Linux it must be owned by the current user, must be a non-symlink regular file, and must have exact mode `0600`. It is limited to 16 KiB and one whitespace-free Token with at most one final newline. Token content is read immediately before Platform Adapter construction and is never passed to the Converter, validator, Job store, or Agent analysis.
+
+`ivx-migrate doctor` reports only availability, selected source/path, and a redacted error code/message. Managed Agents are forbidden from opening or inspecting the file. Windows continues to support the environment source; Token-file ACL enforcement is deferred until a native Windows permission contract is defined.
+
 ## Permission boundary
 
 Source readability does not imply target write permission. Local tests cover owner, developer, guest/denied, group-owner, and group-participant-unknown decisions.

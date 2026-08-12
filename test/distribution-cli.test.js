@@ -112,6 +112,8 @@ test('setup, managed converter updates, Agent protocol sync, and rollback work i
   const claudeHome = path.join(temporary, 'claude');
   const workflowManifest = path.join(temporary, 'workflow-stable.json');
   const converterManifest = path.join(temporary, 'converter-stable.json');
+  const tokenFile = path.join(temporary, 'platform.token');
+  const token = 'setup-file-token-must-not-be-printed';
   const workflow100 = createWorkflowPackage(path.join(temporary, 'workflow-1.0.0'), '1.0.0', 1);
   const converter100 = createConverterPackage(path.join(temporary, 'converter-1.0.0'), '1.0.0');
   const env = {
@@ -121,6 +123,9 @@ test('setup, managed converter updates, Agent protocol sync, and rollback work i
     CLAUDE_HOME: claudeHome,
   };
   try {
+    fs.writeFileSync(tokenFile, `${token}\n`, { mode: 0o600 });
+    fs.chmodSync(tokenFile, 0o600);
+    assert.equal(run(['version'], env).agentProtocolVersion, 2);
     writeManifest(workflowManifest, 'workflow', '1.0.0', {
       '1.0.0': descriptor('@test/workflow', workflow100, {
         compatibleConverter: '>=1.0.0 <2.0.0',
@@ -140,6 +145,7 @@ test('setup, managed converter updates, Agent protocol sync, and rollback work i
       '--workflow-manifest', workflowManifest,
       '--converter-manifest', converterManifest,
       '--allow-unsigned-local', 'true',
+      '--token-file', tokenFile,
     ], env);
     assert.deepEqual(setup.runtimes.installed.map((item) => `${item.kind}:${item.version}`), [
       'workflow:1.0.0',
@@ -147,12 +153,23 @@ test('setup, managed converter updates, Agent protocol sync, and rollback work i
     ]);
     assert.equal(setup.agents.protocolVersion, 1);
     assert.equal(setup.platform.baseUrl, 'https://dev.ivx.cn');
+    assert.equal(setup.platform.tokenFile, tokenFile);
+    assert.equal(setup.platform.tokenSource, 'file');
+    assert.equal(setup.platform.tokenAvailable, true);
+    assert.equal(setup.platform.tokenError, null);
+    assert.equal(JSON.stringify(setup).includes(token), false);
     assert.equal(JSON.parse(fs.readFileSync(path.join(home, 'config.json'), 'utf8')).platform.baseUrl, 'https://dev.ivx.cn');
+    assert.equal(JSON.parse(fs.readFileSync(path.join(home, 'config.json'), 'utf8')).platform.tokenFile, tokenFile);
     assert.equal(fs.readFileSync(path.join(codexHome, 'skills', 'v4-to-v5-workflow', 'SKILL.md'), 'utf8'), 'codex protocol 1\n');
 
     const initialDoctor = run(['doctor'], env);
     assert.equal(initialDoctor.platformConfigured, true);
     assert.equal(initialDoctor.platformBaseUrl, 'https://dev.ivx.cn');
+    assert.equal(initialDoctor.tokenAvailable, true);
+    assert.equal(initialDoctor.tokenSource, 'file');
+    assert.equal(initialDoctor.tokenFile, tokenFile);
+    assert.equal(initialDoctor.tokenError, null);
+    assert.equal(JSON.stringify(initialDoctor).includes(token), false);
 
     const customizedSetup = run([
       'setup',
@@ -285,6 +302,37 @@ test('setup rejects an insecure external platform address before installing runt
     ], env);
     assert.equal(failure.code, 'PLATFORM_BASE_URL_INSECURE');
     assert.equal(fs.existsSync(path.join(home, 'config.json')), false);
+  } finally {
+    fs.rmSync(temporary, { recursive: true, force: true });
+  }
+});
+
+test('setup rejects an unsafe token file before saving config or installing runtimes', () => {
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'ivx-distribution-insecure-token-'));
+  const home = path.join(temporary, 'home');
+  const tokenFile = path.join(temporary, 'platform.token');
+  fs.writeFileSync(tokenFile, 'secret', { mode: 0o644 });
+  fs.chmodSync(tokenFile, 0o644);
+  const env = {
+    ...process.env,
+    IVX_MIGRATION_HOME: home,
+    CODEX_HOME: path.join(temporary, 'codex'),
+    CLAUDE_HOME: path.join(temporary, 'claude'),
+  };
+  try {
+    const failure = runFailure(['setup', '--token-file', tokenFile], env);
+    assert.equal(failure.code, 'TOKEN_FILE_PERMISSIONS_INVALID');
+    assert.equal(fs.existsSync(path.join(home, 'config.json')), false);
+
+    fs.writeFileSync(path.join(home, 'config.json'), JSON.stringify({
+      platform: { tokenFile },
+    }), { mode: 0o600 });
+    const doctor = run(['doctor'], env);
+    assert.equal(doctor.tokenAvailable, false);
+    assert.equal(doctor.tokenSource, 'file');
+    assert.equal(doctor.tokenFile, tokenFile);
+    assert.equal(doctor.tokenError.code, 'TOKEN_FILE_PERMISSIONS_INVALID');
+    assert.equal(JSON.stringify(doctor).includes('secret'), false);
   } finally {
     fs.rmSync(temporary, { recursive: true, force: true });
   }

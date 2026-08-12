@@ -177,7 +177,8 @@ test('CLI reports an existing V5 case and never calls the converter or Save As',
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'ivx-platform-v5-'));
   const home = path.join(temporary, 'home');
   const converter = path.join(temporary, 'converter');
-  const token = 'v5-skip-token';
+  const token = 'v5-skip-token-from-file';
+  const tokenFile = path.join(temporary, 'platform.token');
   const v5Work = {
     case: { id: 'case', type: 'ih5-case', events: { list: [{ ast: { op: 'root', args: [] } }] } },
     stage: { id: 'stage', type: 'stage', events: { list: [] } },
@@ -186,11 +187,14 @@ test('CLI reports an existing V5 case and never calls the converter or Save As',
   let writeCalls = 0;
   fs.mkdirSync(home, { recursive: true });
   fs.mkdirSync(converter, { recursive: true });
+  fs.writeFileSync(tokenFile, `${token}\n`, { mode: 0o600 });
+  fs.chmodSync(tokenFile, 0o600);
   fs.writeFileSync(path.join(converter, 'package.json'), JSON.stringify({ name: '@test/must-not-run', version: '1.0.0', type: 'module' }));
   fs.writeFileSync(path.join(converter, 'index.js'), `
     export function convertV4CaseJsonToV5CaseJson() { throw new Error('converter must not run for V5'); }
   `);
   const server = http.createServer(async (request, response) => {
+    assert.equal(request.headers.authorization, `Bearer ${token}`);
     const url = new URL(request.url, 'http://127.0.0.1');
     if (['/work/saveAs', '/ih5/editor/work/setConfig'].includes(url.pathname) || url.pathname.startsWith('/work/save/')) writeCalls += 1;
     if (url.pathname === '/ih5/app/user/userinfo') return sendJson(response, { id: 900 });
@@ -205,16 +209,18 @@ test('CLI reports an existing V5 case and never calls the converter or Save As',
   fs.writeFileSync(path.join(home, 'config.json'), JSON.stringify({
     platform: {
       baseUrl: `http://127.0.0.1:${server.address().port}`,
+      tokenFile,
       tokenEnv: 'TEST_IVX_TOKEN',
       writeMode: 'disabled',
       allowInsecureLocalhost: true,
     },
   }));
   try {
-    const result = await runCli(home, token, ['migrate', '--nid', '300', '--converter-path', converter]);
+    const result = await runCli(home, 'wrong-environment-token', ['migrate', '--nid', '300', '--converter-path', converter]);
     assert.equal(result.code, 0, result.stderr || result.stdout);
     assert.equal(JSON.parse(result.stdout).result.status, 'SKIPPED_ALREADY_V5');
     assert.equal(writeCalls, 0);
+    assert.equal(allFileText(home).includes(token), false);
   } finally {
     await new Promise((resolve) => server.close(resolve));
     fs.rmSync(temporary, { recursive: true, force: true });

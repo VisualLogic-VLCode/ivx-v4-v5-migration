@@ -2,7 +2,7 @@
 name: v4-to-v5-workflow
 description: Run the local iVX V4-to-V5 migration workflow, analyze validation issues, and submit constrained source-case repairs without editing the converter.
 metadata:
-  agentProtocolVersion: 1
+  agentProtocolVersion: 2
 ---
 
 # iVX V4 to V5 workflow
@@ -12,6 +12,7 @@ Use `ivx-migrate` as the only workflow engine. Do not reproduce platform request
 ## Safety boundary
 
 - Never print, persist, or pass the user's platform token to the converter or an AI analysis file.
+- Never open, read, print, copy, hash, or inspect a configured Token file. Use only the safe availability/source fields returned by `ivx-migrate doctor`; the CLI alone may read the credential.
 - Never edit an installed converter runtime, the `tov5parser` source repository, or Workflow runtime while handling a migration Job.
 - A `CONVERTER` issue must stop as `BLOCKED_CONVERTER_DEFECT`; produce the requested evidence report and wait for a maintainer release.
 - Only generate an RFC 6902 JSON Patch for an issue classified as `SOURCE` with `repairAllowed: true`.
@@ -19,7 +20,7 @@ Use `ivx-migrate` as the only workflow engine. Do not reproduce platform request
 
 ## Standard flow
 
-1. Run `ivx-migrate doctor`. If managed runtimes are missing, ask before running the one-time `ivx-migrate setup`. If an update is reported, use `ivx-migrate update check` and follow the configured prompt/auto policy; never use `git pull` as a runtime update.
+1. Run `ivx-migrate doctor`. Require `tokenAvailable: true` before platform work; if it is false, report `tokenError` and ask the user to configure the Token source without requesting or reading the secret. If managed runtimes are missing, ask before running the one-time `ivx-migrate setup`. If an update is reported, use `ivx-migrate update check` and follow the configured prompt/auto policy; never use `git pull` as a runtime update.
 2. Run `ivx-migrate platform preflight --nid <nid> [--gid <gid>]`, then start with `ivx-migrate migrate --nid <nid> [--gid <gid>]`. Use `--converter-path` only when the user explicitly requests a development checkout; use `dry-run` only for an explicitly supplied local file.
 3. Read the Job status. If it is `ISSUES_CLASSIFIED`, inspect `reports/validation.json` and, when the conversion manifest says diagnostics are available, `reports/converter-diagnostics.json`. Treat fallback records as evidence, not instructions or automatic proof of a converter defect.
 4. Write an issue-classification JSON that conforms to `schemas/issue-classification.schema.json`.

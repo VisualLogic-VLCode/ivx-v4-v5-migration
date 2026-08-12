@@ -11,7 +11,7 @@ https://raw.githubusercontent.com/VisualLogic-VLCode/ivx-v4-v5-migration/release
 https://raw.githubusercontent.com/VisualLogic-VLCode/tov5parser/release-channel/converter-stable.json
 ```
 
-`ivx-migrate setup` writes these URLs, the embedded Ed25519 public key, and the default platform origin `https://dev.ivx.cn` to the user's private config. It installs both latest runtimes, activates them, and synchronizes the Agent adapters. An explicit `--platform-base-url` overrides the platform origin; a later setup preserves that existing override. `ivx-migrate doctor` displays the effective origin.
+`ivx-migrate setup` writes these URLs, the embedded Ed25519 public key, and the default platform origin `https://dev.ivx.cn` to the user's private config. With `--token-file`, it validates the file and stores only its absolute path. It installs both latest runtimes, activates them, and synchronizes the Agent adapters. Explicit platform/Token-file options override existing configuration; a later setup preserves existing values. `ivx-migrate doctor` displays the effective origin and redacted Token-source status.
 
 The release private key is never committed, uploaded, bundled, copied into user config, or stored under a Job. The maintainer default path is:
 
@@ -40,12 +40,12 @@ The rules intentionally permit ordinary fast-forward source pushes and the signe
 
 ## User update flow
 
-First installation uses the current stable Launcher asset. After Workflow `0.3.3` is published, new Releases are immutable at the repository level:
+First installation uses the current stable Launcher asset. Workflow `0.3.4` and later Releases are immutable at the repository level:
 
 ```bash
 npm install --global \
-  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.3.3/ivx-v4-v5-migration-0.3.3.tgz
-ivx-migrate setup
+  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.3.4/ivx-v4-v5-migration-0.3.4.tgz
+ivx-migrate setup --token-file "$HOME/.ivx-v4-v5/secrets/platform-token"
 ```
 
 For an advanced platform deployment:
@@ -76,6 +76,8 @@ Codex and Claude adapters are bundled with Workflow releases. Ordinary Workflow 
 1. update both `agents/codex/SKILL.md` and `agents/claude/SKILL.md`;
 2. increase `AGENT_PROTOCOL_VERSION`;
 3. publish a new Workflow descriptor with that protocol version.
+
+Workflow `0.3.4` uses Agent protocol 2 because the managed procedure now forbids Agents from opening Token files and relies exclusively on redacted doctor status.
 
 `update apply` synchronizes adapters from the activated Workflow. Unmodified managed files update automatically. A manually modified file causes `AGENT_FILE_CONFLICT`; `--force` backs it up before replacement.
 

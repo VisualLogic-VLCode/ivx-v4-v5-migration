@@ -11,6 +11,7 @@ import { readJson, sha256File, writePrivateJson } from './fs/secure-json.js';
 import { JobStore } from './jobs/job-store.js';
 import { createAppPaths, resolveAppHome } from './paths.js';
 import { IvxPlatformAdapter, normalizePlatformBaseUrl } from './platform/http-adapter.js';
+import { inspectPlatformToken, normalizeTokenFilePath, readPlatformTokenFile, resolvePlatformToken } from './platform/token-source.js';
 import { SaveAsOrchestrator } from './platform/save-as-orchestrator.js';
 import { ArtifactInstaller } from './releases/artifact-installer.js';
 import { createSignedReleaseEnvelope, loadReleaseEnvelope } from './releases/release-envelope.js';
@@ -157,15 +158,17 @@ async function loadConverterForJob(options, context) {
 function createPlatformAdapter(options, context, { write = false } = {}) {
   const platform = context.config.platform;
   invariant(platform.baseUrl, 'PLATFORM_NOT_CONFIGURED', 'platform.baseUrl is not configured');
-  const tokenEnv = platform.tokenEnv;
-  invariant(tokenEnv && process.env[tokenEnv], 'PLATFORM_TOKEN_REQUIRED', `Platform token is required in environment variable ${tokenEnv || '(not configured)'}`);
+  const credential = resolvePlatformToken({
+    explicitTokenFile: options['token-file'],
+    platform,
+  });
   if (write) {
     invariant(platform.writeMode === 'explicit', 'PLATFORM_WRITES_DISABLED', 'platform.writeMode is not explicit');
     invariant(options['confirm-live-write'] === 'SAVE_V5', 'LIVE_WRITE_CONFIRMATION_REQUIRED', '--confirm-live-write SAVE_V5 is required');
   }
   return new IvxPlatformAdapter({
     baseUrl: platform.baseUrl,
-    token: process.env[tokenEnv],
+    token: credential.token,
     writesEnabled: write,
     allowInsecureLocalhost: platform.allowInsecureLocalhost === true,
   });
@@ -452,6 +455,11 @@ async function handleSetup(options, context) {
     requestedPlatformBaseUrl,
     context.config.platform.allowInsecureLocalhost === true,
   );
+  let tokenFile = context.config.platform.tokenFile;
+  if (options['token-file'] !== undefined) {
+    tokenFile = normalizeTokenFilePath(options['token-file']);
+    readPlatformTokenFile(tokenFile);
+  }
   const config = saveConfig({
     ...context.config,
     releaseManifestUrl: null,
@@ -471,6 +479,7 @@ async function handleSetup(options, context) {
     platform: {
       ...context.config.platform,
       baseUrl: platformBaseUrl,
+      tokenFile,
     },
   }, context.appPaths);
   context.config = config;
@@ -482,6 +491,7 @@ async function handleSetup(options, context) {
     force: optionBoolean(options.force, false),
     protocolVersion,
   });
+  const tokenStatus = inspectPlatformToken({ platform: config.platform });
   return {
     configured: true,
     appHome: context.appHome,
@@ -490,7 +500,11 @@ async function handleSetup(options, context) {
     update: config.update,
     platform: {
       baseUrl: config.platform.baseUrl,
+      tokenFile: config.platform.tokenFile,
       tokenEnv: config.platform.tokenEnv,
+      tokenSource: tokenStatus.source,
+      tokenAvailable: tokenStatus.available,
+      tokenError: tokenStatus.error,
       writeMode: config.platform.writeMode,
     },
     runtimes: applied,
@@ -601,15 +615,21 @@ export async function runCli(argv) {
   };
   else if (command === 'doctor') {
     const current = registry.readCurrent();
-    const tokenEnv = config.platform.tokenEnv;
+    const tokenStatus = inspectPlatformToken({
+      explicitTokenFile: options['token-file'],
+      platform: config.platform,
+    });
     result = {
       ok: true,
       node: process.version,
       appHome,
       platformConfigured: Boolean(config.platform.baseUrl),
       platformBaseUrl: config.platform.baseUrl,
-      tokenAvailable: Boolean(tokenEnv && process.env[tokenEnv]),
-      tokenEnv,
+      tokenAvailable: tokenStatus.available,
+      tokenSource: tokenStatus.source,
+      tokenFile: tokenStatus.tokenFile,
+      tokenEnv: tokenStatus.tokenEnv,
+      tokenError: tokenStatus.error,
       workflow: current.workflow || { packageName: packageJson.name, version: packageJson.version, bundled: true },
       converter: current.converter,
       update: config.update,
@@ -650,13 +670,13 @@ export async function runCli(argv) {
     result = {
       usage: [
         'ivx-migrate doctor',
-        'ivx-migrate setup [--platform-base-url https://dev.ivx.cn]',
+        'ivx-migrate setup [--platform-base-url https://dev.ivx.cn] [--token-file <0600-file>]',
         'ivx-migrate update check',
         'ivx-migrate update apply [--kind workflow|converter] [--force]',
         'ivx-migrate rollback --kind workflow|converter',
         'ivx-migrate dry-run --input <app.json> --nid <nid> [--converter-path <development-package>] [--metadata <json>]',
-        'ivx-migrate platform preflight --nid <nid> [--gid <gid>]',
-        'ivx-migrate migrate --nid <nid> [--gid <gid>] [--converter-path <development-package>] [--save --confirm-live-write SAVE_V5]',
+        'ivx-migrate platform preflight --nid <nid> [--gid <gid>] [--token-file <0600-file>]',
+        'ivx-migrate migrate --nid <nid> [--gid <gid>] [--token-file <0600-file>] [--converter-path <development-package>] [--save --confirm-live-write SAVE_V5]',
         'ivx-migrate job status --job <jobId>',
         'ivx-migrate job classify --job <jobId> --file <classification.json>',
         'ivx-migrate job apply-patch --job <jobId> --file <patch.json>',

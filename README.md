@@ -4,7 +4,7 @@ This project is the distributable local workflow used by Codex or Claude Code. I
 
 ## Current status
 
-Version `0.3.3` is the public-distribution security and platform-default update. It provides:
+Version `0.3.4` is the secure local-credential and user-onboarding update. It provides:
 
 - private global Job storage with atomic state writes and per-Job locks;
 - metadata + physical work version classification;
@@ -16,7 +16,7 @@ Version `0.3.3` is the public-distribution security and platform-default update.
 - managed Codex and Claude Code Skill installation;
 - one-time public-channel setup plus unified Workflow/Converter/Agent updates;
 - an editor-compatible binary work codec;
-- bearer-token metadata/load/config adapters with token redaction;
+- bearer-token metadata/load/config adapters with token redaction and strict `0600` Token-file support;
 - permission preflight, source revision checks, resumable Save As checkpoints, final nid rewrite, and post-save read-back verification;
 - a complete local-file dry run and a mock-platform integration-tested online flow.
 
@@ -33,6 +33,7 @@ Authoritative Job data defaults to:
 ├── workflows/
 ├── converters/
 ├── agents/
+├── secrets/
 └── current.json
 ```
 
@@ -42,16 +43,17 @@ Override this only for testing:
 export IVX_MIGRATION_HOME=/private/test/location
 ```
 
-Directories are created with mode `0700`; persisted Job/config/artifact files use `0600`. Tokens are not accepted in config or Job input.
+Directories are created with mode `0700`; persisted Job/config/artifact files use `0600`. Token values are not accepted in config or Job input. A configured Token file stores the secret separately and config contains only its absolute path.
 
 `ivx-migrate setup` writes `https://dev.ivx.cn` as the default platform origin. It preserves an existing override; advanced users may explicitly replace it with `--platform-base-url https://other-origin.example.com`. Only an HTTPS origin is accepted (no credentials, path, query, or fragment). `ivx-migrate doctor` reports the effective address as `platformBaseUrl`.
 
-The private `config.json` stores the platform origin and token environment-variable name; it stores only the variable name, never its value:
+The private `config.json` stores the platform origin, optional Token-file path, and fallback token environment-variable name; it never stores the Token value inline:
 
 ```json
 {
   "platform": {
     "baseUrl": "https://dev.ivx.cn",
+    "tokenFile": "/Users/example/.ivx-v4-v5/secrets/platform-token",
     "tokenEnv": "IVX_MIGRATION_TOKEN",
     "writeMode": "disabled",
     "allowInsecureLocalhost": false
@@ -65,16 +67,16 @@ Install the stable Launcher once from the immutable GitHub Release asset, then i
 
 ```bash
 npm install --global \
-  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.3.3/ivx-v4-v5-migration-0.3.3.tgz
+  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.3.4/ivx-v4-v5-migration-0.3.4.tgz
 ```
 
 ```bash
-ivx-migrate setup
+ivx-migrate setup --token-file "$HOME/.ivx-v4-v5/secrets/platform-token"
 ivx-migrate doctor
 ivx-migrate update check
 ```
 
-`setup` installs and activates the latest signed Workflow and Converter, installs the managed Codex/Claude Agent adapters, and defaults the platform to `https://dev.ivx.cn`. Normal users never pass a converter path. An advanced deployment can use `ivx-migrate setup --platform-base-url https://other-origin.example.com`; later `setup` runs preserve that override unless another address is supplied.
+`setup` validates and stores only the absolute Token-file path, installs and activates the latest signed Workflow and Converter, installs the managed Codex/Claude Agent adapters, and defaults the platform to `https://dev.ivx.cn`. The selected file must be a current-user-owned regular file with exact mode `0600` on macOS/Linux. Normal users never pass a converter path. An advanced deployment can use `ivx-migrate setup --platform-base-url https://other-origin.example.com`; later `setup` runs preserve existing overrides unless another value is supplied.
 
 Run the offline non-writing workflow with the managed Converter:
 
@@ -99,7 +101,6 @@ ivx-migrate job apply-patch --job <jobId> --file ./repair.patch.json
 Load the current work with the caller's token, classify it, convert only supported V4, and stop at the save gate:
 
 ```bash
-export IVX_MIGRATION_TOKEN='<current-user-token>'
 ivx-migrate migrate \
   --nid 12345678 \
   --gid 25391
@@ -113,7 +114,7 @@ ivx-migrate job resume-save \
   --confirm-live-write SAVE_V5
 ```
 
-The one-command form adds `--save --confirm-live-write SAVE_V5` to `migrate`. The token is read from the configured environment variable and is never written to the Job.
+The one-command form adds `--save --confirm-live-write SAVE_V5` to `migrate`. Token resolution order is an explicit `--token-file`, configured `platform.tokenFile`, then `platform.tokenEnv`. An invalid selected file fails instead of silently falling back. The Token is never written to config, a Job, diagnostics, or Agent analysis.
 
 Update and rollback commands:
 
@@ -138,11 +139,11 @@ After reviewing the generated plan, a clean, pushed, public repository may be pu
 
 ```bash
 npm run release:publish -- \
-  --plan ./release-out/workflow-0.3.3/github-release-plan.json \
+  --plan ./release-out/workflow-0.3.4/github-release-plan.json \
   --confirm PUBLISH_STABLE_RELEASE
 ```
 
-The complete promotion, user synchronization, and rollback procedure is in [docs/RELEASING.md](docs/RELEASING.md). Platform behavior, recovery limits, and remaining real-permission verification are in [docs/PLATFORM-INTEGRATION.md](docs/PLATFORM-INTEGRATION.md).
+Start with the [Chinese user quick start](docs/QUICKSTART.md). The complete promotion, user synchronization, and rollback procedure is in [docs/RELEASING.md](docs/RELEASING.md). Platform behavior, Token handling, recovery limits, and remaining real-permission verification are in [docs/PLATFORM-INTEGRATION.md](docs/PLATFORM-INTEGRATION.md).
 
 Unsigned manifests are rejected. For local release-protocol tests only, set `allowUnsignedLocalManifests: true` in the private config file.
 
@@ -183,6 +184,7 @@ Workflow and Converter releases are independently versioned. Repository immutabl
 - `CONVERTER` issues stop and are never repaired here.
 - AI may only submit schema-valid issue classifications and policy-approved RFC 6902 source repairs.
 - Generated V5 files cannot be edited directly by an Agent and then treated as verified.
+- Agents must use redacted `doctor` status and must never open, print, copy, hash, or inspect Token files.
 - Platform writes are opt-in twice: private config plus per-command confirmation.
 - An unknown target-creation response is never replayed automatically because the current platform API has no idempotency key.
 - A known target can resume config/final-save work; unknown final-save responses are read back before retry.

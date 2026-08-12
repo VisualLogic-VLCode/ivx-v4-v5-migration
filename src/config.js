@@ -1,4 +1,5 @@
 import { createAppPaths } from './paths.js';
+import path from 'node:path';
 import { ensurePrivateDir, readJson, writePrivateJson } from './fs/secure-json.js';
 import { WorkflowError } from './errors.js';
 
@@ -20,6 +21,7 @@ export const DEFAULT_CONFIG = Object.freeze({
   },
   platform: {
     baseUrl: null,
+    tokenFile: null,
     tokenEnv: 'IVX_MIGRATION_TOKEN',
     writeMode: 'disabled',
     allowInsecureLocalhost: false,
@@ -62,6 +64,14 @@ export function validateConfig(config) {
       'TOKEN_PERSISTENCE_FORBIDDEN',
       'User tokens must not be stored in config.json',
     );
+  }
+  if (config.platform?.tokenFile !== null) {
+    if (typeof config.platform?.tokenFile !== 'string' || !path.isAbsolute(config.platform.tokenFile)) {
+      throw new WorkflowError('INVALID_CONFIG', 'platform.tokenFile must be null or an absolute path');
+    }
+  }
+  if (typeof config.platform?.tokenEnv !== 'string' || !config.platform.tokenEnv.trim()) {
+    throw new WorkflowError('INVALID_CONFIG', 'platform.tokenEnv must be a non-empty environment-variable name');
   }
   if (!['disabled', 'explicit'].includes(config.platform?.writeMode)) {
     throw new WorkflowError('INVALID_CONFIG', 'platform.writeMode must be disabled or explicit');
