@@ -7,6 +7,7 @@
 - 用户只在 Agent 对话中给出任务、`nid` 和确有需要时的 `gid`；所有安装、检查和迁移命令由 Agent 执行。
 - 不要求用户把 Token、Cookie 或 Authorization 内容发到聊天、命令参数、当前项目或验收报告。
 - 不打开、读取、打印、复制、哈希或分析 Token 文件。只允许依据 `ivx-migrate doctor` 的脱敏字段判断 Token 是否可用。
+- 不得用后台 PTY、终端 `read`、临时脚本、聊天或命令参数收集 Token。macOS 只允许调用 Launcher 自带的可见原生安全输入框。
 - V4/V5 判版、平台访问、转换、诊断、验证、修复提交和另存只能通过 `ivx-migrate`。不得自己实现这些步骤。
 - 不修改已安装 Converter，不克隆 Converter 源码，不使用 `--converter-path`，不通过 `git pull` 更新运行时。
 - 默认只转换、不保存。除非用户随后针对具体 Job 单独授权，不得添加 `--save`，不得启用写入开关，也不得执行任何 Save As 命令。
@@ -19,32 +20,18 @@
 
    ```bash
    npm install --global \
-     https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.3.6/ivx-v4-v5-migration-0.3.6.tgz
+     https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.3.8/ivx-v4-v5-migration-0.3.8.tgz
    ```
 
    不要自动使用 `sudo`。如全局安装因权限失败，停止并说明本机 Node/npm 权限问题。
-3. macOS/zsh 上，由 Agent 创建私有目录和空 Token 文件，然后在本地交互终端启动隐藏输入。用户只输入自己的 Token，不执行命令；输入不得回显给 Agent：
+3. macOS 上，Agent 先明确告诉用户“即将打开 iVX 原生安全输入框，请只在该窗口中输入 Token”，然后执行并等待：
 
    ```bash
-   token_file="$HOME/.ivx-v4-v5/secrets/platform-token"
-   install -d -m 700 "$(dirname "$token_file")"
-   install -m 600 /dev/null "$token_file"
-   read -rs "platform_token?请输入当前用户 Token: "
-   printf '\n'
-   printf '%s\n' "$platform_token" > "$token_file"
-   unset platform_token
-   chmod 600 "$token_file"
+   ivx-migrate setup --prompt-token
    ```
 
-   Agent 不得在输入后查看文件内容。若当前 Agent/终端不能提供不回显的私密输入，停止并请用户改用支持本地隐藏输入的终端能力；不得降级成聊天粘贴或明文命令参数。其他 Unix shell 使用等价的本地隐藏输入，不要把不兼容的 `read` 语法照搬过去。Windows 暂使用本机私有环境变量 `IVX_MIGRATION_TOKEN`，不要套用 Unix `0600` 检查。
-4. macOS/Linux 上由 Agent 使用 Token 文件执行初始化：
-
-   ```bash
-   ivx-migrate setup \
-     --token-file "$HOME/.ivx-v4-v5/secrets/platform-token"
-   ```
-
-   Windows 使用已经安全配置的 `IVX_MIGRATION_TOKEN` 时执行不带 `--token-file` 的 `ivx-migrate setup`。默认平台必须是 `https://dev.ivx.cn`。只有用户明确要求其他 HTTPS 平台地址时才传 `--platform-base-url`。
+   该命令由 Launcher 打开用户可见的 macOS 隐藏答案对话框，验证输入，原子写入受管私有 Token 文件，并继续完成初始化。Agent 不得声称后台终端中已有可见提示，也不得另开 Terminal.app 或生成输入脚本。用户取消时会返回 `TOKEN_PROMPT_CANCELLED`；原生界面不可用时会返回 `VISIBLE_TOKEN_PROMPT_UNAVAILABLE`。两种情况都必须停止，不能降级为聊天、PTY 或明文参数。其他平台暂使用已安全配置的受支持 Token 来源，再执行不带 `--prompt-token` 的 `ivx-migrate setup`。
+4. 默认平台必须是 `https://dev.ivx.cn`。只有用户明确要求其他 HTTPS 平台地址时，才在同一次命令中增加 `--platform-base-url`。不要在 `--prompt-token` 旁同时传 `--token-file`。
 5. Agent 执行 `ivx-migrate doctor` 和 `ivx-migrate update check`。只汇报脱敏状态；不得粘贴完整配置或用户绝对路径。至少确认：
 
    - `platformBaseUrl` 为预期地址；

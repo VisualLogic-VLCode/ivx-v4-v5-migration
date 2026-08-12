@@ -13,14 +13,20 @@ export function ensurePrivateDir(dir) {
 export function writePrivateFile(file, content) {
   ensurePrivateDir(path.dirname(file));
   const temporary = `${file}.${process.pid}.${crypto.randomBytes(5).toString('hex')}.tmp`;
-  fs.writeFileSync(temporary, content, { mode: 0o600, flag: 'wx' });
   try {
-    fs.chmodSync(temporary, 0o600);
-  } catch {}
-  fs.renameSync(temporary, file);
-  try {
-    fs.chmodSync(file, 0o600);
-  } catch {}
+    fs.writeFileSync(temporary, content, { mode: 0o600, flag: 'wx' });
+    try {
+      fs.chmodSync(temporary, 0o600);
+    } catch {}
+    fs.renameSync(temporary, file);
+    try {
+      fs.chmodSync(file, 0o600);
+    } catch {}
+  } finally {
+    try {
+      fs.unlinkSync(temporary);
+    } catch {}
+  }
 }
 
 export function writePrivateJson(file, value, { pretty = true } = {}) {

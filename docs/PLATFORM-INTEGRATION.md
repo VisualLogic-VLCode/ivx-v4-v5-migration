@@ -16,7 +16,7 @@ The binary codec is compatible with VxEditor41's SJCL/pako framing. The adapter 
 
 ## Token sources
 
-For local users, the recommended source is a private Token file configured with `ivx-migrate setup --token-file <path>`. Config stores only the absolute path. Runtime precedence is:
+For macOS users, the recommended source is the Launcher-owned native hidden-answer dialog invoked by `ivx-migrate setup --prompt-token`. The CLI validates the answer, atomically replaces only its managed private file at `<appHome>/secrets/platform-token`, and stores only that absolute path in config. It never exposes the value to the Agent, arguments, stdout, errors, Jobs, or converter. Advanced users may instead configure a separately prepared private file with `setup --token-file <path>`. Runtime precedence is:
 
 1. the command's explicit `--token-file`;
 2. configured `platform.tokenFile`;
@@ -25,6 +25,8 @@ For local users, the recommended source is a private Token file configured with 
 A selected file never silently falls back to the environment. On macOS/Linux it must be owned by the current user, must be a non-symlink regular file, and must have exact mode `0600`. It is limited to 16 KiB and one whitespace-free Token with at most one final newline. Token content is read immediately before Platform Adapter construction and is never passed to the Converter, validator, Job store, or Agent analysis.
 
 `ivx-migrate doctor` reports only availability, selected source/path, and a redacted error code/message. Managed Agents are forbidden from opening or inspecting the file. Windows continues to support the environment source; Token-file ACL enforcement is deferred until a native Windows permission contract is defined.
+
+The native prompt currently requires macOS. Cancellation returns `TOKEN_PROMPT_CANCELLED`; unsupported or unavailable UI returns `VISIBLE_TOKEN_PROMPT_UNAVAILABLE`. Both fail closed. Managed Agents must not replace the dialog with a background PTY, generated shell input, chat, or plaintext command argument. `--prompt-token` and `--token-file` are mutually exclusive.
 
 ## Permission boundary
 

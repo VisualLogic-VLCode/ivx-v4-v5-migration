@@ -12,6 +12,7 @@ import { JobStore } from './jobs/job-store.js';
 import { createAppPaths, resolveAppHome } from './paths.js';
 import { IvxPlatformAdapter, normalizePlatformBaseUrl } from './platform/http-adapter.js';
 import { inspectPlatformToken, normalizeTokenFilePath, readPlatformTokenFile, resolvePlatformToken } from './platform/token-source.js';
+import { promptAndPersistPlatformToken } from './platform/visible-token-prompt.js';
 import { SAVE_INTENTS, SaveAsOrchestrator } from './platform/save-as-orchestrator.js';
 import { ArtifactInstaller } from './releases/artifact-installer.js';
 import { createSignedReleaseEnvelope, loadReleaseEnvelope } from './releases/release-envelope.js';
@@ -547,6 +548,12 @@ function selectedRuntimeKinds(options) {
 }
 
 async function handleSetup(options, context) {
+  const promptToken = optionBoolean(options['prompt-token'], false);
+  invariant(
+    !(promptToken && options['token-file'] !== undefined),
+    'CLI_ARGUMENT_CONFLICT',
+    '--prompt-token and --token-file cannot be used together',
+  );
   const publicKeyPem = options['public-key-file']
     ? fs.readFileSync(path.resolve(options['public-key-file']), 'utf8')
     : PUBLIC_RELEASE_PROFILE.publicKeyPem;
@@ -560,7 +567,11 @@ async function handleSetup(options, context) {
     context.config.platform.allowInsecureLocalhost === true,
   );
   let tokenFile = context.config.platform.tokenFile;
-  if (options['token-file'] !== undefined) {
+  if (promptToken) {
+    ({ tokenFile } = context.promptPlatformToken({ appPaths: context.appPaths }));
+    tokenFile = normalizeTokenFilePath(tokenFile);
+    readPlatformTokenFile(tokenFile);
+  } else if (options['token-file'] !== undefined) {
     tokenFile = normalizeTokenFilePath(options['token-file']);
     readPlatformTokenFile(tokenFile);
   }
@@ -696,7 +707,7 @@ async function handleRelease(positionals, options, context) {
   throw new WorkflowError('CLI_COMMAND_UNKNOWN', `Unknown release action: ${action || ''}`);
 }
 
-export async function runCli(argv) {
+export async function runCli(argv, dependencies = {}) {
   const { positionals, options } = parseArguments(argv);
   const command = positionals[0] || 'help';
   const appHome = resolveAppHome();
@@ -710,6 +721,7 @@ export async function runCli(argv) {
     registry,
     jobs: new JobStore(appPaths),
     installer: new ArtifactInstaller({ appPaths, registry }),
+    promptPlatformToken: dependencies.promptPlatformToken || promptAndPersistPlatformToken,
   };
   let result;
   if (command === 'version') result = {
@@ -774,7 +786,7 @@ export async function runCli(argv) {
     result = {
       usage: [
         'ivx-migrate doctor',
-        'ivx-migrate setup [--platform-base-url https://dev.ivx.cn] [--token-file <0600-file>]',
+        'ivx-migrate setup [--platform-base-url https://dev.ivx.cn] [--prompt-token | --token-file <0600-file>]',
         'ivx-migrate update check',
         'ivx-migrate update apply [--kind workflow|converter] [--force]',
         'ivx-migrate rollback --kind workflow|converter',

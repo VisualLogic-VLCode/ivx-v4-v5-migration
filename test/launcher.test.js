@@ -31,6 +31,20 @@ test('stable Launcher delegates to the activated managed Workflow runtime', () =
     });
     assert.equal(result.status, 0, result.stderr);
     assert.deepEqual(JSON.parse(result.stdout), { delegated: true, argv: ['version'] });
+
+    const promptSetup = spawnSync(process.execPath, [
+      path.join(projectRoot, 'bin', 'ivx-migrate.js'),
+      'setup',
+      '--prompt-token',
+      '--token-file',
+      path.join(temporary, 'must-not-be-read.token'),
+    ], {
+      env: { ...process.env, IVX_MIGRATION_HOME: temporary },
+      encoding: 'utf8',
+    });
+    assert.equal(promptSetup.status, 1);
+    assert.equal(JSON.parse(promptSetup.stderr).code, 'CLI_ARGUMENT_CONFLICT');
+    assert.equal(promptSetup.stdout, '');
   } finally {
     fs.rmSync(temporary, { recursive: true, force: true });
   }

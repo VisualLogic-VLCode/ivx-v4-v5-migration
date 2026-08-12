@@ -5,9 +5,12 @@ import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-async function loadWorkflowCli() {
+async function loadWorkflowCli(argv) {
   const appHome = path.resolve(process.env.IVX_MIGRATION_HOME?.trim() || path.join(os.homedir(), '.ivx-v4-v5'));
   const bundledCli = new URL('../src/cli.js', import.meta.url);
+  if (argv[0] === 'setup' && argv.some((value) => value === '--prompt-token' || value.startsWith('--prompt-token='))) {
+    return import(bundledCli.href);
+  }
   let current;
   try {
     current = JSON.parse(fs.readFileSync(path.join(appHome, 'current.json'), 'utf8'));
@@ -34,8 +37,9 @@ async function loadWorkflowCli() {
 }
 
 try {
-  const { runCli } = await loadWorkflowCli();
-  const exitCode = await runCli(process.argv.slice(2));
+  const argv = process.argv.slice(2);
+  const { runCli } = await loadWorkflowCli(argv);
+  const exitCode = await runCli(argv);
   process.exitCode = Number.isInteger(exitCode) ? exitCode : 0;
 } catch (error) {
   const output = {

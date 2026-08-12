@@ -6,7 +6,7 @@
 
 普通用户不需要先打开终端学习命令。把[AI Agent 首次安装与验收提示](templates/AI-AGENT-ACCEPTANCE-PROMPT.md)交给本机 Codex 或 Claude Code，并填写要处理的 `nid`。Agent 会自行安装 Launcher、初始化签名运行时、检查更新、完成权限预检与转换，再按受管 `v4-to-v5-workflow` Skill 进行诊断和验证。
 
-用户只需在 Agent 打开的本地隐藏输入提示中输入自己的 Token；不要把 Token、Cookie 或 Authorization 内容发到聊天。第一阶段默认不保存，Agent 在没有获得具体 Job 的另存授权时不会创建 V5 案例。
+用户只需在 Launcher 打开的可见 macOS 原生安全输入框中输入自己的 Token；不要把 Token、Cookie 或 Authorization 内容发到聊天。Agent 不得使用后台 PTY、终端 `read` 或临时脚本代替该输入框。第一阶段默认不保存，Agent 在没有获得具体 Job 的另存授权时不会创建 V5 案例。
 
 首次安装成功后，可以直接对 Agent 说：
 
@@ -20,34 +20,24 @@
 
 ```bash
 npm install --global \
-  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.3.6/ivx-v4-v5-migration-0.3.6.tgz
+  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.3.8/ivx-v4-v5-migration-0.3.8.tgz
 ```
 
-## 2. 命令行参考：安全创建 Token 文件
+## 2. 命令行参考：安全录入 Token 并初始化
 
-推荐将 Token 放在用户全局私有目录，而不是当前项目目录。Agent 应创建目录和空文件，再启动以下 macOS/zsh 隐藏输入；用户只输入 Token，不执行命令，输入内容不会显示在终端，也不会出现在命令历史中：
+macOS 上，Agent 先通知用户即将打开 iVX 原生安全输入框，然后执行并等待：
 
 ```bash
-token_file="$HOME/.ivx-v4-v5/secrets/platform-token"
-install -d -m 700 "$(dirname "$token_file")"
-install -m 600 /dev/null "$token_file"
-read -rs "platform_token?请输入当前用户 Token: "
-printf '\n'
-printf '%s\n' "$platform_token" > "$token_file"
-unset platform_token
-chmod 600 "$token_file"
+ivx-migrate setup --prompt-token
 ```
 
-文件必须由当前用户拥有、是普通文件且权限恰好为 `0600`。不要把它放进 Git 仓库，不要让 Agent 打开、打印、复制或分析它。Token 失效时直接安全覆盖该文件，不需要重新安装工作流。
+Launcher 会打开用户可见的隐藏答案对话框，将 Token 原子写入 `~/.ivx-v4-v5/secrets/platform-token`，并继续初始化。目录权限为 `0700`、文件权限为 `0600`；配置只记录路径。不要让 Agent 打开、打印、复制或分析该文件。Token 缺失或失效时重新执行同一命令即可安全替换，不需要手工编辑文件。
 
-Windows 暂时建议使用 `IVX_MIGRATION_TOKEN` 环境变量；在 Windows ACL 契约明确前，不把 Unix `0600` 规则类比成不可靠的权限检查。
+用户取消会返回 `TOKEN_PROMPT_CANCELLED`，原生输入框不可用会返回 `VISIBLE_TOKEN_PROMPT_UNAVAILABLE`；Agent 必须停止，不得回退到后台 PTY、聊天或明文参数。其他平台暂使用已安全配置的受支持 Token 来源；在 Windows ACL 契约明确前，不把 Unix `0600` 规则类比成不可靠的权限检查。
 
 ## 3. 初始化
 
-```bash
-ivx-migrate setup \
-  --token-file "$HOME/.ivx-v4-v5/secrets/platform-token"
-```
+上一步的 `setup --prompt-token` 已经同时完成初始化，无需再次执行 `setup`。
 
 `setup` 会：
 
@@ -61,9 +51,11 @@ ivx-migrate setup \
 
 ```bash
 ivx-migrate setup \
-  --platform-base-url https://other-origin.example.com \
-  --token-file /absolute/path/to/platform-token
+  --prompt-token \
+  --platform-base-url https://other-origin.example.com
 ```
+
+已自行安全准备 Token 文件的高级用户仍可改用 `setup --token-file /absolute/path/to/platform-token`；两个 Token 选项不能同时使用。
 
 ## 4. 健康检查
 
@@ -208,5 +200,7 @@ ivx-migrate rollback --kind converter
 | `TOKEN_FILE_SYMLINK_FORBIDDEN` | 改用真实普通文件，不使用符号链接 |
 | `TOKEN_FILE_CONTENT_INVALID` | 文件只保留一个裸 Token，可有一个末尾换行 |
 | `PLATFORM_TOKEN_REQUIRED` | 配置安全 Token 文件，或临时设置 `IVX_MIGRATION_TOKEN` |
+| `TOKEN_PROMPT_CANCELLED` | 用户已取消；停止并在用户准备好后重新执行 `setup --prompt-token` |
+| `VISIBLE_TOKEN_PROMPT_UNAVAILABLE` | 当前系统或图形界面不支持内置输入框；停止，不要降级到后台 PTY 或聊天输入 |
 
 需要更完整的安全、恢复、外部验收和发布说明，请参阅 [PLATFORM-INTEGRATION.md](PLATFORM-INTEGRATION.md)、[EXTERNAL-USER-ACCEPTANCE.md](EXTERNAL-USER-ACCEPTANCE.md) 和 [RELEASING.md](RELEASING.md)。

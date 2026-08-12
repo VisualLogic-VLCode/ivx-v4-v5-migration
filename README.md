@@ -4,7 +4,7 @@ This project is the distributable local workflow used by Codex or Claude Code. I
 
 ## Current status
 
-The source tree is the documentation-only `0.3.7` candidate. Public stable Workflow `0.3.6`, Converter `1.2.1`, and Agent protocol 3 remain unchanged until this candidate is reviewed and published. It provides:
+The source tree is the `0.3.8` candidate. Public stable Workflow `0.3.7` and Converter `1.2.1` remain unchanged until this candidate is reviewed and published; this candidate raises the Agent protocol from 3 to 4. It provides:
 
 - private global Job storage with atomic state writes and per-Job locks;
 - metadata + physical work version classification;
@@ -66,7 +66,7 @@ The private `config.json` stores the platform origin, optional Token-file path, 
 
 Ordinary users should start in Codex or Claude Code, not in a terminal. Give the local Agent the copyable [first-install and acceptance prompt](docs/templates/AI-AGENT-ACCEPTANCE-PROMPT.md). The Agent reads the immutable [bootstrap procedure](docs/AI-AGENT-BOOTSTRAP.md), performs installation, setup, update checks, preflight, migration, diagnostics, and validation, then hands control to the installed managed Skill.
 
-The user intervenes only to type their own Token into a non-echoing local terminal prompt. The Token is never pasted into Agent chat or command arguments, and the Agent never opens the Token file. First-stage migration is no-save by default; creating a V5 case always requires separate authorization for the exact Job.
+The user intervenes only to type their own Token into a visible native macOS hidden-answer dialog owned by the Launcher. The Token is never pasted into Agent chat or command arguments, and the Agent never opens the Token file. Background PTYs and Agent-generated input scripts are forbidden. First-stage migration is no-save by default; creating a V5 case always requires separate authorization for the exact Job.
 
 After first installation, a user can simply ask the Agent to migrate a nid. The managed Skill will automatically check the current runtime and apply the Workflow's version, permission, diagnosis, repair, and save gates.
 
@@ -76,16 +76,16 @@ The commands below document what the Agent executes and remain available as a ma
 
 ```bash
 npm install --global \
-  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.3.6/ivx-v4-v5-migration-0.3.6.tgz
+  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.3.8/ivx-v4-v5-migration-0.3.8.tgz
 ```
 
 ```bash
-ivx-migrate setup --token-file "$HOME/.ivx-v4-v5/secrets/platform-token"
+ivx-migrate setup --prompt-token
 ivx-migrate doctor
 ivx-migrate update check
 ```
 
-`setup` validates and stores only the absolute Token-file path, installs and activates the latest signed Workflow and Converter, installs the managed Codex/Claude Agent adapters, and defaults the platform to `https://dev.ivx.cn`. The selected file must be a current-user-owned regular file with exact mode `0600` on macOS/Linux. Normal users never pass a converter path. An advanced deployment can use `ivx-migrate setup --platform-base-url https://other-origin.example.com`; later `setup` runs preserve existing overrides unless another value is supplied.
+On macOS, `setup --prompt-token` opens the Launcher's visible native secure-input dialog, atomically writes the validated value to the managed `0600` Token file under the private app home, and stores only its absolute path. `setup` then installs and activates the latest signed Workflow and Converter, installs the managed Codex/Claude Agent adapters, and defaults the platform to `https://dev.ivx.cn`. An advanced deployment can use `ivx-migrate setup --prompt-token --platform-base-url https://other-origin.example.com`; later `setup` runs preserve existing overrides unless another value is supplied. Existing advanced users may continue to supply a separately prepared `--token-file`, but it cannot be combined with `--prompt-token`.
 
 Run the offline non-writing workflow with the managed Converter:
 

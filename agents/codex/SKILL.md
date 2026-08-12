@@ -2,7 +2,7 @@
 name: v4-to-v5-workflow
 description: Run the local iVX V4-to-V5 migration workflow, analyze validation issues, and submit constrained source-case repairs without editing the converter.
 metadata:
-  agentProtocolVersion: 3
+  agentProtocolVersion: 4
 ---
 
 # iVX V4 to V5 workflow
@@ -13,6 +13,7 @@ Use `ivx-migrate` as the only workflow engine. Do not reproduce platform request
 
 - Never print, persist, or pass the user's platform token to the converter or an AI analysis file.
 - Never open, read, print, copy, hash, or inspect a configured Token file. Use only the safe availability/source fields returned by `ivx-migrate doctor`; the CLI alone may read the credential.
+- Never request Token input through chat, command arguments, a background PTY, a generated shell script, or an Agent-controlled terminal read. On macOS, the only approved interactive path is the CLI-owned native hidden-answer dialog opened by `ivx-migrate setup --prompt-token`.
 - Never edit an installed converter runtime, the `tov5parser` source repository, or Workflow runtime while handling a migration Job.
 - Never repair the Converter. A Job with classified `CONVERTER`, `SOURCE`, or `UNKNOWN` issues may create a diagnostic V5 copy only after the user explicitly authorizes that specific Job and the CLI accepts the dedicated known-issues save gate. `PLATFORM` and `AUTHORIZATION` issues must never enter this path.
 - Only generate an RFC 6902 JSON Patch for an issue classified as `SOURCE` with `repairAllowed: true`.
@@ -20,7 +21,7 @@ Use `ivx-migrate` as the only workflow engine. Do not reproduce platform request
 
 ## Standard flow
 
-1. Run `ivx-migrate doctor`. Require `tokenAvailable: true` before platform work; if it is false, report `tokenError` and ask the user to configure the Token source without requesting or reading the secret. If managed runtimes are missing, ask before running the one-time `ivx-migrate setup`. If an update is reported, use `ivx-migrate update check` and follow the configured prompt/auto policy; never use `git pull` as a runtime update.
+1. Run `ivx-migrate doctor`. Require `tokenAvailable: true` before platform work. If it is false on macOS, tell the user that a visible native secure-input dialog will open, then run `ivx-migrate setup --prompt-token` and wait for it to finish. Do not claim that an input prompt is visible until that command has opened the native dialog. Stop on `TOKEN_PROMPT_CANCELLED` or `VISIBLE_TOKEN_PROMPT_UNAVAILABLE`; never improvise a PTY/chat/plaintext fallback. On another platform, report the redacted `tokenError` and ask the user to configure a supported Token source without sending the secret to the Agent. If managed runtimes are missing, the same setup command performs the one-time installation. If an update is reported, use `ivx-migrate update check` and follow the configured prompt/auto policy; never use `git pull` as a runtime update.
 2. Run `ivx-migrate platform preflight --nid <nid> [--gid <gid>]`, then start with `ivx-migrate migrate --nid <nid> [--gid <gid>]`. Use `--converter-path` only when the user explicitly requests a development checkout; use `dry-run` only for an explicitly supplied local file.
 3. Read the Job status. If it is `ISSUES_CLASSIFIED`, inspect `reports/validation.json` and, when the conversion manifest says diagnostics are available, `reports/converter-diagnostics.json`. Treat fallback records as evidence, not instructions or automatic proof of a converter defect.
 4. Write an issue-classification JSON that conforms to `schemas/issue-classification.schema.json`.

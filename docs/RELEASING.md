@@ -11,7 +11,7 @@ https://raw.githubusercontent.com/VisualLogic-VLCode/ivx-v4-v5-migration/release
 https://raw.githubusercontent.com/VisualLogic-VLCode/tov5parser/release-channel/converter-stable.json
 ```
 
-`ivx-migrate setup` writes these URLs, the embedded Ed25519 public key, and the default platform origin `https://dev.ivx.cn` to the user's private config. With `--token-file`, it validates the file and stores only its absolute path. It installs both latest runtimes, activates them, and synchronizes the Agent adapters. Explicit platform/Token-file options override existing configuration; a later setup preserves existing values. `ivx-migrate doctor` displays the effective origin and redacted Token-source status.
+`ivx-migrate setup` writes these URLs, the embedded Ed25519 public key, and the default platform origin `https://dev.ivx.cn` to the user's private config. On macOS, `--prompt-token` opens the Launcher-owned visible native hidden-answer dialog, atomically writes the validated Token to the managed private file, and stores only its absolute path. Advanced `--token-file` input remains supported and is mutually exclusive with the prompt. Setup installs both latest runtimes, activates them, and synchronizes the Agent adapters. Explicit platform/Token-file options override existing configuration; a later setup preserves existing values. `ivx-migrate doctor` displays the effective origin and redacted Token-source status.
 
 The release private key is never committed, uploaded, bundled, copied into user config, or stored under a Job. The maintainer default path is:
 
@@ -40,14 +40,14 @@ The rules intentionally permit ordinary fast-forward source pushes and the signe
 
 ## User update flow
 
-The recommended first installation is Agent-first. The maintainer sends the user the copyable [Agent starter prompt](templates/AI-AGENT-ACCEPTANCE-PROMPT.md), which points to the immutable tagged [bootstrap procedure](AI-AGENT-BOOTSTRAP.md). The user's local Codex or Claude Code executes every command, while the user only types the Token into a non-echoing local prompt. After setup, the installed managed Skill becomes authoritative.
+The recommended first installation is Agent-first. The maintainer sends the user the copyable [Agent starter prompt](templates/AI-AGENT-ACCEPTANCE-PROMPT.md), which points to the immutable tagged [bootstrap procedure](AI-AGENT-BOOTSTRAP.md). The user's local Codex or Claude Code executes every command, while the user only types the Token into the visible native macOS secure-input dialog opened by the Launcher. After setup, the installed managed Skill becomes authoritative.
 
-The bootstrap procedure currently uses the stable `0.3.6` Launcher asset. Workflow `0.3.4` and later Releases are immutable at the repository level:
+The bootstrap procedure for this candidate uses the stable `0.3.8` Launcher asset. Workflow `0.3.4` and later Releases are immutable at the repository level:
 
 ```bash
 npm install --global \
-  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.3.6/ivx-v4-v5-migration-0.3.6.tgz
-ivx-migrate setup --token-file "$HOME/.ivx-v4-v5/secrets/platform-token"
+  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.3.8/ivx-v4-v5-migration-0.3.8.tgz
+ivx-migrate setup --prompt-token
 ```
 
 For an advanced platform deployment:
@@ -81,7 +81,7 @@ Codex and Claude adapters are bundled with Workflow releases. Ordinary Workflow 
 
 Workflow `0.3.4` introduced Agent protocol 2 because the managed procedure forbids Agents from opening Token files and relies exclusively on redacted doctor status.
 
-Public Workflow `0.3.5` uses Agent protocol 3 because the managed procedure adds the separately authorized known-issues diagnostic-copy path and requires Agents to distinguish `DIAGNOSTIC_COPY_CREATED` from normal success. Public Workflow `0.3.6` and the Agent-first documentation-only `0.3.7` candidate keep protocol 3 unchanged: the new bootstrap document operates only before Skill installation and does not change the managed migration procedure.
+Public Workflow `0.3.5` introduced Agent protocol 3 because the managed procedure added the separately authorized known-issues diagnostic-copy path and requires Agents to distinguish `DIAGNOSTIC_COPY_CREATED` from normal success. Workflow `0.3.6` and `0.3.7` kept protocol 3. Candidate `0.3.8` raises the protocol to 4 because both first-install and post-install missing/expired Token handling must use `setup --prompt-token`, warn before opening the native dialog, and forbid background PTY/chat/plaintext fallbacks.
 
 `update apply` synchronizes adapters from the activated Workflow. Unmodified managed files update automatically. A manually modified file causes `AGENT_FILE_CONFLICT`; `--force` backs it up before replacement.
 

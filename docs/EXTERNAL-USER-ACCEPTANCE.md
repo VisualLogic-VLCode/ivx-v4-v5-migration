@@ -4,10 +4,10 @@
 
 本轮公开基线（2026-08-12）：
 
-- 首次引导使用的稳定 Launcher：`0.3.6`
-- 本文发布后签名通道安装的 Workflow：`0.3.7`
+- 首次引导使用的稳定 Launcher：`0.3.8`
+- 本文发布后签名通道安装的 Workflow：`0.3.8`
 - Converter：`1.2.1`
-- Agent protocol：`3`
+- Agent protocol：`4`
 - 默认平台：`https://dev.ivx.cn`
 
 后续如稳定通道已经发布新版本，以签名通道和 `ivx-migrate doctor` 显示的当前版本为准，并在结果中记录实际版本。
@@ -34,7 +34,7 @@
 维护者让测试用户打开本机 Codex 或 Claude Code，把[外部测试 Agent 启动提示](templates/AI-AGENT-ACCEPTANCE-PROMPT.md)整段交给 Agent，并只替换两个 `nid`。提示中的不可变引导地址必须是：
 
 ```text
-https://raw.githubusercontent.com/VisualLogic-VLCode/ivx-v4-v5-migration/v0.3.7/docs/AI-AGENT-BOOTSTRAP.md
+https://raw.githubusercontent.com/VisualLogic-VLCode/ivx-v4-v5-migration/v0.3.8/docs/AI-AGENT-BOOTSTRAP.md
 ```
 
 测试用户不需要复制任何 `ivx-migrate` 命令。Agent 必须自行检查环境、执行安装、初始化、更新、预检、转换、诊断、验证和结果整理。下列命令仅用于验收者核对 Agent 的动作；应由 Agent 在测试用户本机执行：
@@ -42,36 +42,28 @@ https://raw.githubusercontent.com/VisualLogic-VLCode/ivx-v4-v5-migration/v0.3.7/
 ```bash
 node --version
 npm install --global \
-  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.3.6/ivx-v4-v5-migration-0.3.6.tgz
+  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.3.8/ivx-v4-v5-migration-0.3.8.tgz
 ivx-migrate version
 ```
 
 Node.js 必须是 `v20` 或更高版本。安装失败时 Agent 只记录错误码和错误信息，不发送完整用户目录或 npm 凭据配置，不自动使用 `sudo`，也不运行来源不明的安装脚本。
 
-## 3. Agent 创建私有文件，测试用户只输入 Token
+## 3. Agent 打开原生安全输入框，测试用户只输入 Token
 
-Agent 创建私有目录和空 Token 文件，并在本地终端启动隐藏输入。测试用户只输入自己的 Token，不手动执行命令。Agent 不得打开、读取、复制、打印、哈希或分析 Token 文件，也不得要求用户把 Token 发到聊天或命令参数。
+macOS 上，Agent 必须先说明“即将打开 iVX 原生安全输入框”，再执行以下命令并等待。测试用户只在该可见窗口输入自己的 Token，不手动执行命令。Agent 不得使用后台 PTY、终端 `read`、临时脚本、聊天或命令参数收集 Token，也不得打开、读取、复制、打印、哈希或分析 Token 文件。
 
-macOS / zsh：
+macOS：
 
 ```bash
-token_file="$HOME/.ivx-v4-v5/secrets/platform-token"
-install -d -m 700 "$(dirname "$token_file")"
-install -m 600 /dev/null "$token_file"
-read -rs "platform_token?请输入当前用户 Token: "
-printf '\n'
-printf '%s\n' "$platform_token" > "$token_file"
-unset platform_token
-chmod 600 "$token_file"
+ivx-migrate setup --prompt-token
 ```
 
-不要把 Token 写在聊天、命令参数、当前项目、验收结果或截图中。Windows 暂时使用 `IVX_MIGRATION_TOKEN` 环境变量；在 Windows Token 文件 ACL 契约完成前，不把 Unix `0600` 契约用于 Windows 验收。
+Launcher 会自行创建受管私有文件并继续初始化。用户取消或界面不可用时必须分别以 `TOKEN_PROMPT_CANCELLED`、`VISIBLE_TOKEN_PROMPT_UNAVAILABLE` 安全停止，不得换成不可见终端提示。不要把 Token 写在聊天、命令参数、当前项目、验收结果或截图中。其他平台暂使用已安全配置的受支持 Token 来源；在 Windows Token 文件 ACL 契约完成前，不把 Unix `0600` 契约用于 Windows 验收。
 
 ## 4. Agent 初始化、健康检查和更新检查
 
 ```bash
-ivx-migrate setup \
-  --token-file "$HOME/.ivx-v4-v5/secrets/platform-token"
+# macOS 的 setup 已由上一节完成
 ivx-migrate doctor
 ivx-migrate update check
 ```
@@ -106,7 +98,7 @@ ivx-migrate platform preflight --nid <GROUP_NID>
 
 安全停止规则：
 
-- `AUTH_FAILED`：测试用户在本机更新 Token 文件后可以重新预检一次，仍失败则停止；不要把 Token 发给维护者；
+- `AUTH_FAILED`：macOS 上由 Agent 再次执行 `setup --prompt-token`，测试用户只在原生安全输入框更新 Token，然后可以重新预检一次；仍失败则停止，不要把 Token 发给维护者；
 - `SOURCE_PERMISSION_DENIED` 或 `UNKNOWN_SERVER_POLICY`：只停止受影响的案例并提交结果，不尝试绕过权限；案例 A 不受影响时仍可继续；
 - Group 关系无法由平台权限结果确认：停止案例 B 并记录，不在本轮改传 `gid` 掩盖问题；
 - 任何未知平台错误：停止，不反复请求。
