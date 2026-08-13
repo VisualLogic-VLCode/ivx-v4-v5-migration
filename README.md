@@ -12,9 +12,9 @@ Public stable Workflow is `0.3.8`, with Agent protocol 4 and Converter `1.2.1`. 
 - versioned converter-process diagnostics with conservative save gating;
 - deterministic baseline validation and structured issue files;
 - bounded AI issue-classification and JSON Patch contracts;
-- signed Workflow/Converter release manifests, hash verification, installation, activation, and rollback foundations;
+- signed Workflow/Converter and optional independent Knowledge Runtime manifests, hash verification, installation, activation, and rollback foundations;
 - managed Codex and Claude Code Skill installation;
-- one-time public-channel setup plus unified Workflow/Converter/Agent updates;
+- one-time public-channel setup plus unified Workflow/Converter/Knowledge/Agent updates;
 - an editor-compatible binary work codec;
 - bearer-token metadata/load/config adapters with token redaction and strict `0600` Token-file support;
 - permission preflight, source revision checks, resumable Save As checkpoints, final nid rewrite, and post-save read-back verification;
@@ -24,7 +24,7 @@ Public stable Workflow is `0.3.8`, with Agent protocol 4 and Converter `1.2.1`. 
 
 Platform writes remain disabled by default. A verified save requires private config `platform.writeMode: "explicit"` and `--confirm-live-write SAVE_V5`. A Job with classified `CONVERTER`, `SOURCE`, or `UNKNOWN` issues may use the separate command and confirmation `SAVE_V5_WITH_KNOWN_ISSUES`; it finishes as `DIAGNOSTIC_COPY_CREATED`, never `SUCCEEDED`. `PLATFORM` and `AUTHORIZATION` issues remain ineligible. Non-owner group participants remain blocked as `UNKNOWN_SERVER_POLICY` until their deployment-specific server permission is verified.
 
-The source tree contains additive [Schema v2 development contracts](schemas/v2/README.md) for runtime review and repair. The closed environment field-policy registry, redacted Environment Manifest/Environment Gate evaluator, stable environment reader, narrow routing-binding adapter, independent Runtime Review Store, Human Finding continuation, and revision-drift reconciliation are implemented behind local APIs/tests. Review commands do not instantiate a platform adapter, and no existing migration/save policy is changed. Schema-v1 artifacts remain readable; any Job-state migration is an explicit, non-destructive copy rather than an in-place rewrite.
+The source tree contains additive [Schema v2 development contracts](schemas/v2/README.md) for runtime review and repair. The closed environment field-policy registry, redacted Environment Manifest/Environment Gate evaluator, stable environment reader, narrow routing-binding adapter, independent Runtime Review Store, Human Finding continuation, revision-drift reconciliation, and signed Knowledge Runtime consumer are implemented behind local APIs/tests. Review/Knowledge commands do not instantiate a platform adapter, and no existing migration/save policy is changed. Schema-v1 artifacts remain readable; any Job-state migration is an explicit, non-destructive copy rather than an in-place rewrite.
 
 ## Data location
 
@@ -38,6 +38,7 @@ Authoritative Job data defaults to:
 ├── locks/
 ├── workflows/
 ├── converters/
+├── knowledge/
 ├── agents/
 ├── secrets/
 └── current.json
@@ -90,7 +91,7 @@ ivx-migrate doctor
 ivx-migrate update check
 ```
 
-On macOS, `setup --prompt-token` opens the Launcher's visible native secure-input dialog, atomically writes the validated value to the managed `0600` Token file under the private app home, and stores only its absolute path. `setup` then installs and activates the latest signed Workflow and Converter, installs the managed Codex/Claude Agent adapters, and defaults the platform to `https://dev.ivx.cn`. An advanced deployment can use `ivx-migrate setup --prompt-token --platform-base-url https://other-origin.example.com`; later `setup` runs preserve existing overrides unless another value is supplied. Existing advanced users may continue to supply a separately prepared `--token-file`, but it cannot be combined with `--prompt-token`.
+On macOS, `setup --prompt-token` opens the Launcher's visible native secure-input dialog, atomically writes the validated value to the managed `0600` Token file under the private app home, and stores only its absolute path. `setup` then installs and activates the latest signed Workflow and Converter, installs the managed Codex/Claude Agent adapters, and defaults the platform to `https://dev.ivx.cn`. Once the independent Knowledge stable channel is published, it can be added with `--knowledge-manifest` and its own `--knowledge-public-key-file`; setup then installs all three compatible runtimes atomically. The current public 0.3.8 profile intentionally leaves Knowledge unconfigured rather than requesting an unpublished endpoint. Existing advanced users may continue to supply a separately prepared `--token-file`, but it cannot be combined with `--prompt-token`.
 
 Run the offline non-writing workflow with the managed Converter:
 
@@ -166,10 +167,25 @@ Update and rollback commands:
 ivx-migrate update check
 ivx-migrate update apply
 ivx-migrate update apply --kind converter
+ivx-migrate update apply --kind knowledge
 ivx-migrate rollback --kind converter
 ```
 
 The default policy prompts before updates. `auto` may be configured independently for Workflow, Converter, and Agent adapters. Managed Agent files are updated only when unmodified; `--force` creates a backup before replacement.
+
+## Knowledge Runtime consumer
+
+Knowledge is installed only from its configured signed stable channel. The outer Release artifact hash, package-internal manifest, exact file hashes, Knowledge Card schema, Workflow/Converter ranges, and Agent protocol range must all agree before one atomic activation. An unconfigured channel reports `NOT_CONFIGURED` for backward compatibility; a configured missing, revoked, corrupt, or incompatible runtime blocks new Jobs.
+
+Each new Job pins the active Knowledge version, artifact digest, content digest, and Schema version. Runtime Review Sessions inherit that exact pin. Bounded local search accepts only JSON paths, node types, AST operations, component methods, diagnostic codes, runtime errors, and behavior mismatches, and returns at most 20 minimal cards. Used rule IDs and redacted feedback are recorded locally; books, provenance corpora, maintenance sources, and repository state are not exposed to the Agent.
+
+```bash
+ivx-migrate knowledge status
+ivx-migrate knowledge search --review <reviewId> --file ./query.json --limit 5
+ivx-migrate knowledge feedback --review <reviewId> --file ./feedback.json
+```
+
+The Workflow can check, install, activate, list, and roll back Knowledge Releases. It deliberately refuses to sign or publish them; that responsibility belongs to the independent `ivx-v4-v5-knowledge` publisher.
 
 Maintainers prepare a signed GitHub Release locally without publishing it:
 
@@ -221,7 +237,7 @@ The workflow writes the bounded report to `reports/converter-diagnostics.json` a
 
 ## Update model
 
-Workflow and Converter releases are independently versioned. Repository immutable-release mode applies to newly published Releases; protected `v*` tags prevent deletion or history replacement, including for existing versions. Protected `main` and `release-channel` history rejects deletion and non-fast-forward updates. `setup` trusts the embedded Ed25519 public key and configures the two public `release-channel` manifests. The stable Launcher is installed once; `update apply` then updates the managed Workflow, Converter, and Agent adapters without another Git checkout or global npm installation. Signed manifests and runtime artifacts use bounded retries for transient network failures, while permanent HTTP failures remain immediate structured errors. A managed Job checks release policy before starting, verifies artifact hashes, installs into a new version directory, then atomically switches `current.json`. A Workflow change requests a command restart; a Converter change can be activated in the same invocation. Running Jobs keep their pinned versions.
+Workflow, Converter, and Knowledge releases are independently versioned. Repository immutable-release mode applies to newly published Releases; protected `v*` tags prevent deletion or history replacement, including for existing versions. Protected `main` and `release-channel` history rejects deletion and non-fast-forward updates. `setup` trusts the embedded Workflow/Converter key and may configure a separate Knowledge publisher key. The stable Launcher is installed once; `update apply` then updates compatible managed runtimes and Agent adapters without another Git checkout or global npm installation. Signed manifests and runtime artifacts use bounded retries for transient network failures, while permanent failures remain structured. Activation of a coordinated set is atomic; a Workflow change requests a command restart, while Converter/Knowledge changes do not rewrite pins held by existing Jobs or reviews.
 
 ## Safety boundary
 

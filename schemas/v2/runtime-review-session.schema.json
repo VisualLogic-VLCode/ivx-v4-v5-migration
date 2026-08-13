@@ -26,7 +26,18 @@
       "properties": {
         "workflow": { "$ref": "common.schema.json#/$defs/runtimePin" },
         "converter": { "$ref": "common.schema.json#/$defs/runtimePin" },
-        "knowledge": { "$ref": "common.schema.json#/$defs/runtimePin" }
+        "knowledge": {
+          "type": "object",
+          "required": ["version", "sha256", "contentSha256", "schemaVersion", "ruleIds"],
+          "properties": {
+            "version": { "type": "string" },
+            "sha256": { "$ref": "common.schema.json#/$defs/sha256" },
+            "contentSha256": { "$ref": "common.schema.json#/$defs/sha256" },
+            "schemaVersion": { "type": "integer", "minimum": 1 },
+            "ruleIds": { "$ref": "common.schema.json#/$defs/stringArray" }
+          },
+          "additionalProperties": false
+        }
       },
       "additionalProperties": false
     },

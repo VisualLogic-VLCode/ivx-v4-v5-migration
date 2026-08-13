@@ -15,6 +15,9 @@ test('config rejects persisted tokens and keeps secret values out of defaults', 
     assert.equal(config.platform.tokenEnv, 'IVX_MIGRATION_TOKEN');
     assert.equal(config.releaseManifests.workflow, null);
     assert.equal(config.releaseManifests.converter, null);
+    assert.equal(config.releaseManifests.knowledge, null);
+    assert.equal(config.releasePublicKeys.knowledge, null);
+    assert.equal(config.update.knowledgePolicy, 'prompt');
     assert.equal(config.update.agentPolicy, 'prompt');
     assert.equal(Object.hasOwn(config.platform, 'token'), false);
     assert.throws(() => saveConfig({ ...config, platform: { ...config.platform, token: 'secret' } }, paths), /must not be stored/);

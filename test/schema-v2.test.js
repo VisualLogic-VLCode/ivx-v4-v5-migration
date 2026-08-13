@@ -236,7 +236,7 @@ function reviewSession() {
     runtime: {
       workflow: { version: '0.4.0', sha256: HASH_A },
       converter: { version: '1.2.1', sha256: HASH_B },
-      knowledge: { version: '0.1.0', sha256: HASH_C },
+      knowledge: { version: '0.1.0', sha256: HASH_C, contentSha256: HASH_A, schemaVersion: 1, ruleIds: [] },
     },
     baseline: { sourceWorkId: 'source-work-1', targetWorkId: 'target-work-1' },
     activeCycleId: null,

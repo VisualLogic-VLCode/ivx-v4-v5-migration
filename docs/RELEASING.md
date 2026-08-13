@@ -1,6 +1,8 @@
 # Public runtime releases and user synchronization
 
-The stable Launcher, Workflow Runtime, Converter Runtime, and Agent protocol have separate responsibilities. Users install the Launcher once; they never update from a Git checkout.
+The stable Launcher, Workflow Runtime, Converter Runtime, independent Knowledge Runtime, and Agent protocol have separate responsibilities. Users install the Launcher once; they never update from a Git checkout.
+
+This repository does not publish Knowledge releases. Its consumer can install them, but its maintainer CLI refuses to sign or publish them. Knowledge publication belongs to the independent `ivx-v4-v5-knowledge` repository and signing key.
 
 ## Public channel
 
@@ -63,11 +65,12 @@ After that one-time bootstrap, users do not clone either repository and normally
 ivx-migrate update check
 ivx-migrate update apply
 ivx-migrate update apply --kind converter
+ivx-migrate update apply --kind knowledge
 ivx-migrate rollback --kind workflow
 ivx-migrate rollback --kind converter
 ```
 
-The default policy is `prompt`. With `auto`, a new runtime is downloaded, its signed descriptor and SHA-256 are verified, npm lifecycle scripts are disabled, and the installed directory is atomically activated. Manifest and artifact downloads retry bounded transient network/HTTP failures; permanent failures report a structured code and a query-free URL. Workflow activation requests a command restart. Converter activation may continue in the same invocation. Existing Jobs keep their pinned versions.
+The default policy is `prompt`. With `auto`, a new runtime is downloaded, its signed descriptor and SHA-256 are verified, npm lifecycle scripts are disabled, and a compatible runtime set is atomically activated. Knowledge additionally verifies its internal manifest, exact file hashes and cards. Manifest and artifact downloads retry bounded transient network/HTTP failures; permanent failures report a structured code and a query-free URL. Workflow activation requests a command restart. Converter/Knowledge activation may continue in the same invocation. Existing Jobs and reviews keep their pinned versions.
 
 Normal migrations resolve the active Converter from `~/.ivx-v4-v5/current.json`. `--converter-path` is only a development override.
 

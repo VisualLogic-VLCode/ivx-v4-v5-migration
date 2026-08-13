@@ -5,7 +5,7 @@
   "required": ["schemaVersion", "kind", "channel", "latest", "versions"],
   "properties": {
     "schemaVersion": { "const": 1 },
-    "kind": { "enum": ["workflow", "converter"] },
+    "kind": { "enum": ["workflow", "converter", "knowledge"] },
     "channel": { "enum": ["stable", "canary"] },
     "latest": { "type": "string" },
     "minimumSupported": { "type": ["string", "null"] },
@@ -23,6 +23,17 @@
           "packageName": { "type": "string" },
           "compatibleWorkflow": { "type": ["string", "null"] },
           "compatibleConverter": { "type": ["string", "null"] },
+          "compatibleAgentProtocol": {
+            "type": ["object", "null"],
+            "required": ["min", "max"],
+            "properties": {
+              "min": { "type": "integer", "minimum": 1 },
+              "max": { "type": "integer", "minimum": 1 }
+            },
+            "additionalProperties": false
+          },
+          "knowledgeSchemaVersion": { "type": ["integer", "null"] },
+          "contentSha256": { "type": ["string", "null"], "pattern": "^[0-9a-f]{64}$" },
           "agentProtocolVersion": { "type": ["integer", "null"] },
           "jobSchemaVersion": { "type": ["integer", "null"] },
           "capabilities": { "type": "object" },

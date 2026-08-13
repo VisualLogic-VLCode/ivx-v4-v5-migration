@@ -48,6 +48,17 @@ export {
   resolveEnvironmentFieldPolicy,
 } from './environment/field-policy.js';
 export { evaluateEnvironmentGate } from './environment/environment-gate.js';
+export {
+  computeKnowledgeContentSha256,
+  KNOWLEDGE_CARD_STATUSES,
+  KNOWLEDGE_QUERY_FIELDS,
+  KNOWLEDGE_SCHEMA_VERSION,
+  validateKnowledgeCard,
+  validateKnowledgeManifest,
+  validateKnowledgePackage,
+  validateKnowledgeQuery,
+} from './knowledge/contracts.js';
+export { createKnowledgePin, KnowledgeRuntime } from './knowledge/runtime.js';
 export { classifyCaseVersion, classifyMetadataVersion, scanWorkVersionSignals } from './workflow/version-classifier.js';
 export { LocalConverterProvider } from './converter/local-provider.js';
 export { validateConvertedCase } from './validation/basic-validator.js';
@@ -58,3 +69,4 @@ export { inspectPlatformToken, normalizeTokenFilePath, readPlatformTokenFile, re
 export { SAVE_INTENTS, SaveAsOrchestrator, prepareInitialSaveAsWork, rewriteCaseNidForFinalSave } from './platform/save-as-orchestrator.js';
 export { AgentInstaller } from './agents/installer.js';
 export { UpdateManager } from './releases/update-manager.js';
+export { assertRuntimeSet, runtimeSetFromCurrent } from './releases/runtime-compatibility.js';

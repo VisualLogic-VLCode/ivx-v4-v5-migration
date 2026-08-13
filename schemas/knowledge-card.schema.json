@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "iVX V4-to-V5 Knowledge Card",
+  "type": "object",
+  "required": ["schemaVersion", "ruleId", "version", "topic", "status", "match", "sourcePattern", "targetInvariant", "exceptions", "evidence", "permissions"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "ruleId": { "type": "string" },
+    "version": { "type": "integer", "minimum": 1 },
+    "topic": { "type": "string" },
+    "status": { "enum": ["CONFIRMED", "PENDING_RUNTIME", "ADVISORY_ONLY", "EXECUTABLE_REPAIR"] },
+    "match": { "type": "object" },
+    "sourcePattern": { "type": "string" },
+    "targetInvariant": { "type": "string" },
+    "exceptions": { "type": "array", "items": { "type": "string" } },
+    "evidence": { "type": "object" },
+    "permissions": { "type": "object" }
+  },
+  "additionalProperties": false
+}

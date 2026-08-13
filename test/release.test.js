@@ -81,3 +81,34 @@ test('maintainer CLI signs a release payload without exposing the private key', 
     fs.rmSync(temporary, { recursive: true, force: true });
   }
 });
+
+test('Workflow maintainer CLI refuses to sign an independent Knowledge Release', () => {
+  const { privateKey } = crypto.generateKeyPairSync('ed25519');
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'ivx-knowledge-sign-refusal-'));
+  try {
+    const payloadFile = path.join(temporary, 'payload.json');
+    const keyFile = path.join(temporary, 'private.pem');
+    fs.writeFileSync(payloadFile, JSON.stringify({
+      ...payload(),
+      kind: 'knowledge',
+      versions: {
+        '2.8.2': {
+          ...payload().versions['2.8.2'],
+          compatibleConverter: '>=1.0.0 <2.0.0',
+          compatibleAgentProtocol: { min: 4, max: 4 },
+          knowledgeSchemaVersion: 1,
+          contentSha256: 'b'.repeat(64),
+        },
+      },
+    }));
+    fs.writeFileSync(keyFile, privateKey.export({ type: 'pkcs8', format: 'pem' }), { mode: 0o600 });
+    const result = spawnSync(process.execPath, [
+      path.resolve(import.meta.dirname, '..', 'bin', 'ivx-migrate.js'),
+      'release', 'sign', '--payload', payloadFile, '--private-key', keyFile, '--output', path.join(temporary, 'output.json'),
+    ], { env: { ...process.env, IVX_MIGRATION_HOME: path.join(temporary, 'home') }, encoding: 'utf8' });
+    assert.notEqual(result.status, 0);
+    assert.equal(JSON.parse(result.stderr).code, 'KNOWLEDGE_PUBLICATION_OUT_OF_SCOPE');
+  } finally {
+    fs.rmSync(temporary, { recursive: true, force: true });
+  }
+});

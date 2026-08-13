@@ -10,6 +10,7 @@ import { WorkflowError, invariant } from './errors.js';
 import { diagnosticOwnerBucket, issueAutoRepairAllowed, issueCause } from './contracts/compatibility.js';
 import { readJson, sha256File, writePrivateJson } from './fs/secure-json.js';
 import { JobStore } from './jobs/job-store.js';
+import { KnowledgeRuntime } from './knowledge/runtime.js';
 import { createAppPaths, resolveAppHome } from './paths.js';
 import { RuntimeReviewStore } from './reviews/review-store.js';
 import { IvxPlatformAdapter, normalizePlatformBaseUrl } from './platform/http-adapter.js';
@@ -21,6 +22,7 @@ import { createSignedReleaseEnvelope, loadReleaseEnvelope } from './releases/rel
 import { evaluateRelease } from './releases/release-policy.js';
 import { RuntimeRegistry } from './releases/runtime-registry.js';
 import { UpdateManager } from './releases/update-manager.js';
+import { assertRuntimeSet, runtimeSetFromCurrent } from './releases/runtime-compatibility.js';
 import { performUpdatePreflight } from './releases/update-preflight.js';
 import { validateConvertedCase } from './validation/basic-validator.js';
 import { mergeConverterDiagnostics } from './validation/converter-diagnostics.js';
@@ -83,6 +85,17 @@ function agentProtocolVersion(workflow = null) {
   return workflow?.compatibility?.agentProtocolVersion || AGENT_PROTOCOL_VERSION;
 }
 
+function knowledgePin(descriptor) {
+  if (!descriptor) return null;
+  return {
+    version: descriptor.version,
+    sha256: descriptor.artifactSha256,
+    contentSha256: descriptor.contentSha256,
+    schemaVersion: descriptor.knowledgeSchemaVersion,
+    ruleIds: [],
+  };
+}
+
 function agentStatus(context, workflow = context.registry.readCurrent().workflow) {
   return runtimeAgentInstaller(context, workflow).status({
     protocolVersion: agentProtocolVersion(workflow),
@@ -140,6 +153,7 @@ async function loadConverterForJob(options, context) {
     installer: context.installer,
     workflowVersion: activeWorkflowVersion,
     converterVersion: converterDescriptor.version,
+    agentProtocolVersion: agentProtocolVersion(context.registry.readCurrent().workflow),
     allowCurrent: Boolean(options['use-current']),
   });
   const activatedConverter = context.registry.readCurrent().converter;
@@ -281,6 +295,7 @@ async function runDryRun(options, context) {
       packageName: packageJson.name,
     },
     converterRuntime: converterDescriptor,
+    knowledgeRuntime: knowledgePin(context.registry.readCurrent().knowledge),
   });
   let state = context.jobs.transition(job.jobId, 'UPDATE_CHECKED', {
     reason: 'local-file-dry-run',
@@ -357,6 +372,7 @@ async function runPlatformMigration(options, context) {
     workspaceReference: Boolean(options['workspace-ref']),
     workflowRuntime: { version: packageJson.version, packageName: packageJson.name },
     converterRuntime: converterDescriptor,
+    knowledgeRuntime: knowledgePin(context.registry.readCurrent().knowledge),
   });
   let state = context.jobs.transition(job.jobId, 'UPDATE_CHECKED', {
     reason: 'platform-update-preflight-complete',
@@ -458,6 +474,7 @@ async function handleJob(positionals, options, context) {
       gid: options.gid,
       workflowRuntime: current.workflow,
       converterRuntime: current.converter,
+      knowledgeRuntime: knowledgePin(current.knowledge),
       workspaceReference: Boolean(options['workspace-ref']),
     });
   }
@@ -583,19 +600,69 @@ async function handleReview(positionals, options, context) {
   throw new WorkflowError('CLI_COMMAND_UNKNOWN', `Unknown review action: ${action || ''}`);
 }
 
+function pinnedKnowledgeForOwner(options, context) {
+  invariant(Boolean(options.job) !== Boolean(options.review), 'CLI_ARGUMENT_REQUIRED', 'Exactly one of --job or --review is required');
+  if (options.job) {
+    const job = context.jobs.load(options.job);
+    invariant(job.runtime?.knowledge, 'KNOWLEDGE_PIN_REQUIRED', 'Job does not pin a Knowledge Runtime');
+    return { type: 'job', id: options.job, pin: job.runtime.knowledge };
+  }
+  const review = context.reviews.load(options.review);
+  return { type: 'review', id: options.review, pin: review.runtime.knowledge };
+}
+
+async function handleKnowledge(positionals, options, context) {
+  const action = positionals[1];
+  if (action === 'status') {
+    return {
+      current: context.registry.readCurrent().knowledge,
+      installed: context.registry.list('knowledge'),
+    };
+  }
+  if (action === 'search') {
+    const owner = pinnedKnowledgeForOwner(options, context);
+    const result = context.knowledge.search(readRequiredJson(options.file, 'query'), {
+      pin: owner.pin,
+      limit: options.limit === undefined ? 5 : Number(options.limit),
+    });
+    if (owner.type === 'review') context.reviews.recordKnowledgeUsage(owner.id, result);
+    else {
+      context.jobs.writeArtifact(owner.id, `reports/knowledge/usage-${result.queryDigest}.json`, {
+        schemaVersion: 1,
+        kind: 'knowledge-usage',
+        jobId: owner.id,
+        runtime: { version: owner.pin.version, contentSha256: owner.pin.contentSha256, schemaVersion: owner.pin.schemaVersion },
+        queryDigest: result.queryDigest,
+        ruleIds: result.cards.map((card) => card.ruleId),
+        recordedAt: new Date().toISOString(),
+        sensitivity: 'REDACTED',
+      });
+    }
+    return result;
+  }
+  if (action === 'feedback') {
+    invariant(options.review, 'CLI_ARGUMENT_REQUIRED', '--review is required');
+    const review = context.reviews.load(options.review);
+    const report = context.knowledge.createFeedback(readRequiredJson(options.file, 'feedback'), { pin: review.runtime.knowledge });
+    return context.reviews.writeKnowledgeFeedback(options.review, report);
+  }
+  throw new WorkflowError('CLI_COMMAND_UNKNOWN', `Unknown knowledge action: ${action || ''}`);
+}
+
 function createUpdateManager(context) {
   return new UpdateManager({
     config: context.config,
     registry: context.registry,
     installer: context.installer,
     bundledWorkflowVersion: packageJson.version,
+    bundledAgentProtocolVersion: AGENT_PROTOCOL_VERSION,
   });
 }
 
 function selectedRuntimeKinds(options) {
-  if (!options.kind) return ['workflow', 'converter'];
+  if (!options.kind) return ['workflow', 'converter', 'knowledge'];
   const kinds = String(options.kind).split(',').map((value) => value.trim()).filter(Boolean);
-  invariant(kinds.length > 0, 'CLI_ARGUMENT_INVALID', '--kind must name workflow, converter, or both');
+  invariant(kinds.length > 0, 'CLI_ARGUMENT_INVALID', '--kind must name workflow, converter, knowledge, or a comma-separated combination');
   return kinds;
 }
 
@@ -609,6 +676,9 @@ async function handleSetup(options, context) {
   const publicKeyPem = options['public-key-file']
     ? fs.readFileSync(path.resolve(options['public-key-file']), 'utf8')
     : PUBLIC_RELEASE_PROFILE.publicKeyPem;
+  const knowledgePublicKeyPem = options['knowledge-public-key-file']
+    ? fs.readFileSync(path.resolve(options['knowledge-public-key-file']), 'utf8')
+    : context.config.releasePublicKeys.knowledge;
   const runtimePolicy = options['update-policy'] || context.config.update.workflowPolicy || 'prompt';
   const agentPolicy = options['agent-policy'] || context.config.update.agentPolicy || 'prompt';
   const requestedPlatformBaseUrl = options['platform-base-url']
@@ -633,14 +703,20 @@ async function handleSetup(options, context) {
     releaseManifests: {
       workflow: options['workflow-manifest'] || PUBLIC_RELEASE_PROFILE.manifests.workflow,
       converter: options['converter-manifest'] || PUBLIC_RELEASE_PROFILE.manifests.converter,
+      knowledge: options['knowledge-manifest'] || context.config.releaseManifests.knowledge || PUBLIC_RELEASE_PROFILE.manifests.knowledge || null,
     },
     releasePublicKeyPem: publicKeyPem,
+    releasePublicKeys: {
+      ...context.config.releasePublicKeys,
+      knowledge: knowledgePublicKeyPem,
+    },
     allowUnsignedLocalManifests: optionBoolean(options['allow-unsigned-local'], false),
     update: {
       ...context.config.update,
       channel: PUBLIC_RELEASE_PROFILE.channel,
       workflowPolicy: runtimePolicy,
       converterPolicy: runtimePolicy,
+      knowledgePolicy: runtimePolicy,
       agentPolicy,
     },
     platform: {
@@ -664,6 +740,9 @@ async function handleSetup(options, context) {
     appHome: context.appHome,
     releaseManifests: config.releaseManifests,
     publicKeyFingerprintSha256: crypto.createHash('sha256').update(publicKeyPem).digest('hex'),
+    knowledgePublicKeyFingerprintSha256: knowledgePublicKeyPem
+      ? crypto.createHash('sha256').update(knowledgePublicKeyPem).digest('hex')
+      : null,
     update: config.update,
     platform: {
       baseUrl: config.platform.baseUrl,
@@ -708,7 +787,7 @@ async function handleUpdate(positionals, options, context) {
   if (action === 'rollback') {
     const kinds = selectedRuntimeKinds(options);
     invariant(kinds.length === 1, 'CLI_ARGUMENT_INVALID', 'update rollback requires exactly one --kind');
-    const current = context.registry.rollback(kinds[0]);
+    const current = await createUpdateManager(context).rollback(kinds[0]);
     return { kind: kinds[0], current, restartRequired: kinds[0] === 'workflow' };
   }
   throw new WorkflowError('CLI_COMMAND_UNKNOWN', `Unknown update action: ${action}`);
@@ -721,6 +800,7 @@ async function handleRelease(positionals, options, context) {
     invariant(options['private-key'], 'CLI_ARGUMENT_REQUIRED', '--private-key is required');
     invariant(options.output, 'CLI_ARGUMENT_REQUIRED', '--output is required');
     const payload = readRequiredJson(options.payload, 'payload');
+    invariant(payload.kind !== 'knowledge', 'KNOWLEDGE_PUBLICATION_OUT_OF_SCOPE', 'Knowledge Releases are signed and published only by the independent knowledge publisher');
     const privateKeyPem = fs.readFileSync(path.resolve(options['private-key']), 'utf8');
     const outputPath = path.resolve(options.output);
     const envelope = createSignedReleaseEnvelope(payload, privateKeyPem);
@@ -733,13 +813,18 @@ async function handleRelease(positionals, options, context) {
     };
   }
   const kind = options.kind;
-  invariant(['workflow', 'converter'].includes(kind), 'CLI_ARGUMENT_REQUIRED', '--kind must be workflow or converter');
+  invariant(['workflow', 'converter', 'knowledge'].includes(kind), 'CLI_ARGUMENT_REQUIRED', '--kind must be workflow, converter, or knowledge');
   if (action === 'list') return { kind, installed: context.registry.list(kind), current: context.registry.readCurrent()[kind] };
-  if (action === 'activate') return context.registry.activate(kind, options.version);
-  if (action === 'rollback') return context.registry.rollback(kind);
+  if (action === 'activate') {
+    const descriptor = context.registry.descriptor(kind, options.version);
+    invariant(descriptor, 'RUNTIME_NOT_INSTALLED', `${kind} ${options.version} is not installed`);
+    assertRuntimeSet(runtimeSetFromCurrent(context.registry.readCurrent(), { [kind]: descriptor }));
+    return context.registry.activate(kind, options.version);
+  }
+  if (action === 'rollback') return createUpdateManager(context).rollback(kind);
   const location = options.manifest || context.config.releaseManifests?.[kind] || context.config.releaseManifestUrl;
   const envelope = await loadReleaseEnvelope(location, {
-    publicKeyPem: context.config.releasePublicKeyPem,
+    publicKeyPem: context.config.releasePublicKeys?.[kind] || context.config.releasePublicKeyPem,
     allowUnsignedLocal: context.config.allowUnsignedLocalManifests,
   });
   invariant(envelope.payload.kind === kind, 'INVALID_RELEASE_MANIFEST', `Manifest kind ${envelope.payload.kind} does not match ${kind}`);
@@ -749,7 +834,16 @@ async function handleRelease(positionals, options, context) {
     currentVersion: current[kind]?.version,
     workflowVersion: current.workflow?.version || packageJson.version,
   });
-  if (action === 'check') return { signed: envelope.signed, evaluation };
+  if (action === 'check') {
+    const descriptor = envelope.payload.versions[evaluation.latest];
+    assertRuntimeSet(runtimeSetFromCurrent(current, { [kind]: { ...descriptor, kind, version: evaluation.latest, compatibility: {
+      workflow: descriptor.compatibleWorkflow || null,
+      converter: descriptor.compatibleConverter || null,
+      agentProtocol: descriptor.compatibleAgentProtocol || null,
+      agentProtocolVersion: descriptor.agentProtocolVersion || null,
+    } } }));
+    return { signed: envelope.signed, evaluation };
+  }
   if (action === 'install') {
     const version = options.version || envelope.payload.latest;
     const descriptor = envelope.payload.versions[version];
@@ -774,6 +868,7 @@ export async function runCli(argv, dependencies = {}) {
     registry,
     jobs,
     reviews: new RuntimeReviewStore(appPaths, { jobs }),
+    knowledge: new KnowledgeRuntime({ registry }),
     installer: new ArtifactInstaller({ appPaths, registry }),
     promptPlatformToken: dependencies.promptPlatformToken || promptAndPersistPlatformToken,
   };
@@ -802,6 +897,7 @@ export async function runCli(argv, dependencies = {}) {
       tokenError: tokenStatus.error,
       workflow: current.workflow || { packageName: packageJson.name, version: packageJson.version, bundled: true },
       converter: current.converter,
+      knowledge: current.knowledge,
       update: config.update,
       releaseManifests: config.releaseManifests,
       agents: agentStatus(context, current.workflow),
@@ -815,6 +911,7 @@ export async function runCli(argv, dependencies = {}) {
     result = saveConfig(DEFAULT_CONFIG, appPaths);
   } else if (command === 'job') result = await handleJob(positionals, options, context);
   else if (command === 'review') result = await handleReview(positionals, options, context);
+  else if (command === 'knowledge') result = await handleKnowledge(positionals, options, context);
   else if (command === 'classify') {
     result = classifyCaseVersion({
       metadata: options.metadata ? readRequiredJson(options.metadata, 'metadata') : {},
@@ -841,10 +938,10 @@ export async function runCli(argv, dependencies = {}) {
     result = {
       usage: [
         'ivx-migrate doctor',
-        'ivx-migrate setup [--platform-base-url https://dev.ivx.cn] [--prompt-token | --token-file <0600-file>]',
+        'ivx-migrate setup [--platform-base-url https://dev.ivx.cn] [--prompt-token | --token-file <0600-file>] [--knowledge-manifest <signed-channel> --knowledge-public-key-file <key.pem>]',
         'ivx-migrate update check',
-        'ivx-migrate update apply [--kind workflow|converter] [--force]',
-        'ivx-migrate rollback --kind workflow|converter',
+        'ivx-migrate update apply [--kind workflow|converter|knowledge] [--force]',
+        'ivx-migrate rollback --kind workflow|converter|knowledge',
         'ivx-migrate dry-run --input <app.json> --nid <nid> [--converter-path <development-package>] [--metadata <json>]',
         'ivx-migrate platform preflight --nid <nid> [--gid <gid>] [--token-file <0600-file>]',
         'ivx-migrate migrate --nid <nid> [--gid <gid>] [--token-file <0600-file>] [--converter-path <development-package>] [--save --confirm-live-write SAVE_V5]',
@@ -860,8 +957,11 @@ export async function runCli(argv, dependencies = {}) {
         'ivx-migrate review finding-list --review <reviewId>',
         'ivx-migrate review observe-revision --review <reviewId> --work-id <workId> --target-file <target-readback.json>',
         'ivx-migrate review accept-baseline --review <reviewId> --observation <observationId> --finding <findingId>',
+        'ivx-migrate knowledge status',
+        'ivx-migrate knowledge search (--job <jobId> | --review <reviewId>) --file <bounded-query.json> [--limit 5]',
+        'ivx-migrate knowledge feedback --review <reviewId> --file <feedback.json>',
         'ivx-migrate release sign --payload <payload.json> --private-key <key.pem> --output <manifest.json>',
-        'ivx-migrate release check|install|list|activate|rollback --kind workflow|converter',
+        'ivx-migrate release check|install|list|activate|rollback --kind workflow|converter|knowledge',
         'ivx-migrate agents status',
         'ivx-migrate agents sync [--force]',
       ],

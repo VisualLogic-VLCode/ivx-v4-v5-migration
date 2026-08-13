@@ -9,13 +9,20 @@ export const DEFAULT_CONFIG = Object.freeze({
   releaseManifests: {
     workflow: null,
     converter: null,
+    knowledge: null,
   },
   releasePublicKeyPem: null,
+  releasePublicKeys: {
+    workflow: null,
+    converter: null,
+    knowledge: null,
+  },
   allowUnsignedLocalManifests: false,
   update: {
     channel: 'stable',
     workflowPolicy: 'prompt',
     converterPolicy: 'prompt',
+    knowledgePolicy: 'prompt',
     agentPolicy: 'prompt',
     checkIntervalHours: 24,
   },
@@ -51,7 +58,12 @@ function mergeConfig(base, value) {
 }
 
 export function validateConfig(config) {
-  for (const key of ['workflowPolicy', 'converterPolicy', 'agentPolicy']) {
+  for (const kind of ['workflow', 'converter', 'knowledge']) {
+    if (config.releasePublicKeys?.[kind] !== null && typeof config.releasePublicKeys?.[kind] !== 'string') {
+      throw new WorkflowError('INVALID_CONFIG', `releasePublicKeys.${kind} must be null or a PEM string`);
+    }
+  }
+  for (const key of ['workflowPolicy', 'converterPolicy', 'knowledgePolicy', 'agentPolicy']) {
     if (!UPDATE_POLICIES.has(config.update?.[key])) {
       throw new WorkflowError(
         'INVALID_CONFIG',

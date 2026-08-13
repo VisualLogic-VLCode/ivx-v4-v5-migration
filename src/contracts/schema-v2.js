@@ -707,6 +707,15 @@ function validateRuntimePin(pin, path) {
   sha256(pin.sha256, `${path}.sha256`);
 }
 
+function validateKnowledgeRuntimePin(pin, path) {
+  exactKeys(pin, ['version', 'sha256', 'contentSha256', 'schemaVersion', 'ruleIds'], ['version', 'sha256', 'contentSha256', 'schemaVersion', 'ruleIds'], path);
+  string(pin.version, `${path}.version`, { max: 128 });
+  sha256(pin.sha256, `${path}.sha256`);
+  sha256(pin.contentSha256, `${path}.contentSha256`);
+  integer(pin.schemaVersion, `${path}.schemaVersion`, { min: 1, max: 1000 });
+  uniqueStrings(pin.ruleIds, `${path}.ruleIds`, { max: 2000 });
+}
+
 export function validateRuntimeReviewSession(document) {
   schemaHeader(document, 'runtime-review-session');
   exactKeys(document,
@@ -723,7 +732,7 @@ export function validateRuntimeReviewSession(document) {
   exactKeys(document.runtime, ['workflow', 'converter', 'knowledge'], ['workflow', 'converter', 'knowledge'], '$.runtime');
   validateRuntimePin(document.runtime.workflow, '$.runtime.workflow');
   validateRuntimePin(document.runtime.converter, '$.runtime.converter');
-  validateRuntimePin(document.runtime.knowledge, '$.runtime.knowledge');
+  validateKnowledgeRuntimePin(document.runtime.knowledge, '$.runtime.knowledge');
   exactKeys(document.baseline, ['sourceWorkId', 'targetWorkId'], ['sourceWorkId', 'targetWorkId'], '$.baseline');
   string(document.baseline.sourceWorkId, '$.baseline.sourceWorkId', { max: 256 });
   string(document.baseline.targetWorkId, '$.baseline.targetWorkId', { max: 256 });

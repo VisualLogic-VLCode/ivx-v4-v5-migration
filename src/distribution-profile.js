@@ -6,6 +6,7 @@ export const PUBLIC_RELEASE_PROFILE = Object.freeze({
   manifests: Object.freeze({
     workflow: 'https://raw.githubusercontent.com/VisualLogic-VLCode/ivx-v4-v5-migration/release-channel/workflow-stable.json',
     converter: 'https://raw.githubusercontent.com/VisualLogic-VLCode/tov5parser/release-channel/converter-stable.json',
+    knowledge: null,
   }),
   publicKeyPem: `-----BEGIN PUBLIC KEY-----
 MCowBQYDK2VwAyEA6t8vbBbJaD2ZXVvTRZLu/fmgdsMULwFKgypilnLQ2z8=

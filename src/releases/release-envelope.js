@@ -20,11 +20,25 @@ async function readLocation(location) {
 
 function validateReleasePayload(payload) {
   invariant(payload?.schemaVersion === 1, 'INVALID_RELEASE_MANIFEST', 'Release payload schemaVersion must be 1');
-  invariant(['workflow', 'converter'].includes(payload.kind), 'INVALID_RELEASE_MANIFEST', 'Release payload kind must be workflow or converter');
+  invariant(['workflow', 'converter', 'knowledge'].includes(payload.kind), 'INVALID_RELEASE_MANIFEST', 'Release payload kind must be workflow, converter, or knowledge');
   invariant(typeof payload.channel === 'string' && payload.channel, 'INVALID_RELEASE_MANIFEST', 'Release channel is required');
   invariant(typeof payload.latest === 'string' && payload.latest, 'INVALID_RELEASE_MANIFEST', 'Release latest version is required');
   invariant(payload.versions && typeof payload.versions === 'object', 'INVALID_RELEASE_MANIFEST', 'Release versions map is required');
   invariant(payload.versions[payload.latest], 'INVALID_RELEASE_MANIFEST', 'Latest release descriptor is missing');
+  for (const [version, descriptor] of Object.entries(payload.versions)) {
+    invariant(descriptor && typeof descriptor === 'object' && !Array.isArray(descriptor), 'INVALID_RELEASE_MANIFEST', `Release descriptor ${version} must be an object`);
+    invariant(typeof descriptor.packageName === 'string' && descriptor.packageName, 'INVALID_RELEASE_MANIFEST', `Release descriptor ${version} packageName is required`);
+    invariant(/^https:\/\//i.test(descriptor.artifact?.url || '') || /^(?:file:\/\/|\/|\.)/.test(descriptor.artifact?.url || ''), 'INVALID_RELEASE_MANIFEST', `Release descriptor ${version} artifact URL is invalid`);
+    invariant(/^[0-9a-f]{64}$/.test(descriptor.artifact?.sha256 || ''), 'INVALID_RELEASE_MANIFEST', `Release descriptor ${version} artifact SHA-256 is invalid`);
+    if (payload.kind === 'knowledge') {
+      invariant(descriptor.knowledgeSchemaVersion === 1, 'INVALID_RELEASE_MANIFEST', `Knowledge descriptor ${version} schema version is unsupported`);
+      invariant(/^[0-9a-f]{64}$/.test(descriptor.contentSha256 || ''), 'INVALID_RELEASE_MANIFEST', `Knowledge descriptor ${version} content SHA-256 is invalid`);
+      invariant(typeof descriptor.compatibleWorkflow === 'string' && descriptor.compatibleWorkflow, 'INVALID_RELEASE_MANIFEST', `Knowledge descriptor ${version} compatibleWorkflow is required`);
+      invariant(typeof descriptor.compatibleConverter === 'string' && descriptor.compatibleConverter, 'INVALID_RELEASE_MANIFEST', `Knowledge descriptor ${version} compatibleConverter is required`);
+      invariant(Number.isSafeInteger(descriptor.compatibleAgentProtocol?.min) && Number.isSafeInteger(descriptor.compatibleAgentProtocol?.max), 'INVALID_RELEASE_MANIFEST', `Knowledge descriptor ${version} Agent protocol range is required`);
+      invariant(descriptor.compatibleAgentProtocol.max >= descriptor.compatibleAgentProtocol.min, 'INVALID_RELEASE_MANIFEST', `Knowledge descriptor ${version} Agent protocol range is invalid`);
+    }
+  }
   return payload;
 }
 

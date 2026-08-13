@@ -7,6 +7,8 @@ import { WorkflowError, invariant } from '../errors.js';
 import { ensurePrivateDir, sha256File, writePrivateJson } from '../fs/secure-json.js';
 import { fetchBytes } from './http-fetch.js';
 import { RuntimeRegistry } from './runtime-registry.js';
+import { validateKnowledgePackage } from '../knowledge/contracts.js';
+import { assertRuntimeSet, runtimeSetFromCurrent } from './runtime-compatibility.js';
 
 async function downloadArtifact(location, target) {
   if (/^https:\/\//i.test(location)) {
@@ -41,7 +43,10 @@ export class ArtifactInstaller {
     const existing = this.registry.descriptor(kind, version);
     if (existing) {
       invariant(existing.artifactSha256 === descriptor.artifact.sha256, 'RUNTIME_INTEGRITY_FAILED', 'Installed runtime hash differs from the release descriptor');
-      if (activate) this.registry.activate(kind, version);
+      if (activate) {
+        assertRuntimeSet(runtimeSetFromCurrent(this.registry.readCurrent(), { [kind]: existing }));
+        this.registry.activate(kind, version);
+      }
       return existing;
     }
 
@@ -73,6 +78,9 @@ export class ArtifactInstaller {
         expected: version,
         actual: packageJson.version,
       });
+      const knowledge = kind === 'knowledge'
+        ? validateKnowledgePackage(packageRoot, descriptor, version)
+        : null;
       const temporaryTarget = `${target}.installing-${nonce}`;
       fs.cpSync(packageRoot, temporaryTarget, { recursive: true, errorOnExist: true });
       const installed = {
@@ -88,12 +96,21 @@ export class ArtifactInstaller {
           converter: descriptor.compatibleConverter || null,
           agentProtocolVersion: descriptor.agentProtocolVersion || null,
           jobSchemaVersion: descriptor.jobSchemaVersion || null,
+          agentProtocol: descriptor.compatibleAgentProtocol || null,
         },
+        ...(knowledge ? {
+          knowledgeSchemaVersion: knowledge.manifest.knowledgeSchemaVersion,
+          contentSha256: knowledge.manifest.contentSha256,
+          cardCount: knowledge.cardCount,
+        } : {}),
         packagePath: target,
       };
       writePrivateJson(path.join(temporaryTarget, '.ivx-runtime.json'), installed);
       fs.renameSync(temporaryTarget, target);
-      if (activate) this.registry.activate(kind, version);
+      if (activate) {
+        assertRuntimeSet(runtimeSetFromCurrent(this.registry.readCurrent(), { [kind]: installed }));
+        this.registry.activate(kind, version);
+      }
       return installed;
     } finally {
       fs.rmSync(staging, { recursive: true, force: true });

@@ -46,7 +46,7 @@ test('review CLI creates and recovers a local session across independent process
     fs.writeFileSync(runtimeFile, JSON.stringify({
       workflow: { version: '0.4.0', sha256: 'a'.repeat(64) },
       converter: { version: '1.2.1', sha256: 'b'.repeat(64) },
-      knowledge: { version: '0.1.0', sha256: 'c'.repeat(64) },
+      knowledge: { version: '0.1.0', sha256: 'c'.repeat(64), contentSha256: 'd'.repeat(64), schemaVersion: 1, ruleIds: [] },
     }));
     fs.writeFileSync(targetFile, JSON.stringify({ case: { nid: 200, value: 'baseline' } }));
 

@@ -64,6 +64,16 @@ export class RuntimeReviewStore {
       const sourceWorkId = nonEmptyString(job.source?.workId, 'job.source.workId');
       assertSnapshot(targetSnapshot);
       invariant(['READ_ONLY', 'WRITE'].includes(capability), 'INVALID_REVIEW_CAPABILITY', 'capability must be READ_ONLY or WRITE');
+      if (job.runtime?.knowledge) {
+        invariant(
+          runtime?.knowledge?.version === job.runtime.knowledge.version
+          && runtime?.knowledge?.sha256 === job.runtime.knowledge.sha256
+          && runtime?.knowledge?.contentSha256 === job.runtime.knowledge.contentSha256
+          && runtime?.knowledge?.schemaVersion === job.runtime.knowledge.schemaVersion,
+          'KNOWLEDGE_PIN_MISMATCH',
+          'Runtime Review Session must inherit the Migration Job Knowledge pin',
+        );
+      }
       const registry = this.#readRegistry();
       if (capability === 'WRITE') this.#assertNoWriteConflict(registry, { targetNid, targetWorkId });
       const at = this.now().toISOString();
@@ -91,7 +101,7 @@ export class RuntimeReviewStore {
       };
       validateRuntimeReviewSession(review);
       const directory = ensurePrivateDir(this.reviewDir(reviewId));
-      for (const child of ['baselines', 'findings', 'revision-observations', 'observed-targets', 'baseline-acceptances']) {
+      for (const child of ['baselines', 'findings', 'revision-observations', 'observed-targets', 'baseline-acceptances', 'knowledge']) {
         ensurePrivateDir(path.join(directory, child));
       }
       this.#writeBaselineSnapshot(reviewId, targetWorkId, targetSnapshot);
@@ -286,6 +296,42 @@ export class RuntimeReviewStore {
       latestObservation,
       resumable: !TERMINAL_REVIEW_STATES.has(review.status),
     };
+  }
+
+  recordKnowledgeUsage(reviewId, searchResult) {
+    return this.#mutate(reviewId, (review) => {
+      invariant(searchResult?.kind === 'knowledge-search-result' && searchResult.pin, 'KNOWLEDGE_USAGE_INVALID', 'Knowledge search result is invalid');
+      const pin = review.runtime.knowledge;
+      invariant(pin.version === searchResult.pin.version && pin.sha256 === searchResult.pin.sha256 && pin.contentSha256 === searchResult.pin.contentSha256, 'KNOWLEDGE_PIN_MISMATCH', 'Knowledge search result does not match the review pin');
+      const ruleIds = [...new Set(searchResult.cards.map((card) => card.ruleId))].sort();
+      review.runtime.knowledge.ruleIds = [...new Set([...review.runtime.knowledge.ruleIds, ...ruleIds])].sort();
+      review.updatedAt = this.now().toISOString();
+      const usage = {
+        schemaVersion: 1,
+        kind: 'knowledge-usage',
+        reviewId,
+        runtime: { version: pin.version, contentSha256: pin.contentSha256, schemaVersion: pin.schemaVersion },
+        queryDigest: searchResult.queryDigest,
+        ruleIds,
+        recordedAt: review.updatedAt,
+        sensitivity: 'REDACTED',
+      };
+      writePrivateJson(this.#artifactPath(reviewId, relativeArtifactPath('knowledge', `usage-${searchResult.queryDigest}.json`)), usage);
+      return { review, usage };
+    });
+  }
+
+  writeKnowledgeFeedback(reviewId, report) {
+    return this.#withReviewLock(reviewId, () => {
+      const review = this.load(reviewId);
+      invariant(report?.kind === 'knowledge-feedback-report' && report.runtime?.version === review.runtime.knowledge.version && report.runtime?.contentSha256 === review.runtime.knowledge.contentSha256, 'KNOWLEDGE_PIN_MISMATCH', 'Knowledge feedback does not match the review pin');
+      invariant(review.runtime.knowledge.ruleIds.includes(report.rule?.ruleId), 'KNOWLEDGE_RULE_NOT_USED', 'Knowledge feedback may reference only a rule used by this review');
+      normalizeId(report.feedbackId, ARTIFACT_ID_PATTERN, 'KNOWLEDGE_FEEDBACK_INVALID', 'Knowledge feedback id is invalid');
+      const target = this.#artifactPath(reviewId, relativeArtifactPath('knowledge', `${report.feedbackId}.json`));
+      invariant(!fs.existsSync(target), 'KNOWLEDGE_FEEDBACK_EXISTS', 'Knowledge feedback report already exists');
+      writePrivateJson(target, report);
+      return report;
+    });
   }
 
   #createId(prefix, at) {

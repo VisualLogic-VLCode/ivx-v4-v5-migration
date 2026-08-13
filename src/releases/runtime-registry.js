@@ -5,8 +5,8 @@ import { ensurePrivateDir, readJson, writePrivateJson } from '../fs/secure-json.
 import { WorkflowError, invariant } from '../errors.js';
 
 function plural(kind) {
-  invariant(['workflow', 'converter'].includes(kind), 'INVALID_RUNTIME_KIND', `Invalid runtime kind: ${kind}`);
-  return kind === 'workflow' ? 'workflows' : 'converters';
+  invariant(['workflow', 'converter', 'knowledge'].includes(kind), 'INVALID_RUNTIME_KIND', `Invalid runtime kind: ${kind}`);
+  return { workflow: 'workflows', converter: 'converters', knowledge: 'knowledge' }[kind];
 }
 
 export class RuntimeRegistry {
@@ -14,6 +14,7 @@ export class RuntimeRegistry {
     this.paths = appPaths;
     ensurePrivateDir(appPaths.workflows);
     ensurePrivateDir(appPaths.converters);
+    ensurePrivateDir(appPaths.knowledge);
   }
 
   readCurrent() {
@@ -21,6 +22,7 @@ export class RuntimeRegistry {
       schemaVersion: 1,
       workflow: null,
       converter: null,
+      knowledge: null,
       history: [],
     });
   }
@@ -44,26 +46,43 @@ export class RuntimeRegistry {
   }
 
   activate(kind, version) {
-    const descriptor = this.descriptor(kind, version);
-    if (!descriptor) throw new WorkflowError('RUNTIME_NOT_INSTALLED', `${kind} ${version} is not installed`);
+    return this.activateSet({ [kind]: version });
+  }
+
+  activateSet(versions) {
+    invariant(versions && typeof versions === 'object' && !Array.isArray(versions), 'INVALID_RUNTIME_SET', 'Runtime activation set must be an object');
+    const descriptors = Object.fromEntries(Object.entries(versions).map(([kind, version]) => {
+      plural(kind);
+      const descriptor = this.descriptor(kind, version);
+      if (!descriptor) throw new WorkflowError('RUNTIME_NOT_INSTALLED', `${kind} ${version} is not installed`);
+      return [kind, descriptor];
+    }));
     const current = this.readCurrent();
-    const previous = current[kind];
-    current[kind] = descriptor;
-    current.updatedAt = new Date().toISOString();
+    const updatedAt = new Date().toISOString();
     current.history = Array.isArray(current.history) ? current.history : [];
-    if (previous && previous.version !== version) {
-      current.history.unshift({ kind, descriptor: previous, replacedAt: current.updatedAt });
-      current.history = current.history.slice(0, 20);
+    for (const [kind, descriptor] of Object.entries(descriptors)) {
+      const previous = current[kind];
+      current[kind] = descriptor;
+      if (previous && previous.version !== descriptor.version) {
+        current.history.unshift({ kind, descriptor: previous, replacedAt: updatedAt });
+      }
     }
+    current.history = current.history.slice(0, 30);
+    current.updatedAt = updatedAt;
     writePrivateJson(this.paths.current, current);
     return current;
   }
 
-  rollback(kind) {
+  rollbackTarget(kind) {
     const current = this.readCurrent();
     const index = current.history.findIndex((entry) => entry.kind === kind && this.descriptor(kind, entry.descriptor?.version));
     if (index < 0) throw new WorkflowError('RUNTIME_ROLLBACK_UNAVAILABLE', `No previous ${kind} runtime is available`);
-    const target = current.history[index].descriptor;
+    return { current, index, target: current.history[index].descriptor };
+  }
+
+  rollback(kind, { validate } = {}) {
+    const { current, index, target } = this.rollbackTarget(kind);
+    if (validate) validate({ ...current, [kind]: target });
     current.history.splice(index, 1);
     if (current[kind]) current.history.unshift({ kind, descriptor: current[kind], replacedAt: new Date().toISOString() });
     current[kind] = target;

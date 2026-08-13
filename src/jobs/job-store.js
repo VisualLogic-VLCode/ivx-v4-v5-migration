@@ -37,7 +37,7 @@ export class JobStore {
     return path.join(this.jobDir(jobId), 'state.json');
   }
 
-  create({ sourceNid, gid, workflowRuntime, converterRuntime, mode = 'platform', workspaceReference = false, cwd } = {}) {
+  create({ sourceNid, gid, workflowRuntime, converterRuntime, knowledgeRuntime, mode = 'platform', workspaceReference = false, cwd } = {}) {
     const now = new Date();
     const jobId = createJobId(now);
     const directory = ensurePrivateDir(this.jobDir(jobId));
@@ -54,6 +54,7 @@ export class JobStore {
       runtime: {
         workflow: workflowRuntime || null,
         converter: converterRuntime || null,
+        knowledge: knowledgeRuntime || null,
       },
       source: {},
       target: {},
