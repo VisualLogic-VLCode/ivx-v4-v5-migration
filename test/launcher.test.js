@@ -7,7 +7,7 @@ import test from 'node:test';
 
 const projectRoot = path.resolve(import.meta.dirname, '..');
 
-test('stable Launcher delegates to the activated managed Workflow runtime', () => {
+test('stable Launcher delegates normally and supports explicit non-downgrading update recovery', () => {
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'ivx-launcher-'));
   const runtime = path.join(temporary, 'workflows', '9.9.9');
   fs.mkdirSync(path.join(runtime, 'src'), { recursive: true });
@@ -20,7 +20,7 @@ test('stable Launcher delegates to the activated managed Workflow runtime', () =
   `);
   fs.writeFileSync(path.join(temporary, 'current.json'), JSON.stringify({
     schemaVersion: 1,
-    workflow: { version: '9.9.9', packagePath: runtime },
+    workflow: { version: '0.3.8', packagePath: runtime },
     converter: null,
     history: [],
   }));
@@ -45,6 +45,43 @@ test('stable Launcher delegates to the activated managed Workflow runtime', () =
     assert.equal(promptSetup.status, 1);
     assert.equal(JSON.parse(promptSetup.stderr).code, 'CLI_ARGUMENT_CONFLICT');
     assert.equal(promptSetup.stdout, '');
+
+    const unconfirmedRecovery = spawnSync(process.execPath, [
+      path.join(projectRoot, 'bin', 'ivx-migrate.js'),
+      'update', 'check', '--launcher-recovery', 'WRONG_CONFIRMATION',
+    ], {
+      env: { ...process.env, IVX_MIGRATION_HOME: temporary },
+      encoding: 'utf8',
+    });
+    assert.equal(unconfirmedRecovery.status, 1);
+    assert.equal(JSON.parse(unconfirmedRecovery.stderr).code, 'LAUNCHER_RECOVERY_CONFIRMATION_REQUIRED');
+
+    const recovery = spawnSync(process.execPath, [
+      path.join(projectRoot, 'bin', 'ivx-migrate.js'),
+      'update', 'check', '--launcher-recovery', 'RECOVER_SIGNED_RUNTIME',
+    ], {
+      env: { ...process.env, IVX_MIGRATION_HOME: temporary },
+      encoding: 'utf8',
+    });
+    assert.equal(recovery.status, 1);
+    assert.equal(JSON.parse(recovery.stderr).code, 'RELEASE_MANIFEST_NOT_CONFIGURED');
+    assert.equal(recovery.stdout.includes('delegated'), false);
+
+    fs.writeFileSync(path.join(temporary, 'current.json'), JSON.stringify({
+      schemaVersion: 1,
+      workflow: { version: '9.9.9', packagePath: runtime },
+      converter: null,
+      history: [],
+    }));
+    const downgradeRecovery = spawnSync(process.execPath, [
+      path.join(projectRoot, 'bin', 'ivx-migrate.js'),
+      'update', 'check', '--launcher-recovery', 'RECOVER_SIGNED_RUNTIME',
+    ], {
+      env: { ...process.env, IVX_MIGRATION_HOME: temporary },
+      encoding: 'utf8',
+    });
+    assert.equal(downgradeRecovery.status, 1);
+    assert.equal(JSON.parse(downgradeRecovery.stderr).code, 'LAUNCHER_RECOVERY_DOWNGRADE_FORBIDDEN');
   } finally {
     fs.rmSync(temporary, { recursive: true, force: true });
   }

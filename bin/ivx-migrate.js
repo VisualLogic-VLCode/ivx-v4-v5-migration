@@ -3,7 +3,49 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+
+const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const bundledPackage = JSON.parse(fs.readFileSync(path.join(packageRoot, 'package.json'), 'utf8'));
+const LAUNCHER_RECOVERY_CONFIRMATION = 'RECOVER_SIGNED_RUNTIME';
+
+function versionParts(value) {
+  const match = /^(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/.exec(String(value || ''));
+  return match ? match.slice(1).map(Number) : null;
+}
+
+function compareVersions(left, right) {
+  const a = versionParts(left);
+  const b = versionParts(right);
+  if (!a || !b) return null;
+  for (let index = 0; index < 3; index += 1) {
+    if (a[index] !== b[index]) return a[index] < b[index] ? -1 : 1;
+  }
+  return 0;
+}
+
+function optionValue(argv, name) {
+  const direct = argv.find((value) => value.startsWith(`${name}=`));
+  if (direct) return direct.slice(name.length + 1);
+  const index = argv.indexOf(name);
+  return index >= 0 ? argv[index + 1] : null;
+}
+
+function launcherRecoveryRequested(argv) {
+  const value = optionValue(argv, '--launcher-recovery');
+  if (value === null) return false;
+  if (value !== LAUNCHER_RECOVERY_CONFIRMATION) {
+    const error = new Error(`Launcher recovery requires --launcher-recovery ${LAUNCHER_RECOVERY_CONFIRMATION}`);
+    error.code = 'LAUNCHER_RECOVERY_CONFIRMATION_REQUIRED';
+    throw error;
+  }
+  if (!['setup', 'update', 'rollback', 'agents'].includes(argv[0])) {
+    const error = new Error('Launcher recovery is restricted to setup, update, rollback, or Agent synchronization');
+    error.code = 'LAUNCHER_RECOVERY_COMMAND_FORBIDDEN';
+    throw error;
+  }
+  return true;
+}
 
 async function loadWorkflowCli(argv) {
   const appHome = path.resolve(process.env.IVX_MIGRATION_HOME?.trim() || path.join(os.homedir(), '.ivx-v4-v5'));
@@ -15,6 +57,15 @@ async function loadWorkflowCli(argv) {
   try {
     current = JSON.parse(fs.readFileSync(path.join(appHome, 'current.json'), 'utf8'));
   } catch {
+    return import(bundledCli.href);
+  }
+  if (launcherRecoveryRequested(argv)) {
+    const comparison = compareVersions(bundledPackage.version, current?.workflow?.version);
+    if (comparison === null || comparison < 0) {
+      const error = new Error('Bundled Launcher is older than the active managed Workflow and cannot recover it');
+      error.code = 'LAUNCHER_RECOVERY_DOWNGRADE_FORBIDDEN';
+      throw error;
+    }
     return import(bundledCli.href);
   }
   const packagePath = current?.workflow?.packagePath;
