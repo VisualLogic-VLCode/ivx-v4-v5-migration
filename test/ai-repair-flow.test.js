@@ -59,13 +59,24 @@ test('Agent classification and constrained Patch return a dry-run Job to validat
     assert.ok(syntaxIssue);
     const classificationPath = path.join(temporary, 'classification.json');
     fs.writeFileSync(classificationPath, JSON.stringify({
-      schemaVersion: 1,
+      schemaVersion: 2,
+      kind: 'issue-classification',
+      jobId: dryRun.jobId,
+      reviewId: null,
+      classifiedAt: '2026-08-13T04:00:00.000Z',
+      createdBy: 'AGENT',
+      sensitivity: 'REDACTED',
       issues: validation.issues.map((issue) => ({
         issueId: issue.issueId,
-        owner: 'SOURCE',
+        clusterId: `cluster:${issue.issueId}`,
+        cause: 'SOURCE_DATA',
+        responsibleParty: 'WORKFLOW_AI',
+        repairTarget: 'V5_ARTIFACT',
         confidence: 0.95,
         reason: 'Test-only source repair flow',
-        repairAllowed: true,
+        evidenceRefs: [`validation:${issue.issueId}`],
+        knowledgeRuleIds: [],
+        autoRepairAllowed: true,
       })),
     }));
     const classified = invoke(home, ['job', 'classify', '--job', dryRun.jobId, '--file', classificationPath]);

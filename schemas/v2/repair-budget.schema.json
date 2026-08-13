@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.ivx.local/migration/v2/repair-budget.schema.json",
+  "title": "iVX Repair Budget v2",
+  "type": "object",
+  "required": ["schemaVersion", "kind", "budgetId", "reviewId", "scope", "clusterId", "attempts", "targetRevisions", "status", "updatedAt", "createdAt", "createdBy", "sensitivity"],
+  "properties": {
+    "schemaVersion": { "const": 2 },
+    "kind": { "const": "repair-budget" },
+    "budgetId": { "$ref": "common.schema.json#/$defs/id" },
+    "reviewId": { "$ref": "common.schema.json#/$defs/reviewId" },
+    "scope": { "enum": ["ISSUE_CLUSTER", "REVIEW_SESSION"] },
+    "clusterId": { "oneOf": [{ "$ref": "common.schema.json#/$defs/id" }, { "type": "null" }] },
+    "attempts": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["automaticLimit", "automaticUsed", "extensionLimit", "extensionUsed"],
+          "properties": {
+            "automaticLimit": { "type": "integer", "minimum": 0, "maximum": 100 },
+            "automaticUsed": { "type": "integer", "minimum": 0, "maximum": 100 },
+            "extensionLimit": { "type": "integer", "minimum": 0, "maximum": 100 },
+            "extensionUsed": { "type": "integer", "minimum": 0, "maximum": 100 }
+          },
+          "additionalProperties": false
+        },
+        { "type": "null" }
+      ]
+    },
+    "targetRevisions": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["baseLimit", "used", "extensionLimit", "extensionUsed"],
+          "properties": {
+            "baseLimit": { "type": "integer", "minimum": 0, "maximum": 1000 },
+            "used": { "type": "integer", "minimum": 0, "maximum": 1000 },
+            "extensionLimit": { "type": "integer", "minimum": 0, "maximum": 1000 },
+            "extensionUsed": { "type": "integer", "minimum": 0, "maximum": 1000 }
+          },
+          "additionalProperties": false
+        },
+        { "type": "null" }
+      ]
+    },
+    "status": { "enum": ["ACTIVE", "PAUSED", "EXHAUSTED", "FROZEN"] },
+    "updatedAt": { "$ref": "common.schema.json#/$defs/dateTime" },
+    "createdAt": { "$ref": "common.schema.json#/$defs/dateTime" },
+    "createdBy": { "$ref": "common.schema.json#/$defs/createdBy" },
+    "sensitivity": { "$ref": "common.schema.json#/$defs/sensitivity" }
+  },
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": { "properties": { "scope": { "const": "ISSUE_CLUSTER" } }, "required": ["scope"] },
+      "then": {
+        "properties": {
+          "clusterId": { "$ref": "common.schema.json#/$defs/id" },
+          "attempts": { "type": "object" },
+          "targetRevisions": { "type": "null" }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "scope": { "const": "REVIEW_SESSION" } }, "required": ["scope"] },
+      "then": {
+        "properties": {
+          "clusterId": { "type": "null" },
+          "attempts": { "type": "null" },
+          "targetRevisions": { "type": "object" }
+        }
+      }
+    }
+  ]
+}

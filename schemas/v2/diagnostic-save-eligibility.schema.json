@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.ivx.local/migration/v2/diagnostic-save-eligibility.schema.json",
+  "title": "iVX Diagnostic Save Eligibility v2",
+  "type": "object",
+  "required": ["schemaVersion", "kind", "eligibilityId", "jobId", "reviewId", "status", "checkpoint", "prerequisites", "blockers", "evaluatedAt", "createdAt", "createdBy", "sensitivity"],
+  "properties": {
+    "schemaVersion": { "const": 2 },
+    "kind": { "const": "diagnostic-save-eligibility" },
+    "eligibilityId": { "$ref": "common.schema.json#/$defs/id" },
+    "jobId": { "$ref": "common.schema.json#/$defs/jobId" },
+    "reviewId": { "oneOf": [{ "$ref": "common.schema.json#/$defs/reviewId" }, { "type": "null" }] },
+    "status": {
+      "enum": ["DIAGNOSTIC_SAVE_ELIGIBLE", "DIAGNOSTIC_SAVE_WAITING_FOR_AUTH", "DIAGNOSTIC_SAVE_WAITING_FOR_PLATFORM", "DIAGNOSTIC_SAVE_RECONCILIATION_REQUIRED", "DIAGNOSTIC_SAVE_UNSAFE_ARTIFACT"]
+    },
+    "checkpoint": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["kind", "artifact", "sha256", "targetNid", "targetWorkId"],
+          "properties": {
+            "kind": { "enum": ["CONVERTER_OUTPUT", "STATICALLY_SAFE_CANDIDATE", "CONFIRMED_TARGET_REVISION"] },
+            "artifact": { "$ref": "common.schema.json#/$defs/safeRelativePath" },
+            "sha256": { "$ref": "common.schema.json#/$defs/sha256" },
+            "targetNid": { "type": ["integer", "null"], "minimum": 1 },
+            "targetWorkId": { "type": ["string", "null"], "maxLength": 256 }
+          },
+          "additionalProperties": false,
+          "allOf": [
+            {
+              "if": { "properties": { "kind": { "const": "CONFIRMED_TARGET_REVISION" } }, "required": ["kind"] },
+              "then": { "properties": { "targetNid": { "type": "integer", "minimum": 1 }, "targetWorkId": { "type": "string", "minLength": 1 } } }
+            }
+          ]
+        },
+        { "type": "null" }
+      ]
+    },
+    "prerequisites": {
+      "type": "object",
+      "required": ["authentication", "serverPermission", "userAuthorization", "platformWritePath", "revisionSafety", "writeOutcomeKnown"],
+      "properties": {
+        "authentication": { "$ref": "#/$defs/prerequisite" },
+        "serverPermission": { "$ref": "#/$defs/prerequisite" },
+        "userAuthorization": { "$ref": "#/$defs/prerequisite" },
+        "platformWritePath": { "$ref": "#/$defs/prerequisite" },
+        "revisionSafety": { "$ref": "#/$defs/prerequisite" },
+        "writeOutcomeKnown": { "$ref": "#/$defs/prerequisite" }
+      },
+      "additionalProperties": false
+    },
+    "blockers": { "$ref": "common.schema.json#/$defs/stringArray" },
+    "evaluatedAt": { "$ref": "common.schema.json#/$defs/dateTime" },
+    "createdAt": { "$ref": "common.schema.json#/$defs/dateTime" },
+    "createdBy": { "$ref": "common.schema.json#/$defs/createdBy" },
+    "sensitivity": { "$ref": "common.schema.json#/$defs/sensitivity" }
+  },
+  "$defs": {
+    "prerequisite": { "enum": ["SATISFIED", "MISSING", "UNAVAILABLE", "UNKNOWN"] }
+  },
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "DIAGNOSTIC_SAVE_ELIGIBLE" } }, "required": ["status"] },
+      "then": {
+        "properties": {
+          "checkpoint": { "type": "object" },
+          "prerequisites": {
+            "properties": {
+              "authentication": { "const": "SATISFIED" },
+              "serverPermission": { "const": "SATISFIED" },
+              "userAuthorization": { "const": "SATISFIED" },
+              "platformWritePath": { "const": "SATISFIED" },
+              "revisionSafety": { "const": "SATISFIED" },
+              "writeOutcomeKnown": { "const": "SATISFIED" }
+            }
+          },
+          "blockers": { "maxItems": 0 }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "status": { "const": "DIAGNOSTIC_SAVE_UNSAFE_ARTIFACT" } }, "required": ["status"] },
+      "then": { "properties": { "checkpoint": { "type": "null" } } }
+    }
+  ]
+}

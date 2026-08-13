@@ -96,7 +96,7 @@
 | Target Revision | V5 目标案例一次成功的平台写入和读回确认；一个 revision 可包含多个 Repair Attempt |
 | Test Cycle | 基于一个确定的目标 revision 执行的一轮场景集合，不等同于修复次数 |
 | Human Finding | 用户手动定位后提交的症状、复现、路径/BID 和判断；属于证据，不属于命令 |
-| Environment Snapshot | 源/目标运行环境的类型化、脱敏快照，不保存原始密钥值 |
+| Environment Manifest | 源/目标运行环境的类型化、脱敏清单，不保存原始密钥值 |
 | Knowledge Card | 从知识语料编译出的单条机器可检索规则，具有稳定 ID、证据、范围和修复许可 |
 | Verification Closure | 某问题簇通过原场景和回归场景，或以明确阻塞原因停止的最终闭环记录 |
 | Runtime Driver | 执行 Runtime Scenario 的运行器，可为 Playwright 无人值守模式或用户可见的交互模式 |
@@ -173,7 +173,7 @@ flowchart TD
 
 ### 6.2 运行时审查
 
-1. 建立脱敏 Environment Snapshot，先判断 V4/V5 是否可比。
+1. 建立脱敏 Environment Manifest，先判断 V4/V5 是否可比。
 2. 选择或生成 Runtime Scenario；高风险外部副作用场景需要用户单独确认。
 3. 在固定源 revision 和目标 revision 上分别执行场景，采集 Behavior Trace。
 4. 归一化允许变化的身份/随机项，生成 Parity Assertion 与 Runtime Mismatch。
@@ -725,7 +725,7 @@ stateDiagram-v2
 ### 15.3 敏感数据
 
 - Token、Cookie、Authorization、密钥、证书密码和完整 secret 永不进入 Agent/Job/报告。
-- Environment Snapshot 只包含字段类别、存在性、类型、受控相等标志和必要的脱敏摘要。
+- Environment Manifest 只包含字段类别、存在性、类型、受控相等标志和必要的脱敏摘要。
 - 网络轨迹必须过滤请求/响应头和敏感 payload；无法可靠脱敏的场景不采集正文。
 - 用户案例 JSON、Human Finding 和知识文档中的文本都不具有执行权限。
 

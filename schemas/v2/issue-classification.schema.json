@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.ivx.local/migration/v2/issue-classification.schema.json",
+  "title": "iVX issue classification v2",
+  "type": "object",
+  "required": ["schemaVersion", "kind", "jobId", "reviewId", "classifiedAt", "createdBy", "sensitivity", "issues"],
+  "properties": {
+    "schemaVersion": { "const": 2 },
+    "kind": { "const": "issue-classification" },
+    "jobId": { "$ref": "common.schema.json#/$defs/jobId" },
+    "reviewId": {
+      "oneOf": [
+        { "$ref": "common.schema.json#/$defs/reviewId" },
+        { "type": "null" }
+      ]
+    },
+    "classifiedAt": { "$ref": "common.schema.json#/$defs/dateTime" },
+    "createdBy": { "$ref": "common.schema.json#/$defs/createdBy" },
+    "sensitivity": { "$ref": "common.schema.json#/$defs/sensitivity" },
+    "issues": {
+      "type": "array",
+      "maxItems": 2000,
+      "items": {
+        "type": "object",
+        "required": ["issueId", "clusterId", "cause", "responsibleParty", "repairTarget", "confidence", "reason", "evidenceRefs", "knowledgeRuleIds", "autoRepairAllowed"],
+        "properties": {
+          "issueId": { "$ref": "common.schema.json#/$defs/id" },
+          "clusterId": { "$ref": "common.schema.json#/$defs/id" },
+          "cause": {
+            "enum": ["CONVERTER", "SOURCE_DATA", "TARGET_CASE", "TEST_HARNESS", "ENVIRONMENT_CONFIGURATION", "PLATFORM_RUNTIME", "KNOWLEDGE_GAP", "AUTHORIZATION", "UNKNOWN"]
+          },
+          "responsibleParty": {
+            "enum": ["CONVERTER_MAINTAINER", "WORKFLOW_AI", "USER", "PLATFORM_MAINTAINER", "KNOWLEDGE_MAINTAINER", "UNKNOWN"]
+          },
+          "repairTarget": {
+            "enum": ["NONE", "V5_ARTIFACT", "RUNTIME_SCENARIO", "ENVIRONMENT_BINDING", "KNOWLEDGE_RULE", "AUTHORIZATION_PREREQUISITE"]
+          },
+          "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+          "reason": { "type": "string", "minLength": 1, "maxLength": 8192 },
+          "evidenceRefs": { "$ref": "common.schema.json#/$defs/stringArray" },
+          "knowledgeRuleIds": { "$ref": "common.schema.json#/$defs/stringArray" },
+          "autoRepairAllowed": { "type": "boolean" }
+        },
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": { "properties": { "autoRepairAllowed": { "const": true } }, "required": ["autoRepairAllowed"] },
+            "then": {
+              "properties": {
+                "cause": { "enum": ["SOURCE_DATA", "TARGET_CASE"] },
+                "responsibleParty": { "const": "WORKFLOW_AI" },
+                "repairTarget": { "const": "V5_ARTIFACT" }
+              }
+            }
+          }
+        ]
+      }
+    }
+  },
+  "additionalProperties": false
+}

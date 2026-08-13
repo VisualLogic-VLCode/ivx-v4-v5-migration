@@ -2,6 +2,37 @@ export { loadConfig, saveConfig, DEFAULT_CONFIG } from './config.js';
 export { AGENT_PROTOCOL_VERSION, PUBLIC_RELEASE_PROFILE } from './distribution-profile.js';
 export { createAppPaths, resolveAppHome } from './paths.js';
 export { JobStore } from './jobs/job-store.js';
+export {
+  diagnosticOwnerBucket,
+  issueAutoRepairAllowed,
+  issueCause,
+  migrateIssueClassificationV1ToV2,
+  migrateJobStateV1ToV2,
+  readIssueClassificationCompatible,
+  readJobStateCompatible,
+  validateIssueClassificationCompatible,
+  validateJobStateV2,
+} from './contracts/compatibility.js';
+export {
+  AUTOMATIC_REPAIR_DECISIONS,
+  DIAGNOSTIC_SAVE_STATUSES,
+  ISSUE_CAUSES,
+  REPAIR_BUDGET_STATES,
+  REPAIR_TARGETS,
+  RESPONSIBLE_PARTIES,
+  REVIEW_STATUSES,
+  SCHEMA_V2_VALIDATORS,
+  validateAutomaticRepairDecision,
+  validateBehaviorTrace,
+  validateDiagnosticSaveEligibility,
+  validateEnvironmentManifest,
+  validateHumanFinding,
+  validateIssueClassificationV2,
+  validateRepairBudget,
+  validateRuntimeReviewSession,
+  validateRuntimeScenario,
+  validateSchemaV2Artifact,
+} from './contracts/schema-v2.js';
 export { classifyCaseVersion, classifyMetadataVersion, scanWorkVersionSignals } from './workflow/version-classifier.js';
 export { LocalConverterProvider } from './converter/local-provider.js';
 export { validateConvertedCase } from './validation/basic-validator.js';

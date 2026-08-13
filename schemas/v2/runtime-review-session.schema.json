@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.ivx.local/migration/v2/runtime-review-session.schema.json",
+  "title": "iVX Runtime Review Session v2",
+  "type": "object",
+  "required": ["schemaVersion", "kind", "reviewId", "jobId", "target", "status", "runtime", "baseline", "activeCycleId", "issueClusterIds", "scenarioIds", "humanFindingIds", "repairBudgetIds", "history", "createdAt", "updatedAt", "createdBy", "sensitivity"],
+  "properties": {
+    "schemaVersion": { "const": 2 },
+    "kind": { "const": "runtime-review-session" },
+    "reviewId": { "$ref": "common.schema.json#/$defs/reviewId" },
+    "jobId": { "$ref": "common.schema.json#/$defs/jobId" },
+    "target": {
+      "type": "object",
+      "required": ["nid", "workId"],
+      "properties": {
+        "nid": { "type": "integer", "minimum": 1 },
+        "workId": { "type": "string", "minLength": 1, "maxLength": 256 }
+      },
+      "additionalProperties": false
+    },
+    "status": { "$ref": "#/$defs/reviewStatus" },
+    "runtime": {
+      "type": "object",
+      "required": ["workflow", "converter", "knowledge"],
+      "properties": {
+        "workflow": { "$ref": "common.schema.json#/$defs/runtimePin" },
+        "converter": { "$ref": "common.schema.json#/$defs/runtimePin" },
+        "knowledge": { "$ref": "common.schema.json#/$defs/runtimePin" }
+      },
+      "additionalProperties": false
+    },
+    "baseline": {
+      "type": "object",
+      "required": ["sourceWorkId", "targetWorkId"],
+      "properties": {
+        "sourceWorkId": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "targetWorkId": { "type": "string", "minLength": 1, "maxLength": 256 }
+      },
+      "additionalProperties": false
+    },
+    "activeCycleId": { "oneOf": [{ "$ref": "common.schema.json#/$defs/id" }, { "type": "null" }] },
+    "issueClusterIds": { "$ref": "common.schema.json#/$defs/stringArray" },
+    "scenarioIds": { "$ref": "common.schema.json#/$defs/stringArray" },
+    "humanFindingIds": { "$ref": "common.schema.json#/$defs/stringArray" },
+    "repairBudgetIds": { "$ref": "common.schema.json#/$defs/stringArray" },
+    "history": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 10000,
+      "items": {
+        "type": "object",
+        "required": ["status", "at", "reason"],
+        "properties": {
+          "status": { "$ref": "#/$defs/reviewStatus" },
+          "at": { "$ref": "common.schema.json#/$defs/dateTime" },
+          "reason": { "type": ["string", "null"], "maxLength": 4096 }
+        },
+        "additionalProperties": false
+      }
+    },
+    "createdAt": { "$ref": "common.schema.json#/$defs/dateTime" },
+    "updatedAt": { "$ref": "common.schema.json#/$defs/dateTime" },
+    "createdBy": { "$ref": "common.schema.json#/$defs/createdBy" },
+    "sensitivity": { "$ref": "common.schema.json#/$defs/sensitivity" }
+  },
+  "$defs": {
+    "reviewStatus": {
+      "enum": ["REVIEW_OPEN", "ENVIRONMENT_PREFLIGHT", "AWAITING_USER_BINDING", "BLOCKED_ENVIRONMENT", "RUNTIME_TESTING", "MISMATCH_DETECTED", "DIAGNOSING", "CONVERTER_REPORT_READY", "REPAIR_PROPOSED", "TEST_OR_ENV_REPAIR", "AUTO_REPAIR_STOPPED", "AWAITING_HUMAN_EVIDENCE", "LOCAL_VALIDATING", "READY_TO_UPDATE_TARGET", "TARGET_UPDATED", "TARGET_EXTERNALLY_MODIFIED", "RUNTIME_RETESTING", "RUNTIME_PARITY_PASSED", "RUNTIME_REPAIR_EXHAUSTED", "BLOCKED_PLATFORM_RUNTIME", "RUNTIME_NOT_TESTED"]
+    }
+  },
+  "additionalProperties": false
+}

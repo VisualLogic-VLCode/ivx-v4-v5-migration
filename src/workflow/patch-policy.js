@@ -1,4 +1,5 @@
-import { WorkflowError, invariant } from '../errors.js';
+import { invariant } from '../errors.js';
+import { validateIssueClassificationCompatible } from '../contracts/compatibility.js';
 
 const ALLOWED_OPERATIONS = new Set(['add', 'remove', 'replace']);
 const ALLOWED_ROOTS = new Set(['case', 'stage', 'server']);
@@ -89,18 +90,5 @@ export function applyRepairPatch(document, patch, options) {
 }
 
 export function validateIssueClassification(classification, validationReport) {
-  invariant(classification?.schemaVersion === 1, 'INVALID_CLASSIFICATION', 'Classification schemaVersion must be 1');
-  invariant(Array.isArray(classification.issues), 'INVALID_CLASSIFICATION', 'Classification issues must be an array');
-  const expected = new Set((validationReport?.issues || []).map((issue) => issue.issueId));
-  const allowedOwners = new Set(['CONVERTER', 'SOURCE', 'PLATFORM', 'AUTHORIZATION', 'UNKNOWN']);
-  for (const item of classification.issues) {
-    invariant(expected.has(item.issueId), 'INVALID_CLASSIFICATION', `Unknown issue id: ${item.issueId}`);
-    invariant(allowedOwners.has(item.owner), 'INVALID_CLASSIFICATION', `Invalid issue owner: ${item.owner}`);
-    invariant(typeof item.reason === 'string' && item.reason.trim(), 'INVALID_CLASSIFICATION', `Classification reason is required: ${item.issueId}`);
-    invariant(typeof item.confidence === 'number' && item.confidence >= 0 && item.confidence <= 1, 'INVALID_CLASSIFICATION', `Classification confidence must be 0-1: ${item.issueId}`);
-    if (item.owner === 'CONVERTER') invariant(item.repairAllowed !== true, 'CONVERTER_REPAIR_FORBIDDEN', 'Converter issues cannot be repaired by this workflow');
-    expected.delete(item.issueId);
-  }
-  invariant(expected.size === 0, 'INVALID_CLASSIFICATION', 'Every validation issue must be classified', { missingIssueIds: [...expected] });
-  return classification;
+  return validateIssueClassificationCompatible(classification, validationReport);
 }

@@ -4,6 +4,7 @@ import path from 'node:path';
 import { createAppPaths, resolveWorkspaceReferenceDir } from '../paths.js';
 import { ensurePrivateDir, readJson, writePrivateFile, writePrivateJson } from '../fs/secure-json.js';
 import { WorkflowError, invariant } from '../errors.js';
+import { migrateJobStateV1ToV2, readJobStateCompatible } from '../contracts/compatibility.js';
 import { assertTransition } from './states.js';
 
 function createJobId(now = new Date()) {
@@ -112,6 +113,28 @@ export class JobStore {
     const job = readJson(this.statePath(jobId));
     if (!job) throw new WorkflowError('JOB_NOT_FOUND', `Job not found: ${jobId}`);
     return job;
+  }
+
+  loadForRead(jobId) {
+    return readJobStateCompatible(this.load(jobId));
+  }
+
+  createV2MigrationCopy(jobId, { relativePath = 'migrations/state.v2.json', migratedAt } = {}) {
+    return this.withLock(jobId, () => {
+      const sourceState = this.load(jobId);
+      invariant(sourceState.schemaVersion === 1, 'JOB_MIGRATION_NOT_REQUIRED', 'Only schema-v1 Job states require a v2 migration copy');
+      const root = this.jobDir(jobId);
+      const target = path.resolve(root, relativePath);
+      invariant(target.startsWith(`${root}${path.sep}`), 'INVALID_ARTIFACT_PATH', 'Artifact path escapes job directory');
+      invariant(!fs.existsSync(target), 'JOB_MIGRATION_COPY_EXISTS', 'A v2 migration copy already exists', { relativePath });
+      const migrated = migrateJobStateV1ToV2(sourceState, { migratedAt });
+      this.writeArtifact(jobId, relativePath, migrated);
+      return {
+        sourceStatePath: this.statePath(jobId),
+        migratedArtifact: relativePath,
+        state: migrated,
+      };
+    });
   }
 
   transition(jobId, nextStatus, { reason, patch } = {}) {

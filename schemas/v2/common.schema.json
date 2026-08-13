@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.ivx.local/migration/v2/common.schema.json",
+  "title": "iVX migration schema v2 common definitions",
+  "$defs": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    },
+    "jobId": {
+      "type": "string",
+      "pattern": "^mig_[A-Za-z0-9_]+$"
+    },
+    "reviewId": {
+      "type": "string",
+      "pattern": "^rev_[A-Za-z0-9_]+$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "dateTime": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "createdBy": {
+      "enum": ["CLI", "AGENT", "USER"]
+    },
+    "sensitivity": {
+      "enum": ["PRIVATE", "REDACTED"]
+    },
+    "artifactMetadata": {
+      "type": "object",
+      "required": ["createdAt", "createdBy", "sensitivity"],
+      "properties": {
+        "createdAt": { "$ref": "#/$defs/dateTime" },
+        "createdBy": { "$ref": "#/$defs/createdBy" },
+        "sensitivity": { "$ref": "#/$defs/sensitivity" }
+      }
+    },
+    "runtimePin": {
+      "type": "object",
+      "required": ["version", "sha256"],
+      "properties": {
+        "version": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "sha256": { "$ref": "#/$defs/sha256" }
+      },
+      "additionalProperties": false
+    },
+    "stringArray": {
+      "type": "array",
+      "maxItems": 2000,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1, "maxLength": 512 }
+    },
+    "safeRelativePath": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+$"
+    }
+  }
+}

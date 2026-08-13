@@ -7,6 +7,7 @@ import { loadConfig, saveConfig, DEFAULT_CONFIG } from './config.js';
 import { LocalConverterProvider } from './converter/local-provider.js';
 import { AGENT_PROTOCOL_VERSION, PUBLIC_RELEASE_PROFILE } from './distribution-profile.js';
 import { WorkflowError, invariant } from './errors.js';
+import { diagnosticOwnerBucket, issueAutoRepairAllowed, issueCause } from './contracts/compatibility.js';
 import { readJson, sha256File, writePrivateJson } from './fs/secure-json.js';
 import { JobStore } from './jobs/job-store.js';
 import { createAppPaths, resolveAppHome } from './paths.js';
@@ -190,13 +191,13 @@ function authorizeKnownIssuesDiagnosticSave(jobId, context) {
     validation,
   );
   const allowedOwners = new Set(['CONVERTER', 'SOURCE', 'UNKNOWN']);
-  const forbiddenIssues = classification.issues.filter((issue) => !allowedOwners.has(issue.owner));
+  const forbiddenIssues = classification.issues.filter((issue) => diagnosticOwnerBucket(classification, issue) === null);
   invariant(classification.issues.length > 0, 'DIAGNOSTIC_SAVE_ISSUES_REQUIRED', 'Diagnostic Save As requires at least one classified issue');
   invariant(forbiddenIssues.length === 0, 'DIAGNOSTIC_SAVE_OWNERS_FORBIDDEN', 'Platform or authorization issues must be resolved before creating a diagnostic copy', {
-    owners: [...new Set(forbiddenIssues.map((issue) => issue.owner))].sort(),
+    owners: [...new Set(forbiddenIssues.map((issue) => issueCause(classification, issue)))].sort(),
   });
   const issueCountsByOwner = Object.fromEntries(
-    [...allowedOwners].map((owner) => [owner, classification.issues.filter((issue) => issue.owner === owner).length]),
+    [...allowedOwners].map((owner) => [owner, classification.issues.filter((issue) => diagnosticOwnerBucket(classification, issue) === owner).length]),
   );
   const authorizedAt = new Date().toISOString();
   const authorization = {
@@ -467,11 +468,11 @@ async function handleJob(positionals, options, context) {
     const validation = readJson(path.join(context.jobs.jobDir(options.job), 'reports', 'validation.json'));
     const classification = validateIssueClassification(readRequiredJson(options.file, 'classification'), validation);
     context.jobs.writeArtifact(options.job, 'reports/issue-classification.json', classification);
-    const converterIssue = classification.issues.some((issue) => issue.owner === 'CONVERTER');
-    const repairableSource = classification.issues.some((issue) => issue.owner === 'SOURCE' && issue.repairAllowed === true);
-    const unknown = classification.issues.some((issue) => issue.owner === 'UNKNOWN' || (issue.owner === 'SOURCE' && issue.repairAllowed !== true));
+    const converterIssue = classification.issues.some((issue) => issueCause(classification, issue) === 'CONVERTER');
+    const allAutoRepairable = classification.issues.length > 0
+      && classification.issues.every((issue) => issueAutoRepairAllowed(classification, issue));
     if (converterIssue) return context.jobs.transition(options.job, 'BLOCKED_CONVERTER_DEFECT', { reason: 'agent-classified-converter-defect' });
-    if (unknown || !repairableSource) return context.jobs.transition(options.job, 'NEEDS_REVIEW', { reason: 'classification-not-auto-repairable' });
+    if (!allAutoRepairable) return context.jobs.transition(options.job, 'NEEDS_REVIEW', { reason: 'classification-not-auto-repairable' });
     return context.jobs.transition(options.job, 'AI_REPAIR_REQUIRED', { reason: 'source-repair-approved-by-policy' });
   }
   if (action === 'apply-patch') {

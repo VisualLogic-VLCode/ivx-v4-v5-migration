@@ -1,0 +1,673 @@
+import { invariant } from '../errors.js';
+
+export const ISSUE_CAUSES = Object.freeze([
+  'CONVERTER',
+  'SOURCE_DATA',
+  'TARGET_CASE',
+  'TEST_HARNESS',
+  'ENVIRONMENT_CONFIGURATION',
+  'PLATFORM_RUNTIME',
+  'KNOWLEDGE_GAP',
+  'AUTHORIZATION',
+  'UNKNOWN',
+]);
+
+export const RESPONSIBLE_PARTIES = Object.freeze([
+  'CONVERTER_MAINTAINER',
+  'WORKFLOW_AI',
+  'USER',
+  'PLATFORM_MAINTAINER',
+  'KNOWLEDGE_MAINTAINER',
+  'UNKNOWN',
+]);
+
+export const REPAIR_TARGETS = Object.freeze([
+  'NONE',
+  'V5_ARTIFACT',
+  'RUNTIME_SCENARIO',
+  'ENVIRONMENT_BINDING',
+  'KNOWLEDGE_RULE',
+  'AUTHORIZATION_PREREQUISITE',
+]);
+
+export const AUTOMATIC_REPAIR_DECISIONS = Object.freeze([
+  'AUTO_REPAIR_ALLOWED',
+  'AUTO_REPAIR_PAUSED',
+  'AUTO_REPAIR_STOPPED',
+]);
+
+export const REPAIR_BUDGET_STATES = Object.freeze([
+  'AVAILABLE',
+  'FROZEN',
+  'EXHAUSTED',
+]);
+
+export const DIAGNOSTIC_SAVE_STATUSES = Object.freeze([
+  'DIAGNOSTIC_SAVE_ELIGIBLE',
+  'DIAGNOSTIC_SAVE_WAITING_FOR_AUTH',
+  'DIAGNOSTIC_SAVE_WAITING_FOR_PLATFORM',
+  'DIAGNOSTIC_SAVE_RECONCILIATION_REQUIRED',
+  'DIAGNOSTIC_SAVE_UNSAFE_ARTIFACT',
+]);
+
+export const REVIEW_STATUSES = Object.freeze([
+  'REVIEW_OPEN',
+  'ENVIRONMENT_PREFLIGHT',
+  'AWAITING_USER_BINDING',
+  'BLOCKED_ENVIRONMENT',
+  'RUNTIME_TESTING',
+  'MISMATCH_DETECTED',
+  'DIAGNOSING',
+  'CONVERTER_REPORT_READY',
+  'REPAIR_PROPOSED',
+  'TEST_OR_ENV_REPAIR',
+  'AUTO_REPAIR_STOPPED',
+  'AWAITING_HUMAN_EVIDENCE',
+  'LOCAL_VALIDATING',
+  'READY_TO_UPDATE_TARGET',
+  'TARGET_UPDATED',
+  'TARGET_EXTERNALLY_MODIFIED',
+  'RUNTIME_RETESTING',
+  'RUNTIME_PARITY_PASSED',
+  'RUNTIME_REPAIR_EXHAUSTED',
+  'BLOCKED_PLATFORM_RUNTIME',
+  'RUNTIME_NOT_TESTED',
+]);
+
+const CREATED_BY = new Set(['CLI', 'AGENT', 'USER']);
+const SENSITIVITY = new Set(['PRIVATE', 'REDACTED']);
+const SIDE_EFFECTS = new Set(['READ_ONLY', 'REVERSIBLE', 'EXTERNAL_SIDE_EFFECT']);
+const EXECUTION_MODES = new Set(['UNATTENDED', 'USER_VISIBLE']);
+const PREREQUISITE_STATES = new Set(['SATISFIED', 'MISSING', 'UNAVAILABLE', 'UNKNOWN']);
+const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+const SHA256_PATTERN = /^[0-9a-f]{64}$/;
+const JOB_ID_PATTERN = /^mig_[A-Za-z0-9_]+$/;
+const REVIEW_ID_PATTERN = /^rev_[A-Za-z0-9_]+$/;
+const SECRET_KEY = /^(?:token|accesstoken|refreshtoken|bearertoken|cookie|authorization|password|secret|clientsecret|secretkey|privatekey|certificatepassword|apikey|accesskey)$/i;
+
+function fail(message, details) {
+  invariant(false, 'SCHEMA_V2_INVALID', message, details);
+}
+
+function record(value, path) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) fail(`${path} must be an object`);
+  return value;
+}
+
+function exactKeys(value, required, allowed, path) {
+  const object = record(value, path);
+  for (const key of required) {
+    if (!Object.hasOwn(object, key)) fail(`${path}.${key} is required`);
+  }
+  const allowedKeys = new Set(allowed);
+  for (const key of Object.keys(object)) {
+    if (!allowedKeys.has(key)) fail(`${path}.${key} is not allowed`);
+  }
+  return object;
+}
+
+function string(value, path, { min = 1, max = 4096, pattern } = {}) {
+  if (typeof value !== 'string' || value.trim().length < min || value.length > max) {
+    fail(`${path} must be a non-empty string no longer than ${max} characters`);
+  }
+  if (pattern && !pattern.test(value)) fail(`${path} has an invalid format`);
+  return value;
+}
+
+function nullableString(value, path, options) {
+  if (value === null) return value;
+  return string(value, path, options);
+}
+
+function enumValue(value, allowed, path) {
+  const values = allowed instanceof Set ? allowed : new Set(allowed);
+  if (!values.has(value)) fail(`${path} must be one of: ${[...values].join(', ')}`);
+  return value;
+}
+
+function boolean(value, path) {
+  if (typeof value !== 'boolean') fail(`${path} must be a boolean`);
+  return value;
+}
+
+function integer(value, path, { min = 0, max = Number.MAX_SAFE_INTEGER } = {}) {
+  if (!Number.isSafeInteger(value) || value < min || value > max) fail(`${path} must be an integer between ${min} and ${max}`);
+  return value;
+}
+
+function number(value, path, { min = 0, max = 1 } = {}) {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < min || value > max) {
+    fail(`${path} must be a number between ${min} and ${max}`);
+  }
+  return value;
+}
+
+function array(value, path, { max = 1000 } = {}) {
+  if (!Array.isArray(value) || value.length > max) fail(`${path} must be an array with at most ${max} items`);
+  return value;
+}
+
+function uniqueStrings(value, path, { max = 1000 } = {}) {
+  const items = array(value, path, { max }).map((item, index) => string(item, `${path}[${index}]`, { max: 512 }));
+  if (new Set(items).size !== items.length) fail(`${path} must not contain duplicates`);
+  return items;
+}
+
+function isoDate(value, path) {
+  string(value, path, { max: 64 });
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(value) || Number.isNaN(Date.parse(value))) {
+    fail(`${path} must be an ISO-8601 UTC date-time`);
+  }
+  return value;
+}
+
+function nullableIsoDate(value, path) {
+  if (value === null) return value;
+  return isoDate(value, path);
+}
+
+function id(value, path) {
+  return string(value, path, { max: 128, pattern: ID_PATTERN });
+}
+
+function jobId(value, path = 'jobId') {
+  return string(value, path, { max: 128, pattern: JOB_ID_PATTERN });
+}
+
+function reviewId(value, path = 'reviewId') {
+  return string(value, path, { max: 128, pattern: REVIEW_ID_PATTERN });
+}
+
+function sha256(value, path) {
+  return string(value, path, { min: 64, max: 64, pattern: SHA256_PATTERN });
+}
+
+function nullableSha256(value, path) {
+  if (value === null) return value;
+  return sha256(value, path);
+}
+
+function assertNoSecretKeys(value, path = '$', seen = new Set()) {
+  if (!value || typeof value !== 'object' || seen.has(value)) return;
+  seen.add(value);
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => assertNoSecretKeys(item, `${path}[${index}]`, seen));
+    return;
+  }
+  for (const [key, child] of Object.entries(value)) {
+    const normalizedKey = key.replace(/[^A-Za-z0-9]/g, '');
+    if (SECRET_KEY.test(normalizedKey)) fail(`${path}.${key} is a forbidden secret-bearing field`);
+    assertNoSecretKeys(child, `${path}.${key}`, seen);
+  }
+}
+
+function schemaHeader(document, kind) {
+  const object = record(document, '$');
+  if (object.schemaVersion !== 2) fail('schemaVersion must be 2');
+  if (object.kind !== kind) fail(`kind must be ${kind}`);
+  assertNoSecretKeys(object);
+  return object;
+}
+
+function validateArtifactMetadata(document, path = '$') {
+  enumValue(document.createdBy, CREATED_BY, `${path}.createdBy`);
+  enumValue(document.sensitivity, SENSITIVITY, `${path}.sensitivity`);
+  isoDate(document.createdAt, `${path}.createdAt`);
+}
+
+function validateEvidenceRefs(document, path) {
+  uniqueStrings(document.evidenceRefs, `${path}.evidenceRefs`, { max: 200 });
+  uniqueStrings(document.knowledgeRuleIds, `${path}.knowledgeRuleIds`, { max: 200 });
+}
+
+const CAUSE_DEFAULTS = Object.freeze({
+  CONVERTER: ['CONVERTER_MAINTAINER', 'NONE'],
+  SOURCE_DATA: ['WORKFLOW_AI', 'V5_ARTIFACT'],
+  TARGET_CASE: ['WORKFLOW_AI', 'V5_ARTIFACT'],
+  TEST_HARNESS: ['WORKFLOW_AI', 'RUNTIME_SCENARIO'],
+  ENVIRONMENT_CONFIGURATION: ['USER', 'ENVIRONMENT_BINDING'],
+  PLATFORM_RUNTIME: ['PLATFORM_MAINTAINER', 'NONE'],
+  KNOWLEDGE_GAP: ['KNOWLEDGE_MAINTAINER', 'KNOWLEDGE_RULE'],
+  AUTHORIZATION: ['USER', 'AUTHORIZATION_PREREQUISITE'],
+  UNKNOWN: ['UNKNOWN', 'NONE'],
+});
+
+function validateClassificationIssue(issue, index) {
+  const path = `$.issues[${index}]`;
+  exactKeys(issue,
+    ['issueId', 'clusterId', 'cause', 'responsibleParty', 'repairTarget', 'confidence', 'reason', 'evidenceRefs', 'knowledgeRuleIds', 'autoRepairAllowed'],
+    ['issueId', 'clusterId', 'cause', 'responsibleParty', 'repairTarget', 'confidence', 'reason', 'evidenceRefs', 'knowledgeRuleIds', 'autoRepairAllowed'],
+    path);
+  id(issue.issueId, `${path}.issueId`);
+  id(issue.clusterId, `${path}.clusterId`);
+  enumValue(issue.cause, ISSUE_CAUSES, `${path}.cause`);
+  enumValue(issue.responsibleParty, RESPONSIBLE_PARTIES, `${path}.responsibleParty`);
+  enumValue(issue.repairTarget, REPAIR_TARGETS, `${path}.repairTarget`);
+  number(issue.confidence, `${path}.confidence`);
+  string(issue.reason, `${path}.reason`, { max: 8192 });
+  validateEvidenceRefs(issue, path);
+  boolean(issue.autoRepairAllowed, `${path}.autoRepairAllowed`);
+  const [expectedParty, expectedTarget] = CAUSE_DEFAULTS[issue.cause];
+  if (issue.responsibleParty !== expectedParty) fail(`${path}.responsibleParty is inconsistent with cause ${issue.cause}`);
+  if (issue.repairTarget !== expectedTarget) fail(`${path}.repairTarget is inconsistent with cause ${issue.cause}`);
+  const canAutoRepair = ['SOURCE_DATA', 'TARGET_CASE'].includes(issue.cause)
+    && issue.responsibleParty === 'WORKFLOW_AI'
+    && issue.repairTarget === 'V5_ARTIFACT';
+  if (issue.autoRepairAllowed && !canAutoRepair) fail(`${path}.autoRepairAllowed is forbidden for cause ${issue.cause}`);
+}
+
+export function validateIssueClassificationV2(document, validationReport) {
+  schemaHeader(document, 'issue-classification');
+  exactKeys(document,
+    ['schemaVersion', 'kind', 'jobId', 'reviewId', 'classifiedAt', 'createdBy', 'sensitivity', 'issues'],
+    ['schemaVersion', 'kind', 'jobId', 'reviewId', 'classifiedAt', 'createdBy', 'sensitivity', 'issues'],
+    '$');
+  jobId(document.jobId);
+  if (document.reviewId !== null) reviewId(document.reviewId);
+  isoDate(document.classifiedAt, '$.classifiedAt');
+  enumValue(document.createdBy, CREATED_BY, '$.createdBy');
+  enumValue(document.sensitivity, SENSITIVITY, '$.sensitivity');
+  const issues = array(document.issues, '$.issues', { max: 2000 });
+  const issueIds = new Set();
+  issues.forEach((issue, index) => {
+    validateClassificationIssue(issue, index);
+    if (issueIds.has(issue.issueId)) fail(`$.issues contains duplicate issueId ${issue.issueId}`);
+    issueIds.add(issue.issueId);
+  });
+  if (validationReport) {
+    const expected = new Set((validationReport.issues || []).map((issue) => issue.issueId));
+    for (const issueIdValue of issueIds) {
+      if (!expected.delete(issueIdValue)) fail(`Unknown issue id: ${issueIdValue}`);
+    }
+    if (expected.size > 0) fail('Every validation issue must be classified', { missingIssueIds: [...expected] });
+  }
+  return document;
+}
+
+function validateScenarioStep(step, index, collection) {
+  const path = `$.${collection}[${index}]`;
+  exactKeys(step, ['stepId', 'type'], ['stepId', 'type', 'target', 'input', 'timeoutMs'], path);
+  id(step.stepId, `${path}.stepId`);
+  string(step.type, `${path}.type`, { max: 128, pattern: ID_PATTERN });
+  if (step.target !== undefined) string(step.target, `${path}.target`, { max: 512 });
+  if (step.input !== undefined && !['string', 'number', 'boolean'].includes(typeof step.input) && step.input !== null) {
+    fail(`${path}.input must be a scalar or null`);
+  }
+  if (typeof step.input === 'string' && step.input.length > 4096) fail(`${path}.input is too long`);
+  if (step.timeoutMs !== undefined) integer(step.timeoutMs, `${path}.timeoutMs`, { min: 1, max: 300000 });
+}
+
+function validateScenarioAssertion(assertion, index) {
+  const path = `$.assertions[${index}]`;
+  exactKeys(assertion, ['assertionId', 'observation', 'comparator'], ['assertionId', 'observation', 'comparator', 'expected', 'allowedDifference'], path);
+  id(assertion.assertionId, `${path}.assertionId`);
+  string(assertion.observation, `${path}.observation`, { max: 512 });
+  enumValue(assertion.comparator, ['V4_V5_EQUAL', 'V4_V5_SHAPE_EQUAL', 'EXPECTED_VALUE', 'NO_ERROR'], `${path}.comparator`);
+  if (assertion.expected !== undefined && !['string', 'number', 'boolean'].includes(typeof assertion.expected) && assertion.expected !== null) {
+    fail(`${path}.expected must be a scalar or null`);
+  }
+  if (assertion.allowedDifference !== undefined) string(assertion.allowedDifference, `${path}.allowedDifference`, { max: 1024 });
+}
+
+export function validateRuntimeScenario(document) {
+  schemaHeader(document, 'runtime-scenario');
+  exactKeys(document,
+    ['schemaVersion', 'kind', 'scenarioId', 'version', 'name', 'source', 'sideEffect', 'executionPolicy', 'preconditions', 'actions', 'assertions', 'cleanup', 'knowledgeRuleIds', 'createdAt', 'createdBy', 'sensitivity'],
+    ['schemaVersion', 'kind', 'scenarioId', 'version', 'name', 'source', 'sideEffect', 'executionPolicy', 'preconditions', 'actions', 'assertions', 'cleanup', 'knowledgeRuleIds', 'createdAt', 'createdBy', 'sensitivity'],
+    '$');
+  id(document.scenarioId, '$.scenarioId');
+  integer(document.version, '$.version', { min: 1 });
+  string(document.name, '$.name', { max: 256 });
+  exactKeys(document.source, ['type', 'reference'], ['type', 'reference'], '$.source');
+  enumValue(document.source.type, ['USER', 'MAINTAINER', 'DETERMINISTIC', 'AI'], '$.source.type');
+  nullableString(document.source.reference, '$.source.reference', { max: 512 });
+  enumValue(document.sideEffect, SIDE_EFFECTS, '$.sideEffect');
+  exactKeys(document.executionPolicy, ['mode', 'authorizationRequired', 'cleanupRequired'], ['mode', 'authorizationRequired', 'cleanupRequired'], '$.executionPolicy');
+  enumValue(document.executionPolicy.mode, EXECUTION_MODES, '$.executionPolicy.mode');
+  boolean(document.executionPolicy.authorizationRequired, '$.executionPolicy.authorizationRequired');
+  boolean(document.executionPolicy.cleanupRequired, '$.executionPolicy.cleanupRequired');
+  uniqueStrings(document.preconditions, '$.preconditions', { max: 100 });
+  array(document.actions, '$.actions', { max: 200 }).forEach((step, index) => validateScenarioStep(step, index, 'actions'));
+  array(document.assertions, '$.assertions', { max: 200 }).forEach(validateScenarioAssertion);
+  array(document.cleanup, '$.cleanup', { max: 100 }).forEach((step, index) => validateScenarioStep(step, index, 'cleanup'));
+  uniqueStrings(document.knowledgeRuleIds, '$.knowledgeRuleIds', { max: 200 });
+  validateArtifactMetadata(document);
+  if (document.sideEffect === 'REVERSIBLE') {
+    if (!document.executionPolicy.authorizationRequired || !document.executionPolicy.cleanupRequired || document.cleanup.length === 0) {
+      fail('REVERSIBLE scenarios require authorization and a non-empty cleanup plan');
+    }
+  }
+  if (document.sideEffect === 'EXTERNAL_SIDE_EFFECT') {
+    if (document.executionPolicy.mode !== 'USER_VISIBLE' || !document.executionPolicy.authorizationRequired) {
+      fail('EXTERNAL_SIDE_EFFECT scenarios require USER_VISIBLE mode and authorization');
+    }
+  }
+  return document;
+}
+
+function validateTraceSubject(subject) {
+  exactKeys(subject, ['generation', 'nid', 'workId'], ['generation', 'nid', 'workId'], '$.subject');
+  enumValue(subject.generation, ['V4', 'V5'], '$.subject.generation');
+  integer(subject.nid, '$.subject.nid', { min: 1 });
+  string(subject.workId, '$.subject.workId', { max: 256 });
+}
+
+function validateTraceObservation(observation, index) {
+  const path = `$.observations[${index}]`;
+  exactKeys(observation,
+    ['observationId', 'category', 'name', 'sequence', 'valueType', 'valueDigest', 'summary'],
+    ['observationId', 'category', 'name', 'sequence', 'valueType', 'valueDigest', 'summary'],
+    path);
+  id(observation.observationId, `${path}.observationId`);
+  enumValue(observation.category, ['UI', 'STATE', 'ROUTE', 'EVENT', 'SERVICE', 'NETWORK', 'CONSOLE'], `${path}.category`);
+  string(observation.name, `${path}.name`, { max: 512 });
+  integer(observation.sequence, `${path}.sequence`, { min: 0 });
+  string(observation.valueType, `${path}.valueType`, { max: 128 });
+  nullableSha256(observation.valueDigest, `${path}.valueDigest`);
+  string(observation.summary, `${path}.summary`, { max: 4096 });
+}
+
+function validateTraceError(error, index) {
+  const path = `$.errors[${index}]`;
+  exactKeys(error, ['code', 'message', 'at', 'source'], ['code', 'message', 'at', 'source'], path);
+  string(error.code, `${path}.code`, { max: 128, pattern: ID_PATTERN });
+  string(error.message, `${path}.message`, { max: 4096 });
+  isoDate(error.at, `${path}.at`);
+  enumValue(error.source, ['PAGE', 'CONSOLE', 'NETWORK', 'DRIVER', 'PLATFORM'], `${path}.source`);
+}
+
+function validateArtifactRef(artifact, index) {
+  const path = `$.artifacts[${index}]`;
+  exactKeys(artifact, ['artifactId', 'type', 'path', 'sha256'], ['artifactId', 'type', 'path', 'sha256'], path);
+  id(artifact.artifactId, `${path}.artifactId`);
+  enumValue(artifact.type, ['SCREENSHOT', 'TRACE', 'LOG_SUMMARY'], `${path}.type`);
+  string(artifact.path, `${path}.path`, { max: 1024 });
+  if (artifact.path.startsWith('/') || artifact.path.includes('..')) fail(`${path}.path must be a safe relative path`);
+  sha256(artifact.sha256, `${path}.sha256`);
+}
+
+export function validateBehaviorTrace(document) {
+  schemaHeader(document, 'behavior-trace');
+  exactKeys(document,
+    ['schemaVersion', 'kind', 'traceId', 'reviewId', 'scenarioId', 'cycleId', 'subject', 'runtime', 'startedAt', 'endedAt', 'status', 'observations', 'errors', 'artifacts', 'redaction', 'createdAt', 'createdBy', 'sensitivity'],
+    ['schemaVersion', 'kind', 'traceId', 'reviewId', 'scenarioId', 'cycleId', 'subject', 'runtime', 'startedAt', 'endedAt', 'status', 'observations', 'errors', 'artifacts', 'redaction', 'createdAt', 'createdBy', 'sensitivity'],
+    '$');
+  id(document.traceId, '$.traceId');
+  reviewId(document.reviewId);
+  id(document.scenarioId, '$.scenarioId');
+  id(document.cycleId, '$.cycleId');
+  validateTraceSubject(document.subject);
+  exactKeys(document.runtime, ['driver', 'driverVersion', 'browserVersion', 'mode'], ['driver', 'driverVersion', 'browserVersion', 'mode'], '$.runtime');
+  string(document.runtime.driver, '$.runtime.driver', { max: 128 });
+  string(document.runtime.driverVersion, '$.runtime.driverVersion', { max: 128 });
+  string(document.runtime.browserVersion, '$.runtime.browserVersion', { max: 128 });
+  enumValue(document.runtime.mode, EXECUTION_MODES, '$.runtime.mode');
+  isoDate(document.startedAt, '$.startedAt');
+  isoDate(document.endedAt, '$.endedAt');
+  if (Date.parse(document.endedAt) < Date.parse(document.startedAt)) fail('endedAt must not precede startedAt');
+  enumValue(document.status, ['COMPLETED', 'FAILED', 'INTERRUPTED'], '$.status');
+  array(document.observations, '$.observations', { max: 10000 }).forEach(validateTraceObservation);
+  array(document.errors, '$.errors', { max: 1000 }).forEach(validateTraceError);
+  array(document.artifacts, '$.artifacts', { max: 1000 }).forEach(validateArtifactRef);
+  exactKeys(document.redaction, ['applied', 'policyVersion', 'omittedCategories'], ['applied', 'policyVersion', 'omittedCategories'], '$.redaction');
+  if (document.redaction.applied !== true) fail('Behavior Trace redaction.applied must be true');
+  string(document.redaction.policyVersion, '$.redaction.policyVersion', { max: 128 });
+  uniqueStrings(document.redaction.omittedCategories, '$.redaction.omittedCategories', { max: 100 });
+  validateArtifactMetadata(document);
+  return document;
+}
+
+function validateEnvironmentField(field, index) {
+  const path = `$.fields[${index}]`;
+  exactKeys(field,
+    ['path', 'policy', 'presence', 'valueType', 'comparisonDigest', 'equivalent'],
+    ['path', 'policy', 'presence', 'valueType', 'comparisonDigest', 'equivalent'],
+    path);
+  string(field.path, `${path}.path`, { max: 1024 });
+  enumValue(field.policy, ['COPY_EXACT', 'REMAP_FOR_TARGET', 'USE_TARGET_BINDING', 'REQUIRE_USER_BINDING', 'REDACT_AND_COMPARE', 'IGNORE_FOR_PARITY'], `${path}.policy`);
+  enumValue(field.presence, ['PRESENT', 'ABSENT', 'UNKNOWN'], `${path}.presence`);
+  nullableString(field.valueType, `${path}.valueType`, { max: 128 });
+  nullableSha256(field.comparisonDigest, `${path}.comparisonDigest`);
+  if (field.equivalent !== null) boolean(field.equivalent, `${path}.equivalent`);
+  if (field.presence !== 'PRESENT' && (field.valueType !== null || field.comparisonDigest !== null)) {
+    fail(`${path} cannot describe value metadata when presence is ${field.presence}`);
+  }
+}
+
+export function validateEnvironmentManifest(document) {
+  schemaHeader(document, 'environment-manifest');
+  exactKeys(document,
+    ['schemaVersion', 'kind', 'manifestId', 'reviewId', 'subject', 'revision', 'fields', 'redaction', 'createdAt', 'createdBy', 'sensitivity'],
+    ['schemaVersion', 'kind', 'manifestId', 'reviewId', 'subject', 'revision', 'fields', 'redaction', 'createdAt', 'createdBy', 'sensitivity'],
+    '$');
+  id(document.manifestId, '$.manifestId');
+  reviewId(document.reviewId);
+  enumValue(document.subject, ['SOURCE_V4', 'TARGET_V5'], '$.subject');
+  exactKeys(document.revision, ['nid', 'workId'], ['nid', 'workId'], '$.revision');
+  integer(document.revision.nid, '$.revision.nid', { min: 1 });
+  string(document.revision.workId, '$.revision.workId', { max: 256 });
+  array(document.fields, '$.fields', { max: 5000 }).forEach(validateEnvironmentField);
+  exactKeys(document.redaction, ['applied', 'policyVersion'], ['applied', 'policyVersion'], '$.redaction');
+  if (document.redaction.applied !== true) fail('Environment Manifest redaction.applied must be true');
+  string(document.redaction.policyVersion, '$.redaction.policyVersion', { max: 128 });
+  validateArtifactMetadata(document);
+  return document;
+}
+
+export function validateHumanFinding(document) {
+  schemaHeader(document, 'human-finding');
+  exactKeys(document,
+    ['schemaVersion', 'kind', 'findingId', 'reviewId', 'issueId', 'clusterId', 'symptom', 'reproductionSteps', 'v4Observation', 'v5Observation', 'locations', 'suggestedCause', 'confidenceNote', 'targetManuallyEdited', 'targetRevision', 'requests', 'createdAt', 'createdBy', 'sensitivity'],
+    ['schemaVersion', 'kind', 'findingId', 'reviewId', 'issueId', 'clusterId', 'symptom', 'reproductionSteps', 'v4Observation', 'v5Observation', 'locations', 'suggestedCause', 'confidenceNote', 'targetManuallyEdited', 'targetRevision', 'requests', 'createdAt', 'createdBy', 'sensitivity'],
+    '$');
+  id(document.findingId, '$.findingId');
+  reviewId(document.reviewId);
+  if (document.issueId !== null) id(document.issueId, '$.issueId');
+  if (document.clusterId !== null) id(document.clusterId, '$.clusterId');
+  string(document.symptom, '$.symptom', { max: 8192 });
+  uniqueStrings(document.reproductionSteps, '$.reproductionSteps', { max: 100 });
+  nullableString(document.v4Observation, '$.v4Observation', { max: 8192 });
+  nullableString(document.v5Observation, '$.v5Observation', { max: 8192 });
+  uniqueStrings(document.locations, '$.locations', { max: 200 });
+  if (document.suggestedCause !== null) enumValue(document.suggestedCause, ISSUE_CAUSES, '$.suggestedCause');
+  nullableString(document.confidenceNote, '$.confidenceNote', { max: 4096 });
+  boolean(document.targetManuallyEdited, '$.targetManuallyEdited');
+  if (document.targetRevision !== null) string(document.targetRevision, '$.targetRevision', { max: 256 });
+  uniqueStrings(document.requests, '$.requests', { max: 20 });
+  document.requests.forEach((request, index) => enumValue(request, ['RERUN', 'RECLASSIFY', 'CONVERTER_REPORT', 'TRY_REPAIR', 'ACCEPT_TARGET_REVISION'], `$.requests[${index}]`));
+  if (document.targetManuallyEdited && document.targetRevision === null) fail('targetRevision is required when targetManuallyEdited is true');
+  if (!document.targetManuallyEdited && document.requests.includes('ACCEPT_TARGET_REVISION')) fail('ACCEPT_TARGET_REVISION requires targetManuallyEdited');
+  validateArtifactMetadata(document);
+  return document;
+}
+
+export function validateRepairBudget(document) {
+  schemaHeader(document, 'repair-budget');
+  exactKeys(document,
+    ['schemaVersion', 'kind', 'budgetId', 'reviewId', 'scope', 'clusterId', 'attempts', 'targetRevisions', 'status', 'updatedAt', 'createdAt', 'createdBy', 'sensitivity'],
+    ['schemaVersion', 'kind', 'budgetId', 'reviewId', 'scope', 'clusterId', 'attempts', 'targetRevisions', 'status', 'updatedAt', 'createdAt', 'createdBy', 'sensitivity'],
+    '$');
+  id(document.budgetId, '$.budgetId');
+  reviewId(document.reviewId);
+  enumValue(document.scope, ['ISSUE_CLUSTER', 'REVIEW_SESSION'], '$.scope');
+  if (document.clusterId !== null) id(document.clusterId, '$.clusterId');
+  if (document.attempts !== null) {
+    exactKeys(document.attempts, ['automaticLimit', 'automaticUsed', 'extensionLimit', 'extensionUsed'], ['automaticLimit', 'automaticUsed', 'extensionLimit', 'extensionUsed'], '$.attempts');
+    integer(document.attempts.automaticLimit, '$.attempts.automaticLimit', { min: 0, max: 100 });
+    integer(document.attempts.automaticUsed, '$.attempts.automaticUsed', { min: 0, max: 100 });
+    integer(document.attempts.extensionLimit, '$.attempts.extensionLimit', { min: 0, max: 100 });
+    integer(document.attempts.extensionUsed, '$.attempts.extensionUsed', { min: 0, max: 100 });
+    if (document.attempts.automaticUsed > document.attempts.automaticLimit || document.attempts.extensionUsed > document.attempts.extensionLimit) {
+      fail('Repair attempt usage cannot exceed its limit');
+    }
+  }
+  if (document.targetRevisions !== null) {
+    exactKeys(document.targetRevisions, ['baseLimit', 'used', 'extensionLimit', 'extensionUsed'], ['baseLimit', 'used', 'extensionLimit', 'extensionUsed'], '$.targetRevisions');
+    integer(document.targetRevisions.baseLimit, '$.targetRevisions.baseLimit', { min: 0, max: 1000 });
+    integer(document.targetRevisions.used, '$.targetRevisions.used', { min: 0, max: 1000 });
+    integer(document.targetRevisions.extensionLimit, '$.targetRevisions.extensionLimit', { min: 0, max: 1000 });
+    integer(document.targetRevisions.extensionUsed, '$.targetRevisions.extensionUsed', { min: 0, max: 1000 });
+    if (document.targetRevisions.used > document.targetRevisions.baseLimit || document.targetRevisions.extensionUsed > document.targetRevisions.extensionLimit) {
+      fail('Target revision usage cannot exceed its limit');
+    }
+  }
+  enumValue(document.status, ['ACTIVE', 'PAUSED', 'EXHAUSTED', 'FROZEN'], '$.status');
+  isoDate(document.updatedAt, '$.updatedAt');
+  validateArtifactMetadata(document);
+  if (document.scope === 'ISSUE_CLUSTER' && (document.clusterId === null || document.attempts === null || document.targetRevisions !== null)) {
+    fail('ISSUE_CLUSTER budget requires clusterId and attempts only');
+  }
+  if (document.scope === 'REVIEW_SESSION' && (document.clusterId !== null || document.attempts !== null || document.targetRevisions === null)) {
+    fail('REVIEW_SESSION budget requires targetRevisions only');
+  }
+  return document;
+}
+
+export function validateAutomaticRepairDecision(document) {
+  schemaHeader(document, 'automatic-repair-decision');
+  exactKeys(document,
+    ['schemaVersion', 'kind', 'decisionId', 'reviewId', 'clusterId', 'cause', 'repairTarget', 'decision', 'reasonCode', 'reason', 'budgetId', 'budgetState', 'remainingAttempts', 'evidenceRefs', 'knowledgeRuleIds', 'decidedAt', 'createdAt', 'createdBy', 'sensitivity'],
+    ['schemaVersion', 'kind', 'decisionId', 'reviewId', 'clusterId', 'cause', 'repairTarget', 'decision', 'reasonCode', 'reason', 'budgetId', 'budgetState', 'remainingAttempts', 'evidenceRefs', 'knowledgeRuleIds', 'decidedAt', 'createdAt', 'createdBy', 'sensitivity'],
+    '$');
+  id(document.decisionId, '$.decisionId');
+  reviewId(document.reviewId);
+  id(document.clusterId, '$.clusterId');
+  enumValue(document.cause, ISSUE_CAUSES, '$.cause');
+  enumValue(document.repairTarget, REPAIR_TARGETS, '$.repairTarget');
+  enumValue(document.decision, AUTOMATIC_REPAIR_DECISIONS, '$.decision');
+  string(document.reasonCode, '$.reasonCode', { max: 128, pattern: ID_PATTERN });
+  string(document.reason, '$.reason', { max: 8192 });
+  id(document.budgetId, '$.budgetId');
+  enumValue(document.budgetState, REPAIR_BUDGET_STATES, '$.budgetState');
+  integer(document.remainingAttempts, '$.remainingAttempts', { min: 0, max: 100 });
+  validateEvidenceRefs(document, '$');
+  isoDate(document.decidedAt, '$.decidedAt');
+  validateArtifactMetadata(document);
+  if (document.decision === 'AUTO_REPAIR_ALLOWED') {
+    if (!['SOURCE_DATA', 'TARGET_CASE'].includes(document.cause)
+      || document.repairTarget !== 'V5_ARTIFACT'
+      || document.budgetState !== 'AVAILABLE'
+      || document.remainingAttempts < 1) {
+      fail('AUTO_REPAIR_ALLOWED requires a repairable target cause, V5_ARTIFACT, and available remaining budget');
+    }
+  }
+  if (document.decision === 'AUTO_REPAIR_STOPPED' && !['FROZEN', 'EXHAUSTED'].includes(document.budgetState)) {
+    fail('AUTO_REPAIR_STOPPED requires a frozen or exhausted budget state');
+  }
+  if (document.budgetState === 'EXHAUSTED' && document.remainingAttempts !== 0) {
+    fail('EXHAUSTED budgetState requires remainingAttempts at 0');
+  }
+  return document;
+}
+
+function validateCheckpoint(checkpoint) {
+  exactKeys(checkpoint, ['kind', 'artifact', 'sha256', 'targetNid', 'targetWorkId'], ['kind', 'artifact', 'sha256', 'targetNid', 'targetWorkId'], '$.checkpoint');
+  enumValue(checkpoint.kind, ['CONVERTER_OUTPUT', 'STATICALLY_SAFE_CANDIDATE', 'CONFIRMED_TARGET_REVISION'], '$.checkpoint.kind');
+  string(checkpoint.artifact, '$.checkpoint.artifact', { max: 1024 });
+  if (checkpoint.artifact.startsWith('/') || checkpoint.artifact.includes('..')) fail('$.checkpoint.artifact must be a safe relative path');
+  sha256(checkpoint.sha256, '$.checkpoint.sha256');
+  if (checkpoint.targetNid !== null) integer(checkpoint.targetNid, '$.checkpoint.targetNid', { min: 1 });
+  if (checkpoint.targetWorkId !== null) string(checkpoint.targetWorkId, '$.checkpoint.targetWorkId', { max: 256 });
+  if (checkpoint.kind === 'CONFIRMED_TARGET_REVISION' && (checkpoint.targetNid === null || checkpoint.targetWorkId === null)) {
+    fail('CONFIRMED_TARGET_REVISION requires targetNid and targetWorkId');
+  }
+}
+
+export function validateDiagnosticSaveEligibility(document) {
+  schemaHeader(document, 'diagnostic-save-eligibility');
+  exactKeys(document,
+    ['schemaVersion', 'kind', 'eligibilityId', 'jobId', 'reviewId', 'status', 'checkpoint', 'prerequisites', 'blockers', 'evaluatedAt', 'createdAt', 'createdBy', 'sensitivity'],
+    ['schemaVersion', 'kind', 'eligibilityId', 'jobId', 'reviewId', 'status', 'checkpoint', 'prerequisites', 'blockers', 'evaluatedAt', 'createdAt', 'createdBy', 'sensitivity'],
+    '$');
+  id(document.eligibilityId, '$.eligibilityId');
+  jobId(document.jobId);
+  if (document.reviewId !== null) reviewId(document.reviewId);
+  enumValue(document.status, DIAGNOSTIC_SAVE_STATUSES, '$.status');
+  if (document.checkpoint !== null) validateCheckpoint(document.checkpoint);
+  const prerequisiteKeys = ['authentication', 'serverPermission', 'userAuthorization', 'platformWritePath', 'revisionSafety', 'writeOutcomeKnown'];
+  exactKeys(document.prerequisites, prerequisiteKeys, prerequisiteKeys, '$.prerequisites');
+  for (const key of prerequisiteKeys) enumValue(document.prerequisites[key], PREREQUISITE_STATES, `$.prerequisites.${key}`);
+  uniqueStrings(document.blockers, '$.blockers', { max: 100 });
+  isoDate(document.evaluatedAt, '$.evaluatedAt');
+  validateArtifactMetadata(document);
+  const authMissing = ['authentication', 'serverPermission', 'userAuthorization'].some((key) => document.prerequisites[key] !== 'SATISFIED');
+  const platformMissing = document.prerequisites.platformWritePath !== 'SATISFIED';
+  const reconciliation = document.prerequisites.revisionSafety !== 'SATISFIED'
+    || document.prerequisites.writeOutcomeKnown !== 'SATISFIED';
+  if (document.status === 'DIAGNOSTIC_SAVE_ELIGIBLE') {
+    if (!document.checkpoint || authMissing || platformMissing || reconciliation || document.blockers.length > 0) {
+      fail('DIAGNOSTIC_SAVE_ELIGIBLE requires a checkpoint, all prerequisites satisfied, and no blockers');
+    }
+  }
+  if (document.status === 'DIAGNOSTIC_SAVE_WAITING_FOR_AUTH' && !authMissing) fail('WAITING_FOR_AUTH requires a missing authentication, permission, or authorization prerequisite');
+  if (document.status === 'DIAGNOSTIC_SAVE_WAITING_FOR_PLATFORM' && !platformMissing) fail('WAITING_FOR_PLATFORM requires an unavailable platform write path');
+  if (document.status === 'DIAGNOSTIC_SAVE_RECONCILIATION_REQUIRED' && !reconciliation) fail('RECONCILIATION_REQUIRED requires unsafe revision state or an unknown write outcome');
+  if (document.status === 'DIAGNOSTIC_SAVE_UNSAFE_ARTIFACT' && document.checkpoint !== null) fail('UNSAFE_ARTIFACT requires checkpoint to be null');
+  return document;
+}
+
+function validateRuntimePin(pin, path) {
+  exactKeys(pin, ['version', 'sha256'], ['version', 'sha256'], path);
+  string(pin.version, `${path}.version`, { max: 128 });
+  sha256(pin.sha256, `${path}.sha256`);
+}
+
+export function validateRuntimeReviewSession(document) {
+  schemaHeader(document, 'runtime-review-session');
+  exactKeys(document,
+    ['schemaVersion', 'kind', 'reviewId', 'jobId', 'target', 'status', 'runtime', 'baseline', 'activeCycleId', 'issueClusterIds', 'scenarioIds', 'humanFindingIds', 'repairBudgetIds', 'history', 'createdAt', 'updatedAt', 'createdBy', 'sensitivity'],
+    ['schemaVersion', 'kind', 'reviewId', 'jobId', 'target', 'status', 'runtime', 'baseline', 'activeCycleId', 'issueClusterIds', 'scenarioIds', 'humanFindingIds', 'repairBudgetIds', 'history', 'createdAt', 'updatedAt', 'createdBy', 'sensitivity'],
+    '$');
+  reviewId(document.reviewId);
+  jobId(document.jobId);
+  exactKeys(document.target, ['nid', 'workId'], ['nid', 'workId'], '$.target');
+  integer(document.target.nid, '$.target.nid', { min: 1 });
+  string(document.target.workId, '$.target.workId', { max: 256 });
+  enumValue(document.status, REVIEW_STATUSES, '$.status');
+  exactKeys(document.runtime, ['workflow', 'converter', 'knowledge'], ['workflow', 'converter', 'knowledge'], '$.runtime');
+  validateRuntimePin(document.runtime.workflow, '$.runtime.workflow');
+  validateRuntimePin(document.runtime.converter, '$.runtime.converter');
+  validateRuntimePin(document.runtime.knowledge, '$.runtime.knowledge');
+  exactKeys(document.baseline, ['sourceWorkId', 'targetWorkId'], ['sourceWorkId', 'targetWorkId'], '$.baseline');
+  string(document.baseline.sourceWorkId, '$.baseline.sourceWorkId', { max: 256 });
+  string(document.baseline.targetWorkId, '$.baseline.targetWorkId', { max: 256 });
+  if (document.baseline.targetWorkId !== document.target.workId) fail('baseline.targetWorkId must match target.workId');
+  if (document.activeCycleId !== null) id(document.activeCycleId, '$.activeCycleId');
+  uniqueStrings(document.issueClusterIds, '$.issueClusterIds', { max: 2000 });
+  uniqueStrings(document.scenarioIds, '$.scenarioIds', { max: 1000 });
+  uniqueStrings(document.humanFindingIds, '$.humanFindingIds', { max: 2000 });
+  uniqueStrings(document.repairBudgetIds, '$.repairBudgetIds', { max: 2000 });
+  array(document.history, '$.history', { max: 10000 }).forEach((entry, index) => {
+    const path = `$.history[${index}]`;
+    exactKeys(entry, ['status', 'at', 'reason'], ['status', 'at', 'reason'], path);
+    enumValue(entry.status, REVIEW_STATUSES, `${path}.status`);
+    isoDate(entry.at, `${path}.at`);
+    nullableString(entry.reason, `${path}.reason`, { max: 4096 });
+  });
+  isoDate(document.updatedAt, '$.updatedAt');
+  validateArtifactMetadata(document);
+  if (Date.parse(document.updatedAt) < Date.parse(document.createdAt)) fail('updatedAt must not precede createdAt');
+  if (document.history.length === 0 || document.history.at(-1).status !== document.status) fail('history must end with the current review status');
+  return document;
+}
+
+export const SCHEMA_V2_VALIDATORS = Object.freeze({
+  'issue-classification': validateIssueClassificationV2,
+  'runtime-scenario': validateRuntimeScenario,
+  'behavior-trace': validateBehaviorTrace,
+  'environment-manifest': validateEnvironmentManifest,
+  'human-finding': validateHumanFinding,
+  'repair-budget': validateRepairBudget,
+  'automatic-repair-decision': validateAutomaticRepairDecision,
+  'diagnostic-save-eligibility': validateDiagnosticSaveEligibility,
+  'runtime-review-session': validateRuntimeReviewSession,
+});
+
+export function validateSchemaV2Artifact(document, options = {}) {
+  if (document?.schemaVersion !== 2) {
+    invariant(false, 'SCHEMA_VERSION_UNSUPPORTED', 'Expected schemaVersion 2', { actual: document?.schemaVersion ?? null });
+  }
+  const validator = SCHEMA_V2_VALIDATORS[document.kind];
+  invariant(validator, 'SCHEMA_KIND_UNSUPPORTED', 'Unsupported schema v2 artifact kind', { kind: document.kind ?? null });
+  return validator(document, options.validationReport);
+}

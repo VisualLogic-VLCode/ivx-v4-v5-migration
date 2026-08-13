@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.ivx.local/migration/v2/behavior-trace.schema.json",
+  "title": "iVX Behavior Trace v2",
+  "type": "object",
+  "required": ["schemaVersion", "kind", "traceId", "reviewId", "scenarioId", "cycleId", "subject", "runtime", "startedAt", "endedAt", "status", "observations", "errors", "artifacts", "redaction", "createdAt", "createdBy", "sensitivity"],
+  "properties": {
+    "schemaVersion": { "const": 2 },
+    "kind": { "const": "behavior-trace" },
+    "traceId": { "$ref": "common.schema.json#/$defs/id" },
+    "reviewId": { "$ref": "common.schema.json#/$defs/reviewId" },
+    "scenarioId": { "$ref": "common.schema.json#/$defs/id" },
+    "cycleId": { "$ref": "common.schema.json#/$defs/id" },
+    "subject": {
+      "type": "object",
+      "required": ["generation", "nid", "workId"],
+      "properties": {
+        "generation": { "enum": ["V4", "V5"] },
+        "nid": { "type": "integer", "minimum": 1 },
+        "workId": { "type": "string", "minLength": 1, "maxLength": 256 }
+      },
+      "additionalProperties": false
+    },
+    "runtime": {
+      "type": "object",
+      "required": ["driver", "driverVersion", "browserVersion", "mode"],
+      "properties": {
+        "driver": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "driverVersion": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "browserVersion": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "mode": { "enum": ["UNATTENDED", "USER_VISIBLE"] }
+      },
+      "additionalProperties": false
+    },
+    "startedAt": { "$ref": "common.schema.json#/$defs/dateTime" },
+    "endedAt": { "$ref": "common.schema.json#/$defs/dateTime" },
+    "status": { "enum": ["COMPLETED", "FAILED", "INTERRUPTED"] },
+    "observations": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "type": "object",
+        "required": ["observationId", "category", "name", "sequence", "valueType", "valueDigest", "summary"],
+        "properties": {
+          "observationId": { "$ref": "common.schema.json#/$defs/id" },
+          "category": { "enum": ["UI", "STATE", "ROUTE", "EVENT", "SERVICE", "NETWORK", "CONSOLE"] },
+          "name": { "type": "string", "minLength": 1, "maxLength": 512 },
+          "sequence": { "type": "integer", "minimum": 0 },
+          "valueType": { "type": "string", "minLength": 1, "maxLength": 128 },
+          "valueDigest": {
+            "oneOf": [{ "$ref": "common.schema.json#/$defs/sha256" }, { "type": "null" }]
+          },
+          "summary": { "type": "string", "minLength": 1, "maxLength": 4096 }
+        },
+        "additionalProperties": false
+      }
+    },
+    "errors": {
+      "type": "array",
+      "maxItems": 1000,
+      "items": {
+        "type": "object",
+        "required": ["code", "message", "at", "source"],
+        "properties": {
+          "code": { "$ref": "common.schema.json#/$defs/id" },
+          "message": { "type": "string", "minLength": 1, "maxLength": 4096 },
+          "at": { "$ref": "common.schema.json#/$defs/dateTime" },
+          "source": { "enum": ["PAGE", "CONSOLE", "NETWORK", "DRIVER", "PLATFORM"] }
+        },
+        "additionalProperties": false
+      }
+    },
+    "artifacts": {
+      "type": "array",
+      "maxItems": 1000,
+      "items": {
+        "type": "object",
+        "required": ["artifactId", "type", "path", "sha256"],
+        "properties": {
+          "artifactId": { "$ref": "common.schema.json#/$defs/id" },
+          "type": { "enum": ["SCREENSHOT", "TRACE", "LOG_SUMMARY"] },
+          "path": { "$ref": "common.schema.json#/$defs/safeRelativePath" },
+          "sha256": { "$ref": "common.schema.json#/$defs/sha256" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "redaction": {
+      "type": "object",
+      "required": ["applied", "policyVersion", "omittedCategories"],
+      "properties": {
+        "applied": { "const": true },
+        "policyVersion": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "omittedCategories": { "$ref": "common.schema.json#/$defs/stringArray" }
+      },
+      "additionalProperties": false
+    },
+    "createdAt": { "$ref": "common.schema.json#/$defs/dateTime" },
+    "createdBy": { "$ref": "common.schema.json#/$defs/createdBy" },
+    "sensitivity": { "$ref": "common.schema.json#/$defs/sensitivity" }
+  },
+  "additionalProperties": false
+}

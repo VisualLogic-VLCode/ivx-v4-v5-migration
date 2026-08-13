@@ -24,6 +24,10 @@ _Avoid_: AI browser
 The unnormalized observable record produced by one Runtime Scenario execution.
 _Avoid_: Screenshot, verdict
 
+**Environment Manifest**:
+The typed, redacted description used to compare source and target runtime configuration without persisting original secret values.
+_Avoid_: Environment snapshot, config dump
+
 **Runtime Mismatch**:
 An observed V4/V5 difference for a Parity Assertion; it is a symptom, not a root cause.
 _Avoid_: Converter defect
