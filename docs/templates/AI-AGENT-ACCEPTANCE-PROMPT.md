@@ -4,7 +4,7 @@
 
 ```text
 请读取并严格按照下面这份不可变引导，在我的本机完成 iVX V4→V5 工作流的首次安装和第一阶段无保存验收：
-https://raw.githubusercontent.com/VisualLogic-VLCode/ivx-v4-v5-migration/v0.4.0/docs/AI-AGENT-BOOTSTRAP.md
+https://raw.githubusercontent.com/VisualLogic-VLCode/ivx-v4-v5-migration/v0.4.1/docs/AI-AGENT-BOOTSTRAP.md
 
 请由你执行所有安装、检查、更新、权限预检、转换、诊断和验证命令，不要让我手动调用 ivx-migrate。录入 Token 前先告诉我即将打开原生安全输入框，然后只执行 `ivx-migrate setup --prompt-token` 并等待；不要使用后台 PTY、终端 read、临时脚本、聊天或命令参数收集 Token，也不要打开、读取、打印、复制、哈希或分析 Token 文件。
 

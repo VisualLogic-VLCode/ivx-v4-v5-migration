@@ -20,7 +20,7 @@
 
    ```bash
    npm install --global \
-     https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.4.0/ivx-v4-v5-migration-0.4.0.tgz
+     https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.4.1/ivx-v4-v5-migration-0.4.1.tgz
    ```
 
    不要自动使用 `sudo`。如全局安装因权限失败，停止并说明本机 Node/npm 权限问题。

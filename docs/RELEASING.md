@@ -44,11 +44,11 @@ The rules intentionally permit ordinary fast-forward source pushes and the signe
 
 The recommended first installation is Agent-first. The maintainer sends the user the copyable [Agent starter prompt](templates/AI-AGENT-ACCEPTANCE-PROMPT.md), which points to the immutable tagged [bootstrap procedure](AI-AGENT-BOOTSTRAP.md). The user's local Codex or Claude Code executes every command, while the user only types the Token into the visible native macOS secure-input dialog opened by the Launcher. After setup, the installed managed Skill becomes authoritative.
 
-The bootstrap procedure for this candidate uses the `0.4.0` Launcher asset. Workflow `0.3.4` and later Releases are immutable at the repository level:
+The bootstrap procedure uses the stable `0.4.1` Launcher asset. Workflow `0.3.4` and later Releases are immutable at the repository level:
 
 ```bash
 npm install --global \
-  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.4.0/ivx-v4-v5-migration-0.4.0.tgz
+  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.4.1/ivx-v4-v5-migration-0.4.1.tgz
 ivx-migrate setup --prompt-token
 ```
 
@@ -70,7 +70,7 @@ ivx-migrate rollback --kind workflow
 ivx-migrate rollback --kind converter
 ```
 
-The default policy is `prompt`. With `auto`, a new runtime is downloaded, its signed descriptor and SHA-256 are verified, npm lifecycle scripts are disabled, and a compatible runtime set is atomically activated. Knowledge additionally verifies its internal manifest, exact file hashes and cards. Manifest and artifact downloads retry bounded transient network/HTTP failures; permanent failures report a structured code and a query-free URL. Workflow activation requests a command restart. Converter/Knowledge activation may continue in the same invocation. Existing Jobs and reviews keep their pinned versions.
+The default policy is `prompt`. With `auto`, a new runtime is downloaded, its signed descriptor and SHA-256 are verified, npm lifecycle scripts are disabled, and a compatible runtime set is atomically activated. Knowledge additionally verifies its internal manifest, exact file hashes and cards. Manifest and artifact downloads use the system `curl` downloader when available and retain standard Fetch as a portable fallback; URLs and request headers are passed through stdin rather than process arguments. Both paths are bounded, and permanent failures report a structured code and a query-free URL. Workflow activation requests a command restart. Converter/Knowledge activation may continue in the same invocation. Existing Jobs and reviews keep their pinned versions.
 
 Normal migrations resolve the active Converter from `~/.ivx-v4-v5/current.json`. `--converter-path` is only a development override.
 
@@ -86,7 +86,7 @@ Codex and Claude adapters are bundled with Workflow releases. Ordinary Workflow 
 
 Workflow `0.3.4` introduced Agent protocol 2 because the managed procedure forbids Agents from opening Token files and relies exclusively on redacted doctor status.
 
-Public Workflow `0.3.5` introduced Agent protocol 3 because the managed procedure added the separately authorized known-issues diagnostic-copy path and requires Agents to distinguish `DIAGNOSTIC_COPY_CREATED` from normal success. Workflow `0.3.6` and `0.3.7` kept protocol 3. Workflow `0.3.8` raised the protocol to 4 because both first-install and post-install missing/expired Token handling use `setup --prompt-token`, warn before opening the native dialog, and forbid background PTY/chat/plaintext fallbacks. Candidate `0.4.0` raises the protocol to 5 for platform-backed Runtime Review creation, revision-pinned Environment Gates and preview URLs, per-origin browser authentication, evidence-backed diagnosis, bounded `3+2`/`10+5` target repair, and Human Finding continuation.
+Public Workflow `0.3.5` introduced Agent protocol 3 because the managed procedure added the separately authorized known-issues diagnostic-copy path and requires Agents to distinguish `DIAGNOSTIC_COPY_CREATED` from normal success. Workflow `0.3.6` and `0.3.7` kept protocol 3. Workflow `0.3.8` raised the protocol to 4 because both first-install and post-install missing/expired Token handling use `setup --prompt-token`, warn before opening the native dialog, and forbid background PTY/chat/plaintext fallbacks. Workflow `0.4.0` raised the protocol to 5 for platform-backed Runtime Review creation, revision-pinned Environment Gates and preview URLs, per-origin browser authentication, evidence-backed diagnosis, bounded `3+2`/`10+5` target repair, and Human Finding continuation. Workflow `0.4.1` keeps protocol 5 and hardens only public runtime download transport.
 
 `update apply` synchronizes adapters from the activated Workflow. Unmodified managed files update automatically. A manually modified file causes `AGENT_FILE_CONFLICT`; `--force` backs it up before replacement.
 

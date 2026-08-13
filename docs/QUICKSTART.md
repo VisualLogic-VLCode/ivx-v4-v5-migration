@@ -20,7 +20,7 @@
 
 ```bash
 npm install --global \
-  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.4.0/ivx-v4-v5-migration-0.4.0.tgz
+  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.4.1/ivx-v4-v5-migration-0.4.1.tgz
 ```
 
 ## 2. 命令行参考：安全录入 Token 并初始化
