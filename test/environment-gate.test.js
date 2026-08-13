@@ -132,6 +132,41 @@ test('redacted custom variables and copy-exact display settings must still match
   );
 });
 
+test('platform-default false booleans and settings-backed work-info projections normalize safely', () => {
+  const pair = environmentPair();
+  delete pair.target.workInfo.domain;
+  delete pair.target.workInfo.previewDomain;
+  delete pair.target.workInfo.extra.preDisable;
+  const result = evaluate(pair, { bindingAssertions: { '/config/wechat': userBindingAssertion() } });
+  assert.equal(result.comparison.status, 'NORMALIZED_EQUIVALENT');
+  for (const path of ['/workInfo/domain', '/workInfo/previewDomain', '/workInfo/extra/preDisable']) {
+    const field = result.comparison.fields.find((entry) => entry.path === path);
+    assert.equal(field.disposition, 'NORMALIZED', path);
+    assert.equal(field.equivalent, true, path);
+    assert.equal(result.comparison.normalizedPaths.includes(path), true, path);
+  }
+  assert.equal(result.targetManifest.fields.find((entry) => entry.path === '/workInfo/domain').presence, 'ABSENT');
+  assert.equal(result.targetManifest.fields.find((entry) => entry.path === '/workInfo/extra/preDisable').presence, 'ABSENT');
+});
+
+test('projection normalization still blocks missing authoritative settings and true default changes', () => {
+  const missingSettings = environmentPair();
+  delete missingSettings.target.workInfo.domain;
+  delete missingSettings.target.settings.domain;
+  assert.equal(
+    evaluate(missingSettings, { bindingAssertions: { '/config/wechat': userBindingAssertion() } }).comparison.blockedPaths.includes('/workInfo/domain'),
+    true,
+  );
+
+  const changedBoolean = environmentPair();
+  changedBoolean.source.workInfo.extra.preDisable = true;
+  delete changedBoolean.target.workInfo.extra.preDisable;
+  assert.equal(
+    evaluate(changedBoolean, { bindingAssertions: { '/config/wechat': userBindingAssertion() } }).comparison.blockedPaths.includes('/workInfo/extra/preDisable'),
+    true,
+  );
+});
+
 test('field policy registry is closed and classifies dynamic custom variables without enumerating their values', () => {
   assert.equal(resolveEnvironmentFieldPolicy('/settings/loading'), 'COPY_EXACT');
   assert.equal(resolveEnvironmentFieldPolicy('/config/customVars/arbitrary-key'), 'REDACT_AND_COMPARE');

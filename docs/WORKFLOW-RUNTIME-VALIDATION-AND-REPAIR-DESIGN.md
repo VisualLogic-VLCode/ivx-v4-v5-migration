@@ -219,6 +219,8 @@ flowchart TD
 
 - `customVars`：继续在 Platform Adapter 内存中按源语义写入目标；Job 只记录键名、类型、是否存在、是否一致等脱敏信息，原值不进入 AI 上下文。
 - 预览域名/路径：让平台为目标生成合法地址。通常在轨迹中归一化源/目标 host、nid、workId；如果案例业务逻辑主动读取、拼接或比较 `location.host/path`，则不能归一化掉，必须建立等价目标绑定或标记 `ENVIRONMENT_CONFIGURATION`。
+- WorkInfo 路由投影：`workInfo.domain`、`workInfo.previewDomain` 在目标读取结果中可能省略；只有对应的 `settings.domain`、`settings.previewDomain` 在源、目标两侧均存在并通过字段政策比较时，才可将该投影缺省归一化。Settings 也缺失时仍然阻断。
+- 预览禁用默认值：VxServer 只在 `workInfo.extra.preDisable === true` 时禁用预览，因此字段缺失与显式 `false` 语义等价；`true` 与缺失仍然阻断。Manifest 保留真实的 PRESENT/ABSENT，不伪造字段存在。
 - 安全的展示/加载设置：建立明确 allowlist 后才复制；首版不得使用“复制所有未知键”。
 - 密钥、证书、客户端 secret、账号资源：只报告缺失/不等价，要求用户在目标侧绑定；绝不输出原值。
 - 外部 API、数据库、消息队列：记录逻辑绑定是否等价。可能产生真实副作用的测试默认禁止自动执行。

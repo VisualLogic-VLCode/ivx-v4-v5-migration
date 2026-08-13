@@ -116,7 +116,27 @@ function bindingAssertion(bindingAssertions, path) {
   return Object.hasOwn(bindingAssertions, path) ? bindingAssertions[path] : null;
 }
 
+function evaluateDefaultFalseBoolean(path, source, target) {
+  const sourcePresence = source?.presence || 'ABSENT';
+  const targetPresence = target?.presence || 'ABSENT';
+  const sourceValue = sourcePresence === 'ABSENT' ? false : source.value;
+  const targetValue = targetPresence === 'ABSENT' ? false : target.value;
+  const equivalent = sourceValue === targetValue;
+  return {
+    path,
+    policy: resolveEnvironmentFieldPolicy(path),
+    sourcePresence,
+    targetPresence,
+    equivalent,
+    disposition: equivalent
+      ? (sourcePresence === targetPresence ? 'EQUIVALENT' : 'NORMALIZED')
+      : 'BLOCKED',
+    bindingAssertionId: null,
+  };
+}
+
 function evaluateField(path, source, target, bindingAssertions) {
+  if (path === '/workInfo/extra/preDisable') return evaluateDefaultFalseBoolean(path, source, target);
   const policy = resolveEnvironmentFieldPolicy(path);
   const sourcePresence = source?.presence || 'ABSENT';
   const targetPresence = target?.presence || 'ABSENT';
@@ -150,6 +170,30 @@ function evaluateField(path, source, target, bindingAssertions) {
     return { ...result, equivalent: false, disposition: 'REQUIRES_USER_BINDING' };
   }
   return result;
+}
+
+const WORK_INFO_SETTINGS_PROJECTIONS = Object.freeze(new Map([
+  ['/workInfo/domain', '/settings/domain'],
+  ['/workInfo/previewDomain', '/settings/previewDomain'],
+]));
+
+function normalizeWorkInfoProjections(fields, sourceValues, targetValues) {
+  const byPath = new Map(fields.map((field) => [field.path, field]));
+  for (const [projectionPath, settingsPath] of WORK_INFO_SETTINGS_PROJECTIONS) {
+    const projection = byPath.get(projectionPath);
+    const settings = byPath.get(settingsPath);
+    if (
+      projection?.disposition === 'BLOCKED'
+      && projection.sourcePresence === 'PRESENT'
+      && projection.targetPresence === 'ABSENT'
+      && sourceValues.get(settingsPath)?.presence === 'PRESENT'
+      && targetValues.get(settingsPath)?.presence === 'PRESENT'
+      && settings?.equivalent === true
+    ) {
+      Object.assign(projection, { equivalent: true, disposition: 'NORMALIZED' });
+    }
+  }
+  return fields;
 }
 
 function manifestFields(fieldResults, values) {
@@ -197,7 +241,11 @@ export function evaluateEnvironmentGate({
   const targetValues = collectEnvironmentFields(target);
   const paths = [...new Set([...sourceValues.keys(), ...targetValues.keys()])].sort();
   const validatedAssertions = validateBindingAssertions(bindingAssertions, new Set(paths));
-  const fields = paths.map((path) => evaluateField(path, sourceValues.get(path), targetValues.get(path), validatedAssertions));
+  const fields = normalizeWorkInfoProjections(
+    paths.map((path) => evaluateField(path, sourceValues.get(path), targetValues.get(path), validatedAssertions)),
+    sourceValues,
+    targetValues,
+  );
   const normalizedPaths = fields.filter((field) => field.disposition === 'NORMALIZED').map((field) => field.path);
   const requiredBindingPaths = fields.filter((field) => field.disposition === 'REQUIRES_USER_BINDING').map((field) => field.path);
   const blockedPaths = fields.filter((field) => field.disposition === 'BLOCKED').map((field) => field.path);
