@@ -1,6 +1,6 @@
 # Schema v2 contracts
 
-This directory contains the additive contracts for runtime review, evidence, repair budgeting, and diagnostic-save decisions described in `docs/WORKFLOW-RUNTIME-VALIDATION-AND-REPAIR-DESIGN.md`.
+This directory contains the additive contracts for runtime review, environment gating, evidence, repair budgeting, and diagnostic-save decisions described in `docs/WORKFLOW-RUNTIME-VALIDATION-AND-REPAIR-DESIGN.md`.
 
 ## Compatibility boundary
 

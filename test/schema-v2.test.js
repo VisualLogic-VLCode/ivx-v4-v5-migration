@@ -13,6 +13,7 @@ import {
   validateAutomaticRepairDecision,
   validateBehaviorTrace,
   validateDiagnosticSaveEligibility,
+  validateEnvironmentComparison,
   validateEnvironmentManifest,
   validateHumanFinding,
   validateIssueClassificationV2,
@@ -125,6 +126,29 @@ function environmentManifest() {
   });
 }
 
+function environmentComparison() {
+  return artifact('environment-comparison', {
+    comparisonId: 'environment-comparison-1',
+    reviewId: 'rev_20260813040000_abcde',
+    sourceManifestId: 'env-source-1',
+    targetManifestId: 'env-target-1',
+    status: 'NORMALIZED_EQUIVALENT',
+    fields: [{
+      path: '/workInfo/nid',
+      policy: 'REMAP_FOR_TARGET',
+      sourcePresence: 'PRESENT',
+      targetPresence: 'PRESENT',
+      equivalent: true,
+      disposition: 'NORMALIZED',
+      bindingAssertionId: null,
+    }],
+    normalizedPaths: ['/workInfo/nid'],
+    requiredBindingPaths: [],
+    blockedPaths: [],
+    evaluatedAt: NOW,
+  });
+}
+
 function humanFinding() {
   return artifact('human-finding', {
     findingId: 'finding-1',
@@ -230,6 +254,7 @@ test('all schema-v2 artifact contracts accept a complete valid document', () => 
   assert.equal(validateRuntimeScenario(runtimeScenario()).kind, 'runtime-scenario');
   assert.equal(validateBehaviorTrace(behaviorTrace()).kind, 'behavior-trace');
   assert.equal(validateEnvironmentManifest(environmentManifest()).kind, 'environment-manifest');
+  assert.equal(validateEnvironmentComparison(environmentComparison()).kind, 'environment-comparison');
   assert.equal(validateHumanFinding(humanFinding()).kind, 'human-finding');
   assert.equal(validateRepairBudget(clusterBudget()).kind, 'repair-budget');
   assert.equal(validateAutomaticRepairDecision(automaticRepairDecision()).kind, 'automatic-repair-decision');
@@ -271,6 +296,10 @@ test('trace and environment contracts reject secret-bearing or unredacted struct
   const environment = environmentManifest();
   environment.fields[0].access_token = 'forbidden';
   assert.throws(() => validateEnvironmentManifest(environment), /forbidden secret-bearing field/);
+
+  const comparison = environmentComparison();
+  comparison.normalizedPaths = [];
+  assert.throws(() => validateEnvironmentComparison(comparison), /exactly match NORMALIZED/);
 });
 
 test('repair and diagnostic-save decisions remain independent and enforce their own prerequisites', () => {
@@ -378,6 +407,7 @@ test('all distributable schema-v2 documents are valid JSON with stable identifie
     'behavior-trace.schema.json',
     'common.schema.json',
     'diagnostic-save-eligibility.schema.json',
+    'environment-comparison.schema.json',
     'environment-manifest.schema.json',
     'human-finding.schema.json',
     'issue-classification.schema.json',

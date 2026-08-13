@@ -23,7 +23,7 @@ The source tree is the `0.3.8` candidate. Public stable Workflow `0.3.7` and Con
 
 Platform writes remain disabled by default. A verified save requires private config `platform.writeMode: "explicit"` and `--confirm-live-write SAVE_V5`. A Job with classified `CONVERTER`, `SOURCE`, or `UNKNOWN` issues may use the separate command and confirmation `SAVE_V5_WITH_KNOWN_ISSUES`; it finishes as `DIAGNOSTIC_COPY_CREATED`, never `SUCCEEDED`. `PLATFORM` and `AUTHORIZATION` issues remain ineligible. Non-owner group participants remain blocked as `UNKNOWN_SERVER_POLICY` until their deployment-specific server permission is verified.
 
-The candidate also contains additive [Schema v2 development contracts](schemas/v2/README.md) for the planned runtime-review and repair workflow. They do not yet activate Runtime Review Session persistence or change the current schema-v1 save policy. Schema-v1 artifacts remain readable; any Job-state migration is an explicit, non-destructive copy rather than an in-place rewrite.
+The candidate also contains additive [Schema v2 development contracts](schemas/v2/README.md) for the planned runtime-review and repair workflow. A closed environment field-policy registry, redacted Environment Manifest/Environment Gate evaluator, stable environment reader, and narrow routing-binding adapter are implemented behind local APIs and mock tests; no current CLI command activates them yet. They do not yet activate Runtime Review Session persistence or change the current schema-v1 save policy. Schema-v1 artifacts remain readable; any Job-state migration is an explicit, non-destructive copy rather than an in-place rewrite.
 
 ## Data location
 

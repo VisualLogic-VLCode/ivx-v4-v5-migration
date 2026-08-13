@@ -27,7 +27,12 @@
         "required": ["path", "policy", "presence", "valueType", "comparisonDigest", "equivalent"],
         "properties": {
           "path": { "type": "string", "minLength": 1, "maxLength": 1024 },
-          "policy": { "enum": ["COPY_EXACT", "REMAP_FOR_TARGET", "USE_TARGET_BINDING", "REQUIRE_USER_BINDING", "REDACT_AND_COMPARE", "IGNORE_FOR_PARITY"] },
+          "policy": {
+            "oneOf": [
+              { "enum": ["COPY_EXACT", "REMAP_FOR_TARGET", "USE_TARGET_BINDING", "REQUIRE_USER_BINDING", "REDACT_AND_COMPARE", "IGNORE_FOR_PARITY"] },
+              { "type": "null" }
+            ]
+          },
           "presence": { "enum": ["PRESENT", "ABSENT", "UNKNOWN"] },
           "valueType": { "type": ["string", "null"], "maxLength": 128 },
           "comparisonDigest": {

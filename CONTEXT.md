@@ -28,6 +28,18 @@ _Avoid_: Screenshot, verdict
 The typed, redacted description used to compare source and target runtime configuration without persisting original secret values.
 _Avoid_: Environment snapshot, config dump
 
+**Environment Field Policy**:
+The reviewed rule assigning one known environment field to copy, remap, target binding, user binding, redacted comparison, or parity exclusion.
+_Avoid_: AI guess, configuration heuristic
+
+**Environment Gate**:
+The decision stating whether source and target environments are equivalent, equivalent after declared normalization, awaiting a user binding, or not safely comparable.
+_Avoid_: Environment Manifest, runtime verdict
+
+**Environment Binding Assertion**:
+A user-originated, auditable statement that one target-side binding is semantically acceptable for a source environment field, without disclosing either binding value.
+_Avoid_: Boolean override, secret copy
+
 **Runtime Mismatch**:
 An observed V4/V5 difference for a Parity Assertion; it is a symptom, not a root cause.
 _Avoid_: Converter defect

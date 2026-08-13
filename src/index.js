@@ -16,6 +16,8 @@ export {
 export {
   AUTOMATIC_REPAIR_DECISIONS,
   DIAGNOSTIC_SAVE_STATUSES,
+  ENVIRONMENT_FIELD_POLICIES,
+  ENVIRONMENT_GATE_STATUSES,
   ISSUE_CAUSES,
   REPAIR_BUDGET_STATES,
   REPAIR_TARGETS,
@@ -25,6 +27,7 @@ export {
   validateAutomaticRepairDecision,
   validateBehaviorTrace,
   validateDiagnosticSaveEligibility,
+  validateEnvironmentComparison,
   validateEnvironmentManifest,
   validateHumanFinding,
   validateIssueClassificationV2,
@@ -33,6 +36,14 @@ export {
   validateRuntimeScenario,
   validateSchemaV2Artifact,
 } from './contracts/schema-v2.js';
+export {
+  ENVIRONMENT_FIELD_POLICY_REGISTRY,
+  environmentWorkInfoExtraKeys,
+  environmentWorkInfoKeys,
+  isEnvironmentFieldPolicy,
+  resolveEnvironmentFieldPolicy,
+} from './environment/field-policy.js';
+export { evaluateEnvironmentGate } from './environment/environment-gate.js';
 export { classifyCaseVersion, classifyMetadataVersion, scanWorkVersionSignals } from './workflow/version-classifier.js';
 export { LocalConverterProvider } from './converter/local-provider.js';
 export { validateConvertedCase } from './validation/basic-validator.js';

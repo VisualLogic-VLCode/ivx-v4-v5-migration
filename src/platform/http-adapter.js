@@ -91,6 +91,42 @@ export function mergeSaveAsConfig(defaultConfig, sourceConfig) {
   return defaults;
 }
 
+const WORK_ROUTING_KEYS = Object.freeze(['domain', 'path', 'previewDomain', 'previewPath', 'customDomain']);
+
+function normalizeWorkRouting(routing) {
+  invariant(routing && typeof routing === 'object' && !Array.isArray(routing), 'PLATFORM_INPUT_INVALID', 'routing must be an object');
+  const keys = Object.keys(routing);
+  invariant(keys.length > 0, 'PLATFORM_INPUT_INVALID', 'routing must contain at least one field');
+  invariant(keys.every((key) => WORK_ROUTING_KEYS.includes(key)), 'PLATFORM_INPUT_INVALID', 'routing contains an unsupported field');
+  for (const key of ['domain', 'path', 'previewDomain', 'previewPath']) {
+    if (Object.hasOwn(routing, key)) invariant(typeof routing[key] === 'string', 'PLATFORM_INPUT_INVALID', `routing.${key} must be a string`);
+  }
+  if (Object.hasOwn(routing, 'customDomain')) invariant(typeof routing.customDomain === 'boolean', 'PLATFORM_INPUT_INVALID', 'routing.customDomain must be a boolean');
+  const hasPublished = Object.hasOwn(routing, 'domain') || Object.hasOwn(routing, 'path');
+  const hasPreview = Object.hasOwn(routing, 'previewDomain') || Object.hasOwn(routing, 'previewPath');
+  invariant(!hasPublished || (Object.hasOwn(routing, 'domain') && Object.hasOwn(routing, 'path')), 'PLATFORM_INPUT_INVALID', 'routing domain and path must be supplied together');
+  invariant(!hasPreview || (Object.hasOwn(routing, 'previewDomain') && Object.hasOwn(routing, 'previewPath')), 'PLATFORM_INPUT_INVALID', 'routing previewDomain and previewPath must be supplied together');
+  invariant(!Object.hasOwn(routing, 'customDomain') || hasPublished, 'PLATFORM_INPUT_INVALID', 'routing.customDomain requires domain and path');
+  return structuredClone(routing);
+}
+
+function routingMatches(expected, info, settings) {
+  return Object.entries(expected).every(([key, value]) => {
+    if (Object.hasOwn(settings || {}, key)) return settings[key] === value;
+    return info?.[key] === value;
+  });
+}
+
+function stablePlatformValue(value) {
+  if (Array.isArray(value)) return value.map(stablePlatformValue);
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(Object.keys(value).sort().map((key) => [key, stablePlatformValue(value[key])]));
+}
+
+function samePlatformValue(left, right) {
+  return JSON.stringify(stablePlatformValue(left)) === JSON.stringify(stablePlatformValue(right));
+}
+
 export class IvxPlatformAdapter {
   #token;
   #fetch;
@@ -204,6 +240,52 @@ export class IvxPlatformAdapter {
     });
   }
 
+  getWorkSettings(nid) {
+    return this.#request('POST', '/ih5/editor/work/getConfig', {
+      json: { nid: positiveInteger(nid, 'nid'), type: 'settings' },
+    });
+  }
+
+  async getWorkEnvironment({ nid, workId } = {}) {
+    const normalizedNid = positiveInteger(nid, 'nid');
+    if (workId !== undefined && workId !== null) {
+      invariant(typeof workId === 'string' && workId, 'PLATFORM_INPUT_INVALID', 'workId must be a non-empty string');
+    }
+    const before = await this.getCaseInfo(normalizedNid);
+    if (workId !== undefined && workId !== null) {
+      invariant(before?.workId === workId, 'PLATFORM_REVISION_CHANGED', 'Work revision changed before reading its environment', {
+        expectedWorkId: workId,
+        currentWorkId: before?.workId || null,
+      });
+    }
+    const [firstConfig, firstSettings] = await Promise.all([
+      this.getWorkConfig(normalizedNid),
+      this.getWorkSettings(normalizedNid),
+    ]);
+    const middle = await this.getCaseInfo(normalizedNid);
+    invariant(before?.workId === middle?.workId, 'PLATFORM_REVISION_CHANGED', 'Work revision changed while reading its environment', {
+      expectedWorkId: before?.workId || null,
+      currentWorkId: middle?.workId || null,
+    });
+    const [secondConfig, secondSettings] = await Promise.all([
+      this.getWorkConfig(normalizedNid),
+      this.getWorkSettings(normalizedNid),
+    ]);
+    const after = await this.getCaseInfo(normalizedNid);
+    invariant(middle?.workId === after?.workId, 'PLATFORM_REVISION_CHANGED', 'Work revision changed while reading its environment', {
+      expectedWorkId: middle?.workId || null,
+      currentWorkId: after?.workId || null,
+    });
+    invariant(
+      samePlatformValue(firstConfig || {}, secondConfig || {})
+        && samePlatformValue(firstSettings || {}, secondSettings || {}),
+      'PLATFORM_ENVIRONMENT_CHANGED',
+      'Work configuration changed while reading its environment',
+      { configChanged: !samePlatformValue(firstConfig || {}, secondConfig || {}), settingsChanged: !samePlatformValue(firstSettings || {}, secondSettings || {}) },
+    );
+    return { workInfo: after, config: secondConfig || {}, settings: secondSettings || {} };
+  }
+
   getDefaultUserConfig() {
     return this.#request('POST', '/ih5/app/user/getDefaultConfig', { json: {} });
   }
@@ -224,6 +306,44 @@ export class IvxPlatformAdapter {
       json: { nid: positiveInteger(nid, 'nid'), type: 'config', config },
       write: true,
     });
+  }
+
+  async modifyWorkRouting({ nid, expectedWorkId, routing } = {}) {
+    const normalizedNid = positiveInteger(nid, 'nid');
+    invariant(typeof expectedWorkId === 'string' && expectedWorkId, 'PLATFORM_INPUT_INVALID', 'expectedWorkId is required');
+    const normalizedRouting = normalizeWorkRouting(routing);
+    const before = await this.getCaseInfo(normalizedNid);
+    invariant(before?.workId === expectedWorkId, 'PLATFORM_REVISION_CHANGED', 'Work revision changed before routing update', {
+      expectedWorkId,
+      currentWorkId: before?.workId || null,
+    });
+    const readBack = async () => {
+      const [workInfo, settings] = await Promise.all([
+        this.getCaseInfo(normalizedNid),
+        this.getWorkSettings(normalizedNid),
+      ]);
+      invariant(workInfo?.workId === expectedWorkId, 'PLATFORM_REVISION_CHANGED', 'Work revision changed while verifying its routing update', {
+        expectedWorkId,
+        currentWorkId: workInfo?.workId || null,
+      });
+      return { workInfo, settings: settings || {} };
+    };
+    try {
+      await this.#request('POST', '/ih5/editor/work/modify', {
+        json: { nid: normalizedNid, ...normalizedRouting },
+        write: true,
+      });
+    } catch (error) {
+      if (error?.details?.outcome !== 'UNKNOWN_AFTER_WRITE_ATTEMPT') throw error;
+      const observed = await readBack();
+      if (routingMatches(normalizedRouting, observed.workInfo, observed.settings)) {
+        return { ...observed, confirmation: 'CONFIRMED_BY_READBACK' };
+      }
+      throw error;
+    }
+    const observed = await readBack();
+    invariant(routingMatches(normalizedRouting, observed.workInfo, observed.settings), 'TARGET_ENVIRONMENT_VERIFICATION_FAILED', 'Target routing read-back does not match the requested binding');
+    return { ...observed, confirmation: 'SUCCEEDED' };
   }
 
   saveAsV5({ sourceNid, work }) {

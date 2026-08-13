@@ -30,6 +30,22 @@ export const REPAIR_TARGETS = Object.freeze([
   'AUTHORIZATION_PREREQUISITE',
 ]);
 
+export const ENVIRONMENT_FIELD_POLICIES = Object.freeze([
+  'COPY_EXACT',
+  'REMAP_FOR_TARGET',
+  'USE_TARGET_BINDING',
+  'REQUIRE_USER_BINDING',
+  'REDACT_AND_COMPARE',
+  'IGNORE_FOR_PARITY',
+]);
+
+export const ENVIRONMENT_GATE_STATUSES = Object.freeze([
+  'ENVIRONMENT_EQUIVALENT',
+  'NORMALIZED_EQUIVALENT',
+  'REQUIRES_USER_BINDING',
+  'BLOCKED_ENVIRONMENT',
+]);
+
 export const AUTOMATIC_REPAIR_DECISIONS = Object.freeze([
   'AUTO_REPAIR_ALLOWED',
   'AUTO_REPAIR_PAUSED',
@@ -424,7 +440,7 @@ function validateEnvironmentField(field, index) {
     ['path', 'policy', 'presence', 'valueType', 'comparisonDigest', 'equivalent'],
     path);
   string(field.path, `${path}.path`, { max: 1024 });
-  enumValue(field.policy, ['COPY_EXACT', 'REMAP_FOR_TARGET', 'USE_TARGET_BINDING', 'REQUIRE_USER_BINDING', 'REDACT_AND_COMPARE', 'IGNORE_FOR_PARITY'], `${path}.policy`);
+  if (field.policy !== null) enumValue(field.policy, ENVIRONMENT_FIELD_POLICIES, `${path}.policy`);
   enumValue(field.presence, ['PRESENT', 'ABSENT', 'UNKNOWN'], `${path}.presence`);
   nullableString(field.valueType, `${path}.valueType`, { max: 128 });
   nullableSha256(field.comparisonDigest, `${path}.comparisonDigest`);
@@ -446,11 +462,86 @@ export function validateEnvironmentManifest(document) {
   exactKeys(document.revision, ['nid', 'workId'], ['nid', 'workId'], '$.revision');
   integer(document.revision.nid, '$.revision.nid', { min: 1 });
   string(document.revision.workId, '$.revision.workId', { max: 256 });
-  array(document.fields, '$.fields', { max: 5000 }).forEach(validateEnvironmentField);
+  const fields = array(document.fields, '$.fields', { max: 5000 });
+  const fieldPaths = new Set();
+  fields.forEach((field, index) => {
+    validateEnvironmentField(field, index);
+    if (fieldPaths.has(field.path)) fail(`$.fields contains duplicate path ${field.path}`);
+    fieldPaths.add(field.path);
+  });
   exactKeys(document.redaction, ['applied', 'policyVersion'], ['applied', 'policyVersion'], '$.redaction');
   if (document.redaction.applied !== true) fail('Environment Manifest redaction.applied must be true');
   string(document.redaction.policyVersion, '$.redaction.policyVersion', { max: 128 });
   validateArtifactMetadata(document);
+  return document;
+}
+
+function validateEnvironmentComparisonField(field, index) {
+  const path = `$.fields[${index}]`;
+  exactKeys(field,
+    ['path', 'policy', 'sourcePresence', 'targetPresence', 'equivalent', 'disposition', 'bindingAssertionId'],
+    ['path', 'policy', 'sourcePresence', 'targetPresence', 'equivalent', 'disposition', 'bindingAssertionId'],
+    path);
+  string(field.path, `${path}.path`, { max: 1024 });
+  if (field.policy !== null) enumValue(field.policy, ENVIRONMENT_FIELD_POLICIES, `${path}.policy`);
+  enumValue(field.sourcePresence, ['PRESENT', 'ABSENT', 'UNKNOWN'], `${path}.sourcePresence`);
+  enumValue(field.targetPresence, ['PRESENT', 'ABSENT', 'UNKNOWN'], `${path}.targetPresence`);
+  if (field.equivalent !== null) boolean(field.equivalent, `${path}.equivalent`);
+  enumValue(field.disposition, ['EQUIVALENT', 'NORMALIZED', 'REQUIRES_USER_BINDING', 'BLOCKED', 'IGNORED'], `${path}.disposition`);
+  if (field.bindingAssertionId !== null) id(field.bindingAssertionId, `${path}.bindingAssertionId`);
+  if (field.policy === null && field.disposition !== 'BLOCKED') fail(`${path} with no registered policy must be BLOCKED`);
+  if (field.bindingAssertionId !== null && (!['USE_TARGET_BINDING', 'REQUIRE_USER_BINDING'].includes(field.policy) || field.disposition !== 'NORMALIZED')) {
+    fail(`${path}.bindingAssertionId is allowed only for a normalized binding policy`);
+  }
+  if (field.policy === 'REQUIRE_USER_BINDING' && field.disposition === 'NORMALIZED' && field.bindingAssertionId === null) {
+    fail(`${path} requires a bindingAssertionId when normalized`);
+  }
+}
+
+export function validateEnvironmentComparison(document) {
+  schemaHeader(document, 'environment-comparison');
+  exactKeys(document,
+    ['schemaVersion', 'kind', 'comparisonId', 'reviewId', 'sourceManifestId', 'targetManifestId', 'status', 'fields', 'normalizedPaths', 'requiredBindingPaths', 'blockedPaths', 'evaluatedAt', 'createdAt', 'createdBy', 'sensitivity'],
+    ['schemaVersion', 'kind', 'comparisonId', 'reviewId', 'sourceManifestId', 'targetManifestId', 'status', 'fields', 'normalizedPaths', 'requiredBindingPaths', 'blockedPaths', 'evaluatedAt', 'createdAt', 'createdBy', 'sensitivity'],
+    '$');
+  id(document.comparisonId, '$.comparisonId');
+  reviewId(document.reviewId);
+  id(document.sourceManifestId, '$.sourceManifestId');
+  id(document.targetManifestId, '$.targetManifestId');
+  enumValue(document.status, ENVIRONMENT_GATE_STATUSES, '$.status');
+  const fields = array(document.fields, '$.fields', { max: 10000 });
+  const paths = new Set();
+  fields.forEach((field, index) => {
+    validateEnvironmentComparisonField(field, index);
+    if (paths.has(field.path)) fail(`$.fields contains duplicate path ${field.path}`);
+    paths.add(field.path);
+  });
+  const normalizedPaths = uniqueStrings(document.normalizedPaths, '$.normalizedPaths', { max: 10000 });
+  const requiredBindingPaths = uniqueStrings(document.requiredBindingPaths, '$.requiredBindingPaths', { max: 10000 });
+  const blockedPaths = uniqueStrings(document.blockedPaths, '$.blockedPaths', { max: 10000 });
+  for (const listedPath of [...normalizedPaths, ...requiredBindingPaths, ...blockedPaths]) {
+    if (!paths.has(listedPath)) fail(`Environment comparison references an unknown field path: ${listedPath}`);
+  }
+  isoDate(document.evaluatedAt, '$.evaluatedAt');
+  validateArtifactMetadata(document);
+  const expectedNormalized = fields.filter((field) => field.disposition === 'NORMALIZED').map((field) => field.path).sort();
+  const expectedBindings = fields.filter((field) => field.disposition === 'REQUIRES_USER_BINDING').map((field) => field.path).sort();
+  const expectedBlocked = fields.filter((field) => field.disposition === 'BLOCKED').map((field) => field.path).sort();
+  if (JSON.stringify([...normalizedPaths].sort()) !== JSON.stringify(expectedNormalized)) fail('normalizedPaths must exactly match NORMALIZED field dispositions');
+  if (JSON.stringify([...requiredBindingPaths].sort()) !== JSON.stringify(expectedBindings)) fail('requiredBindingPaths must exactly match REQUIRES_USER_BINDING field dispositions');
+  if (JSON.stringify([...blockedPaths].sort()) !== JSON.stringify(expectedBlocked)) fail('blockedPaths must exactly match BLOCKED field dispositions');
+  if (document.status === 'ENVIRONMENT_EQUIVALENT' && (normalizedPaths.length || requiredBindingPaths.length || blockedPaths.length)) {
+    fail('ENVIRONMENT_EQUIVALENT cannot contain normalized, binding-required, or blocked paths');
+  }
+  if (document.status === 'NORMALIZED_EQUIVALENT' && (!normalizedPaths.length || requiredBindingPaths.length || blockedPaths.length)) {
+    fail('NORMALIZED_EQUIVALENT requires normalized paths and no binding-required or blocked paths');
+  }
+  if (document.status === 'REQUIRES_USER_BINDING' && (!requiredBindingPaths.length || blockedPaths.length)) {
+    fail('REQUIRES_USER_BINDING requires binding paths and no blocked paths');
+  }
+  if (document.status === 'BLOCKED_ENVIRONMENT' && !blockedPaths.length) {
+    fail('BLOCKED_ENVIRONMENT requires at least one blocked path');
+  }
   return document;
 }
 
@@ -656,6 +747,7 @@ export const SCHEMA_V2_VALIDATORS = Object.freeze({
   'runtime-scenario': validateRuntimeScenario,
   'behavior-trace': validateBehaviorTrace,
   'environment-manifest': validateEnvironmentManifest,
+  'environment-comparison': validateEnvironmentComparison,
   'human-finding': validateHumanFinding,
   'repair-budget': validateRepairBudget,
   'automatic-repair-decision': validateAutomaticRepairDecision,

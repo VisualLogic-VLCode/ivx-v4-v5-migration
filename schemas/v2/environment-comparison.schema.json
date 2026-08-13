@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.ivx.local/migration/v2/environment-comparison.schema.json",
+  "title": "iVX Environment Gate comparison v2",
+  "type": "object",
+  "required": ["schemaVersion", "kind", "comparisonId", "reviewId", "sourceManifestId", "targetManifestId", "status", "fields", "normalizedPaths", "requiredBindingPaths", "blockedPaths", "evaluatedAt", "createdAt", "createdBy", "sensitivity"],
+  "properties": {
+    "schemaVersion": { "const": 2 },
+    "kind": { "const": "environment-comparison" },
+    "comparisonId": { "$ref": "common.schema.json#/$defs/id" },
+    "reviewId": { "$ref": "common.schema.json#/$defs/reviewId" },
+    "sourceManifestId": { "$ref": "common.schema.json#/$defs/id" },
+    "targetManifestId": { "$ref": "common.schema.json#/$defs/id" },
+    "status": { "enum": ["ENVIRONMENT_EQUIVALENT", "NORMALIZED_EQUIVALENT", "REQUIRES_USER_BINDING", "BLOCKED_ENVIRONMENT"] },
+    "fields": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "type": "object",
+        "required": ["path", "policy", "sourcePresence", "targetPresence", "equivalent", "disposition", "bindingAssertionId"],
+        "properties": {
+          "path": { "type": "string", "minLength": 1, "maxLength": 1024 },
+          "policy": {
+            "oneOf": [
+              { "enum": ["COPY_EXACT", "REMAP_FOR_TARGET", "USE_TARGET_BINDING", "REQUIRE_USER_BINDING", "REDACT_AND_COMPARE", "IGNORE_FOR_PARITY"] },
+              { "type": "null" }
+            ]
+          },
+          "sourcePresence": { "enum": ["PRESENT", "ABSENT", "UNKNOWN"] },
+          "targetPresence": { "enum": ["PRESENT", "ABSENT", "UNKNOWN"] },
+          "equivalent": { "type": ["boolean", "null"] },
+          "disposition": { "enum": ["EQUIVALENT", "NORMALIZED", "REQUIRES_USER_BINDING", "BLOCKED", "IGNORED"] },
+          "bindingAssertionId": {
+            "oneOf": [
+              { "$ref": "common.schema.json#/$defs/id" },
+              { "type": "null" }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": { "properties": { "policy": { "type": "null" } }, "required": ["policy"] },
+            "then": { "properties": { "disposition": { "const": "BLOCKED" } } }
+          }
+        ]
+      }
+    },
+    "normalizedPaths": { "$ref": "common.schema.json#/$defs/stringArray" },
+    "requiredBindingPaths": { "$ref": "common.schema.json#/$defs/stringArray" },
+    "blockedPaths": { "$ref": "common.schema.json#/$defs/stringArray" },
+    "evaluatedAt": { "$ref": "common.schema.json#/$defs/dateTime" },
+    "createdAt": { "$ref": "common.schema.json#/$defs/dateTime" },
+    "createdBy": { "$ref": "common.schema.json#/$defs/createdBy" },
+    "sensitivity": { "$ref": "common.schema.json#/$defs/sensitivity" }
+  },
+  "additionalProperties": false
+}
