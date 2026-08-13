@@ -13,6 +13,9 @@ import { JobStore } from './jobs/job-store.js';
 import { KnowledgeRuntime } from './knowledge/runtime.js';
 import { createAppPaths, resolveAppHome } from './paths.js';
 import { RuntimeReviewStore } from './reviews/review-store.js';
+import { PlaywrightRuntimeDriver } from './runtime/playwright-driver.js';
+import { RuntimeReviewRunner } from './runtime/review-runner.js';
+import { waitForVisibleRuntimeTakeover } from './runtime/visible-takeover.js';
 import { IvxPlatformAdapter, normalizePlatformBaseUrl } from './platform/http-adapter.js';
 import { inspectPlatformToken, normalizeTokenFilePath, readPlatformTokenFile, resolvePlatformToken } from './platform/token-source.js';
 import { promptAndPersistPlatformToken } from './platform/visible-token-prompt.js';
@@ -597,7 +600,50 @@ async function handleReview(positionals, options, context) {
       findingId: options.finding,
     });
   }
+  if (action === 'scenario-add') {
+    invariant(options.review, 'CLI_ARGUMENT_REQUIRED', '--review is required');
+    return context.reviews.addRuntimeScenario(options.review, readRequiredJson(options.file, 'scenario'));
+  }
+  if (action === 'scenario-list') {
+    invariant(options.review, 'CLI_ARGUMENT_REQUIRED', '--review is required');
+    return { scenarios: context.reviews.listRuntimeScenarios(options.review) };
+  }
+  if (action === 'runtime-run') {
+    invariant(options.review, 'CLI_ARGUMENT_REQUIRED', '--review is required');
+    invariant(options.scenario, 'CLI_ARGUMENT_REQUIRED', '--scenario is required');
+    invariant(options['source-url'] && options['target-url'], 'CLI_ARGUMENT_REQUIRED', '--source-url and --target-url are required');
+    const review = context.reviews.load(options.review);
+    const job = context.jobs.load(review.jobId);
+    const scenarioIds = String(options.scenario).split(',').map((value) => value.trim()).filter(Boolean);
+    return context.runtimeRunner.runCycle(options.review, {
+      scenarioIds,
+      source: { generation: 'V4', nid: job.input.sourceNid, workId: review.baseline.sourceWorkId, baseUrl: options['source-url'] },
+      target: { generation: 'V5', nid: review.target.nid, workId: review.baseline.targetWorkId, baseUrl: options['target-url'] },
+      environmentComparison: readRequiredJson(options['environment-file'], 'environment comparison'),
+      authorization: options['authorization-file'] ? readRequiredJson(options['authorization-file'], 'runtime authorization') : null,
+    });
+  }
+  if (action === 'runtime-resume') {
+    invariant(options.review, 'CLI_ARGUMENT_REQUIRED', '--review is required');
+    invariant(options['source-url'] && options['target-url'], 'CLI_ARGUMENT_REQUIRED', '--source-url and --target-url are required');
+    return context.runtimeRunner.resumeCycle(options.review, {
+      sourceBaseUrl: options['source-url'],
+      targetBaseUrl: options['target-url'],
+    });
+  }
   throw new WorkflowError('CLI_COMMAND_UNKNOWN', `Unknown review action: ${action || ''}`);
+}
+
+async function handleRuntime(positionals, options, context) {
+  const action = positionals[1];
+  if (action === 'status') return context.runtimeDriver.status();
+  if (action === 'browser-install') return context.runtimeDriver.installBrowser();
+  if (action === 'auth') {
+    invariant(options.url, 'CLI_ARGUMENT_REQUIRED', '--url is required');
+    invariant(options['confirm-visible'] === 'AUTH_BROWSER', 'RUNTIME_VISIBLE_CONFIRMATION_REQUIRED', '--confirm-visible AUTH_BROWSER is required');
+    return context.runtimeDriver.captureAuthentication({ url: options.url });
+  }
+  throw new WorkflowError('CLI_COMMAND_UNKNOWN', `Unknown runtime action: ${action || ''}`);
 }
 
 function pinnedKnowledgeForOwner(options, context) {
@@ -861,13 +907,21 @@ export async function runCli(argv, dependencies = {}) {
   const config = loadConfig(appPaths);
   const registry = new RuntimeRegistry(appPaths);
   const jobs = new JobStore(appPaths);
+  const reviews = new RuntimeReviewStore(appPaths, { jobs });
+  const runtimeDriver = dependencies.runtimeDriver || new PlaywrightRuntimeDriver({
+    appPaths,
+    allowInsecureLocalhost: config.platform.allowInsecureLocalhost === true,
+    onTakeover: dependencies.runtimeTakeover || (() => waitForVisibleRuntimeTakeover()),
+  });
   const context = {
     appHome,
     appPaths,
     config,
     registry,
     jobs,
-    reviews: new RuntimeReviewStore(appPaths, { jobs }),
+    reviews,
+    runtimeDriver,
+    runtimeRunner: dependencies.runtimeRunner || new RuntimeReviewRunner({ reviews, driver: runtimeDriver }),
     knowledge: new KnowledgeRuntime({ registry }),
     installer: new ArtifactInstaller({ appPaths, registry }),
     promptPlatformToken: dependencies.promptPlatformToken || promptAndPersistPlatformToken,
@@ -901,6 +955,7 @@ export async function runCli(argv, dependencies = {}) {
       update: config.update,
       releaseManifests: config.releaseManifests,
       agents: agentStatus(context, current.workflow),
+      runtimeDriver: await runtimeDriver.status(),
     };
   } else if (command === 'setup') result = await handleSetup(options, context);
   else if (command === 'update') result = await handleUpdate(positionals, options, context);
@@ -912,6 +967,7 @@ export async function runCli(argv, dependencies = {}) {
   } else if (command === 'job') result = await handleJob(positionals, options, context);
   else if (command === 'review') result = await handleReview(positionals, options, context);
   else if (command === 'knowledge') result = await handleKnowledge(positionals, options, context);
+  else if (command === 'runtime') result = await handleRuntime(positionals, options, context);
   else if (command === 'classify') {
     result = classifyCaseVersion({
       metadata: options.metadata ? readRequiredJson(options.metadata, 'metadata') : {},
@@ -957,6 +1013,13 @@ export async function runCli(argv, dependencies = {}) {
         'ivx-migrate review finding-list --review <reviewId>',
         'ivx-migrate review observe-revision --review <reviewId> --work-id <workId> --target-file <target-readback.json>',
         'ivx-migrate review accept-baseline --review <reviewId> --observation <observationId> --finding <findingId>',
+        'ivx-migrate review scenario-add --review <reviewId> --file <runtime-scenario.json>',
+        'ivx-migrate review scenario-list --review <reviewId>',
+        'ivx-migrate review runtime-run --review <reviewId> --scenario <id[,id]> --source-url <url> --target-url <url> --environment-file <comparison.json> [--authorization-file <authorization.json>]',
+        'ivx-migrate review runtime-resume --review <reviewId> --source-url <url> --target-url <url>',
+        'ivx-migrate runtime status',
+        'ivx-migrate runtime browser-install',
+        'ivx-migrate runtime auth --url <platform-preview-origin> --confirm-visible AUTH_BROWSER',
         'ivx-migrate knowledge status',
         'ivx-migrate knowledge search (--job <jobId> | --review <reviewId>) --file <bounded-query.json> [--limit 5]',
         'ivx-migrate knowledge feedback --review <reviewId> --file <feedback.json>',

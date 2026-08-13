@@ -230,6 +230,8 @@ export function evaluateEnvironmentGate({
     reviewId,
     sourceManifestId,
     targetManifestId,
+    sourceRevision: structuredClone(source.revision),
+    targetRevision: structuredClone(target.revision),
     status,
     fields,
     normalizedPaths,

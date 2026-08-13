@@ -3,7 +3,7 @@
   "$id": "https://schemas.ivx.local/migration/v2/runtime-scenario.schema.json",
   "title": "iVX Runtime Scenario v2",
   "type": "object",
-  "required": ["schemaVersion", "kind", "scenarioId", "version", "name", "source", "sideEffect", "executionPolicy", "preconditions", "actions", "assertions", "cleanup", "knowledgeRuleIds", "createdAt", "createdBy", "sensitivity"],
+  "required": ["schemaVersion", "kind", "scenarioId", "version", "name", "source", "sideEffect", "executionPolicy", "networkPolicy", "artifactPolicy", "preconditions", "actions", "assertions", "cleanup", "knowledgeRuleIds", "createdAt", "createdBy", "sensitivity"],
   "properties": {
     "schemaVersion": { "const": 2 },
     "kind": { "const": "runtime-scenario" },
@@ -30,14 +30,33 @@
       },
       "additionalProperties": false
     },
+    "networkPolicy": {
+      "type": "object",
+      "required": ["unsafeRequests"],
+      "properties": {
+        "unsafeRequests": { "enum": ["BLOCK", "ALLOW_WITH_AUTHORIZATION"] }
+      },
+      "additionalProperties": false
+    },
+    "artifactPolicy": {
+      "type": "object",
+      "required": ["screenshots", "nativePlaywrightTrace"],
+      "properties": {
+        "screenshots": { "enum": ["OFF", "FAILURES_ONLY"] },
+        "nativePlaywrightTrace": { "const": false }
+      },
+      "additionalProperties": false
+    },
     "preconditions": { "$ref": "common.schema.json#/$defs/stringArray" },
     "actions": {
       "type": "array",
+      "minItems": 1,
       "maxItems": 200,
       "items": { "$ref": "#/$defs/step" }
     },
     "assertions": {
       "type": "array",
+      "minItems": 1,
       "maxItems": 200,
       "items": { "$ref": "#/$defs/assertion" }
     },
@@ -57,8 +76,8 @@
       "required": ["stepId", "type"],
       "properties": {
         "stepId": { "$ref": "common.schema.json#/$defs/id" },
-        "type": { "$ref": "common.schema.json#/$defs/id" },
-        "target": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "type": { "enum": ["OPEN_PAGE", "CLICK", "FILL", "SELECT_OPTION", "CHECK", "UNCHECK", "PRESS", "WAIT_FOR", "RELOAD", "GO_BACK"] },
+        "target": { "$ref": "#/$defs/locator" },
         "input": { "type": ["string", "number", "boolean", "null"], "maxLength": 4096 },
         "timeoutMs": { "type": "integer", "minimum": 1, "maximum": 300000 }
       },
@@ -69,22 +88,67 @@
       "required": ["assertionId", "observation", "comparator"],
       "properties": {
         "assertionId": { "$ref": "common.schema.json#/$defs/id" },
-        "observation": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "observation": {
+          "type": "object",
+          "required": ["name", "category", "capture"],
+          "properties": {
+            "name": { "$ref": "common.schema.json#/$defs/id" },
+            "category": { "enum": ["UI", "ROUTE", "CONSOLE", "NETWORK"] },
+            "capture": { "enum": ["TEXT", "VALUE", "VISIBLE", "COUNT", "URL"] },
+            "target": { "$ref": "#/$defs/locator" }
+          },
+          "additionalProperties": false
+        },
         "comparator": { "enum": ["V4_V5_EQUAL", "V4_V5_SHAPE_EQUAL", "EXPECTED_VALUE", "NO_ERROR"] },
         "expected": { "type": ["string", "number", "boolean", "null"] },
         "allowedDifference": { "type": "string", "minLength": 1, "maxLength": 1024 }
       },
       "additionalProperties": false
+    },
+    "locator": {
+      "type": "object",
+      "required": ["strategy", "value"],
+      "properties": {
+        "strategy": { "enum": ["ROLE", "LABEL", "PLACEHOLDER", "TEXT", "TEST_ID"] },
+        "value": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "role": { "$ref": "common.schema.json#/$defs/id" },
+        "exact": { "type": "boolean" }
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": { "properties": { "strategy": { "const": "ROLE" } }, "required": ["strategy"] },
+          "then": { "required": ["role"] },
+          "else": { "not": { "required": ["role"] } }
+        }
+      ]
     }
   },
   "additionalProperties": false,
   "allOf": [
+    {
+      "if": { "properties": { "sideEffect": { "const": "READ_ONLY" } }, "required": ["sideEffect"] },
+      "then": {
+        "properties": {
+          "executionPolicy": {
+            "properties": { "authorizationRequired": { "const": false }, "cleanupRequired": { "const": false } }
+          },
+          "networkPolicy": {
+            "properties": { "unsafeRequests": { "const": "BLOCK" } }
+          },
+          "cleanup": { "maxItems": 0 }
+        }
+      }
+    },
     {
       "if": { "properties": { "sideEffect": { "const": "REVERSIBLE" } }, "required": ["sideEffect"] },
       "then": {
         "properties": {
           "executionPolicy": {
             "properties": { "authorizationRequired": { "const": true }, "cleanupRequired": { "const": true } }
+          },
+          "networkPolicy": {
+            "properties": { "unsafeRequests": { "const": "ALLOW_WITH_AUTHORIZATION" } }
           },
           "cleanup": { "minItems": 1 }
         }
@@ -96,6 +160,9 @@
         "properties": {
           "executionPolicy": {
             "properties": { "mode": { "const": "USER_VISIBLE" }, "authorizationRequired": { "const": true } }
+          },
+          "networkPolicy": {
+            "properties": { "unsafeRequests": { "const": "ALLOW_WITH_AUTHORIZATION" } }
           }
         }
       }

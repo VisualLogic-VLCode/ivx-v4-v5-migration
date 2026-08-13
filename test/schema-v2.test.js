@@ -19,6 +19,7 @@ import {
   validateIssueClassificationV2,
   validateRepairBudget,
   validateRuntimeReviewSession,
+  validateRuntimeComparison,
   validateRuntimeScenario,
   validateSchemaV2Artifact,
 } from '../src/contracts/schema-v2.js';
@@ -74,9 +75,15 @@ function runtimeScenario() {
     source: { type: 'USER', reference: 'finding-1' },
     sideEffect: 'READ_ONLY',
     executionPolicy: { mode: 'UNATTENDED', authorizationRequired: false, cleanupRequired: false },
+    networkPolicy: { unsafeRequests: 'BLOCK' },
+    artifactPolicy: { screenshots: 'FAILURES_ONLY', nativePlaywrightTrace: false },
     preconditions: ['Open the order page with fixture data.'],
-    actions: [{ stepId: 'step-open', type: 'openPage', target: 'orderPage', timeoutMs: 30000 }],
-    assertions: [{ assertionId: 'assert-result', observation: 'resultText', comparator: 'V4_V5_EQUAL' }],
+    actions: [{ stepId: 'step-open', type: 'OPEN_PAGE', input: '/order', timeoutMs: 30000 }],
+    assertions: [{
+      assertionId: 'assert-result',
+      observation: { name: 'resultText', category: 'UI', capture: 'TEXT', target: { strategy: 'TEST_ID', value: 'result-text' } },
+      comparator: 'V4_V5_EQUAL',
+    }],
     cleanup: [],
     knowledgeRuleIds: ['CVT-001'],
   });
@@ -108,6 +115,37 @@ function behaviorTrace() {
   });
 }
 
+function runtimeComparison() {
+  return artifact('runtime-comparison', {
+    comparisonId: 'comparison-1',
+    reviewId: 'rev_20260813040000_abcde',
+    cycleId: 'cycle-1',
+    scenarioId: 'scenario-order-submit',
+    sourceTraceId: 'trace-v4-1',
+    targetTraceId: 'trace-v5-1',
+    environment: { comparisonId: 'environment-comparison-1', status: 'ENVIRONMENT_EQUIVALENT' },
+    status: 'PARITY_PASSED',
+    assertions: [{
+      assertionId: 'assert-result',
+      status: 'PASSED',
+      reasonCode: 'NORMALIZED_VALUES_EQUAL',
+      sourceObservationIds: ['obs-v4-1'],
+      targetObservationIds: ['obs-v5-1'],
+      normalizations: ['CASE_IDENTITY'],
+    }],
+    coverage: { total: 1, passed: 1, failed: 0, inconclusive: 0 },
+    runtime: {
+      driver: 'playwright',
+      driverVersion: '1.62.1',
+      sourceBrowserVersion: '140.0',
+      targetBrowserVersion: '140.0',
+      modes: ['UNATTENDED'],
+      humanTakeover: false,
+    },
+    evaluatedAt: NOW,
+  });
+}
+
 function environmentManifest() {
   return artifact('environment-manifest', {
     manifestId: 'env-1',
@@ -132,6 +170,8 @@ function environmentComparison() {
     reviewId: 'rev_20260813040000_abcde',
     sourceManifestId: 'env-source-1',
     targetManifestId: 'env-target-1',
+    sourceRevision: { nid: 100, workId: 'source-work-1' },
+    targetRevision: { nid: 123456, workId: 'target-work-1' },
     status: 'NORMALIZED_EQUIVALENT',
     fields: [{
       path: '/workInfo/nid',
@@ -254,6 +294,7 @@ test('all schema-v2 artifact contracts accept a complete valid document', () => 
   assert.equal(validateIssueClassificationV2(classification, { issues: [{ issueId: 'VAL-1' }] }), classification);
   assert.equal(validateRuntimeScenario(runtimeScenario()).kind, 'runtime-scenario');
   assert.equal(validateBehaviorTrace(behaviorTrace()).kind, 'behavior-trace');
+  assert.equal(validateRuntimeComparison(runtimeComparison()).kind, 'runtime-comparison');
   assert.equal(validateEnvironmentManifest(environmentManifest()).kind, 'environment-manifest');
   assert.equal(validateEnvironmentComparison(environmentComparison()).kind, 'environment-comparison');
   assert.equal(validateHumanFinding(humanFinding()).kind, 'human-finding');
@@ -300,6 +341,18 @@ test('runtime scenario side-effect policy is cross-field validated', () => {
   const external = runtimeScenario();
   external.sideEffect = 'EXTERNAL_SIDE_EFFECT';
   assert.throws(() => validateRuntimeScenario(external), /USER_VISIBLE/);
+
+  const executable = runtimeScenario();
+  executable.actions[0] = { stepId: 'script', type: 'EVALUATE_JAVASCRIPT', input: 'document.cookie' };
+  assert.throws(() => validateRuntimeScenario(executable), /type must be one of/);
+
+  const secretFill = runtimeScenario();
+  secretFill.actions.push({ stepId: 'fill-secret', type: 'FILL', target: { strategy: 'LABEL', value: 'Password' }, input: 'private-value' });
+  assert.throws(() => validateRuntimeScenario(secretFill), /private browser authentication profile/);
+
+  const nativeTrace = runtimeScenario();
+  nativeTrace.artifactPolicy.nativePlaywrightTrace = true;
+  assert.throws(() => validateRuntimeScenario(nativeTrace), /Native Playwright traces are forbidden/);
 });
 
 test('trace and environment contracts reject secret-bearing or unredacted structures', () => {
@@ -427,6 +480,7 @@ test('all distributable schema-v2 documents are valid JSON with stable identifie
     'issue-classification.schema.json',
     'job-state.schema.json',
     'repair-budget.schema.json',
+    'runtime-comparison.schema.json',
     'runtime-review-session.schema.json',
     'runtime-scenario.schema.json',
   ];

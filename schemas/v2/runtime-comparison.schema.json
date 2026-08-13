@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.ivx.local/migration/v2/runtime-comparison.schema.json",
+  "title": "iVX Runtime Comparison v2",
+  "type": "object",
+  "required": ["schemaVersion", "kind", "comparisonId", "reviewId", "cycleId", "scenarioId", "sourceTraceId", "targetTraceId", "environment", "status", "assertions", "coverage", "runtime", "evaluatedAt", "createdAt", "createdBy", "sensitivity"],
+  "properties": {
+    "schemaVersion": { "const": 2 },
+    "kind": { "const": "runtime-comparison" },
+    "comparisonId": { "$ref": "common.schema.json#/$defs/id" },
+    "reviewId": { "$ref": "common.schema.json#/$defs/reviewId" },
+    "cycleId": { "$ref": "common.schema.json#/$defs/id" },
+    "scenarioId": { "$ref": "common.schema.json#/$defs/id" },
+    "sourceTraceId": { "$ref": "common.schema.json#/$defs/id" },
+    "targetTraceId": { "$ref": "common.schema.json#/$defs/id" },
+    "environment": {
+      "type": "object",
+      "required": ["comparisonId", "status"],
+      "properties": {
+        "comparisonId": { "$ref": "common.schema.json#/$defs/id" },
+        "status": { "enum": ["ENVIRONMENT_EQUIVALENT", "NORMALIZED_EQUIVALENT", "REQUIRES_USER_BINDING", "BLOCKED_ENVIRONMENT"] }
+      },
+      "additionalProperties": false
+    },
+    "status": { "enum": ["PARITY_PASSED", "MISMATCH_DETECTED", "INCONCLUSIVE"] },
+    "assertions": {
+      "type": "array",
+      "maxItems": 200,
+      "items": {
+        "type": "object",
+        "required": ["assertionId", "status", "reasonCode", "sourceObservationIds", "targetObservationIds", "normalizations"],
+        "properties": {
+          "assertionId": { "$ref": "common.schema.json#/$defs/id" },
+          "status": { "enum": ["PASSED", "FAILED", "INCONCLUSIVE"] },
+          "reasonCode": { "$ref": "common.schema.json#/$defs/id" },
+          "sourceObservationIds": { "$ref": "common.schema.json#/$defs/stringArray" },
+          "targetObservationIds": { "$ref": "common.schema.json#/$defs/stringArray" },
+          "normalizations": { "$ref": "common.schema.json#/$defs/stringArray" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "required": ["total", "passed", "failed", "inconclusive"],
+      "properties": {
+        "total": { "type": "integer", "minimum": 0, "maximum": 200 },
+        "passed": { "type": "integer", "minimum": 0, "maximum": 200 },
+        "failed": { "type": "integer", "minimum": 0, "maximum": 200 },
+        "inconclusive": { "type": "integer", "minimum": 0, "maximum": 200 }
+      },
+      "additionalProperties": false
+    },
+    "runtime": {
+      "type": "object",
+      "required": ["driver", "driverVersion", "sourceBrowserVersion", "targetBrowserVersion", "modes", "humanTakeover"],
+      "properties": {
+        "driver": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "driverVersion": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "sourceBrowserVersion": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "targetBrowserVersion": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "modes": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 2,
+          "uniqueItems": true,
+          "items": { "enum": ["UNATTENDED", "USER_VISIBLE"] }
+        },
+        "humanTakeover": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "evaluatedAt": { "$ref": "common.schema.json#/$defs/dateTime" },
+    "createdAt": { "$ref": "common.schema.json#/$defs/dateTime" },
+    "createdBy": { "$ref": "common.schema.json#/$defs/createdBy" },
+    "sensitivity": { "$ref": "common.schema.json#/$defs/sensitivity" }
+  },
+  "additionalProperties": false
+}

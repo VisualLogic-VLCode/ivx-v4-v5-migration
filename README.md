@@ -20,6 +20,7 @@ Public stable Workflow is `0.3.8`, with Agent protocol 4 and Converter `1.2.1`. 
 - permission preflight, source revision checks, resumable Save As checkpoints, final nid rewrite, and post-save read-back verification;
 - a separately authorized diagnostic Save As path that creates an editor-openable V5 copy for classified Converter, source, or unknown issues without reporting normal success;
 - independent private Runtime Review Session persistence, one-writer-per-target-revision leases, Human Finding evidence, and external-revision baseline reconciliation;
+- a locked Playwright Runtime Driver with closed declarative scenarios, isolated V4/V5 contexts, private browser authentication state, redacted traces, reviewed normalization, side-effect gates, and report-only parity comparison;
 - a complete local-file dry run and a mock-platform integration-tested online flow.
 
 Platform writes remain disabled by default. A verified save requires private config `platform.writeMode: "explicit"` and `--confirm-live-write SAVE_V5`. A Job with classified `CONVERTER`, `SOURCE`, or `UNKNOWN` issues may use the separate command and confirmation `SAVE_V5_WITH_KNOWN_ISSUES`; it finishes as `DIAGNOSTIC_COPY_CREATED`, never `SUCCEEDED`. `PLATFORM` and `AUTHORIZATION` issues remain ineligible. Non-owner group participants remain blocked as `UNKNOWN_SERVER_POLICY` until their deployment-specific server permission is verified.
@@ -39,6 +40,8 @@ Authoritative Job data defaults to:
 ├── workflows/
 ├── converters/
 ├── knowledge/
+├── browser-auth/
+├── browser-profile/
 ├── agents/
 ├── secrets/
 └── current.json
@@ -113,7 +116,7 @@ ivx-migrate job classify --job <jobId> --file ./classification.json
 ivx-migrate job apply-patch --job <jobId> --file ./repair.patch.json
 ```
 
-After a completed Job has an existing V5 target, the unreleased Stage 3 local interface can create and recover an independent Runtime Review Session from confirmed runtime pins and target read-back data:
+After a completed Job has an existing V5 target, the unreleased Runtime Review interface can create and recover an independent session from confirmed runtime pins and target read-back data:
 
 ```bash
 ivx-migrate review create \
@@ -129,7 +132,40 @@ ivx-migrate review finding-add --review <reviewId> --file ./finding.json
 ivx-migrate review finding-list --review <reviewId>
 ```
 
-`finding-add` records USER evidence only. If a separately observed target revision differs, `observe-revision` creates a bounded redacted diff and pauses the review as `TARGET_EXTERNALLY_MODIFIED`. `accept-baseline` requires both that observation and a matching USER Human Finding that requested `ACCEPT_TARGET_REVISION`; it adopts the snapshot locally and returns to `LOCAL_VALIDATING`. None of these commands read a Token or write the platform. Automatic target read-back and update orchestration are later phases.
+`finding-add` records USER evidence only. If a separately observed target revision differs, `observe-revision` creates a bounded redacted diff and pauses the review as `TARGET_EXTERNALLY_MODIFIED`. `accept-baseline` requires both that observation and a matching USER Human Finding that requested `ACCEPT_TARGET_REVISION`; it adopts the snapshot locally and returns to `LOCAL_VALIDATING`.
+
+The unreleased report-only runtime layer stores a closed declarative scenario, checks the Environment Gate, runs the same scenario in isolated V4/V5 browser contexts, and persists redacted traces plus assertion results:
+
+```bash
+ivx-migrate runtime status
+ivx-migrate runtime browser-install
+
+# Only when browser login is required. This opens a visible private browser;
+# Cookie/storage values remain outside Agent, Job Trace, and command output.
+ivx-migrate runtime auth \
+  --url https://dev.ivx.cn \
+  --confirm-visible AUTH_BROWSER
+
+ivx-migrate review scenario-add \
+  --review <reviewId> \
+  --file ./runtime-scenario.json
+
+ivx-migrate review runtime-run \
+  --review <reviewId> \
+  --scenario <scenarioId> \
+  --source-url <v4-preview-url> \
+  --target-url <v5-preview-url> \
+  --environment-file ./environment-comparison.json
+
+# A fresh Agent may resume only a crashed READ_ONLY cycle. Side-effect cycles
+# require reconciliation and a new authorization instead of automatic replay.
+ivx-migrate review runtime-resume \
+  --review <reviewId> \
+  --source-url <v4-preview-url> \
+  --target-url <v5-preview-url>
+```
+
+Runtime Scenario actions use only the published action/semantic-locator vocabulary; arbitrary JavaScript, CSS/XPath, credential entry, and native Playwright traces are rejected. `READ_ONLY` blocks non-idempotent requests. `REVERSIBLE` requires cleanup and a single-use USER authorization; `EXTERNAL_SIDE_EFFECT` additionally requires a visible takeover. Browser storage state is a private `0600` file and is never returned. A Runtime Cycle sets `targetRepairAttempted:false` and `platformWriteAttempted:false`; mismatch reports do not modify or save the target. Automatic target read-back, diagnosis, and update orchestration are later phases.
 
 Load the current work with the caller's token, classify it, convert only supported V4, and stop at the save gate:
 

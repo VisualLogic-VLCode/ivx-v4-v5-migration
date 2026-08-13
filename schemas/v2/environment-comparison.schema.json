@@ -3,7 +3,7 @@
   "$id": "https://schemas.ivx.local/migration/v2/environment-comparison.schema.json",
   "title": "iVX Environment Gate comparison v2",
   "type": "object",
-  "required": ["schemaVersion", "kind", "comparisonId", "reviewId", "sourceManifestId", "targetManifestId", "status", "fields", "normalizedPaths", "requiredBindingPaths", "blockedPaths", "evaluatedAt", "createdAt", "createdBy", "sensitivity"],
+  "required": ["schemaVersion", "kind", "comparisonId", "reviewId", "sourceManifestId", "targetManifestId", "sourceRevision", "targetRevision", "status", "fields", "normalizedPaths", "requiredBindingPaths", "blockedPaths", "evaluatedAt", "createdAt", "createdBy", "sensitivity"],
   "properties": {
     "schemaVersion": { "const": 2 },
     "kind": { "const": "environment-comparison" },
@@ -11,6 +11,8 @@
     "reviewId": { "$ref": "common.schema.json#/$defs/reviewId" },
     "sourceManifestId": { "$ref": "common.schema.json#/$defs/id" },
     "targetManifestId": { "$ref": "common.schema.json#/$defs/id" },
+    "sourceRevision": { "$ref": "#/$defs/revision" },
+    "targetRevision": { "$ref": "#/$defs/revision" },
     "status": { "enum": ["ENVIRONMENT_EQUIVALENT", "NORMALIZED_EQUIVALENT", "REQUIRES_USER_BINDING", "BLOCKED_ENVIRONMENT"] },
     "fields": {
       "type": "array",
@@ -53,6 +55,17 @@
     "createdAt": { "$ref": "common.schema.json#/$defs/dateTime" },
     "createdBy": { "$ref": "common.schema.json#/$defs/createdBy" },
     "sensitivity": { "$ref": "common.schema.json#/$defs/sensitivity" }
+  },
+  "$defs": {
+    "revision": {
+      "type": "object",
+      "required": ["nid", "workId"],
+      "properties": {
+        "nid": { "type": "integer", "minimum": 1 },
+        "workId": { "type": "string", "minLength": 1, "maxLength": 256 }
+      },
+      "additionalProperties": false
+    }
   },
   "additionalProperties": false
 }

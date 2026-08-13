@@ -74,6 +74,8 @@ The default policy is `prompt`. With `auto`, a new runtime is downloaded, its si
 
 Normal migrations resolve the active Converter from `~/.ivx-v4-v5/current.json`. `--converter-path` is only a development override.
 
+Workflow releases that provide runtime comparison bundle their exact Playwright and Playwright Core packages inside the signed Workflow tarball, so managed installation does not resolve executable dependencies from the npm registry. The compatible Chromium binary is intentionally not embedded in the Release asset. Before the first runtime comparison, the Agent runs `ivx-migrate runtime status` and, when needed, `ivx-migrate runtime browser-install`; the command uses the CLI from the locked bundled Playwright version. `doctor` reports the driver/browser state without reading browser authentication storage.
+
 ## Agent protocol
 
 Codex and Claude adapters are bundled with Workflow releases. Ordinary Workflow internals and all Converter-only changes leave `agentProtocolVersion` unchanged. When Agent procedure changes:
@@ -92,6 +94,7 @@ Public Workflow `0.3.5` introduced Agent protocol 3 because the managed procedur
 
 1. Update package version and Agent protocol when applicable.
 2. Run the complete test suite and clean-home distribution test.
+   For a runtime-comparison release, also run the opt-in real-browser smoke test and verify an offline isolated package install can import the bundled Playwright dependency without registry fallback.
 3. Commit and push the exact source commit to the public repository.
 4. Prepare review artifacts locally:
 

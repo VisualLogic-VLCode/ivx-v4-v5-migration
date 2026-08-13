@@ -96,12 +96,27 @@ const CREATED_BY = new Set(['CLI', 'AGENT', 'USER']);
 const SENSITIVITY = new Set(['PRIVATE', 'REDACTED']);
 const SIDE_EFFECTS = new Set(['READ_ONLY', 'REVERSIBLE', 'EXTERNAL_SIDE_EFFECT']);
 const EXECUTION_MODES = new Set(['UNATTENDED', 'USER_VISIBLE']);
+export const RUNTIME_ACTION_TYPES = Object.freeze([
+  'OPEN_PAGE',
+  'CLICK',
+  'FILL',
+  'SELECT_OPTION',
+  'CHECK',
+  'UNCHECK',
+  'PRESS',
+  'WAIT_FOR',
+  'RELOAD',
+  'GO_BACK',
+]);
+export const RUNTIME_LOCATOR_STRATEGIES = Object.freeze(['ROLE', 'LABEL', 'PLACEHOLDER', 'TEXT', 'TEST_ID']);
+export const RUNTIME_OBSERVATION_CAPTURES = Object.freeze(['TEXT', 'VALUE', 'VISIBLE', 'COUNT', 'URL']);
 const PREREQUISITE_STATES = new Set(['SATISFIED', 'MISSING', 'UNAVAILABLE', 'UNKNOWN']);
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const JOB_ID_PATTERN = /^mig_[A-Za-z0-9_]+$/;
 const REVIEW_ID_PATTERN = /^rev_[A-Za-z0-9_]+$/;
 const SECRET_KEY = /^(?:token|accesstoken|refreshtoken|bearertoken|cookie|authorization|password|secret|clientsecret|secretkey|privatekey|certificatepassword|apikey|accesskey)$/i;
+const SECRET_TARGET = /(?:password|passwd|token|cookie|authorization|secret|api[-_ ]?key|密码|验证码)/iu;
 
 function fail(message, details) {
   invariant(false, 'SCHEMA_V2_INVALID', message, details);
@@ -302,25 +317,59 @@ export function validateIssueClassificationV2(document, validationReport) {
   return document;
 }
 
+function validateScenarioLocator(target, path) {
+  exactKeys(target, ['strategy', 'value'], ['strategy', 'value', 'role', 'exact'], path);
+  enumValue(target.strategy, RUNTIME_LOCATOR_STRATEGIES, `${path}.strategy`);
+  string(target.value, `${path}.value`, { max: 512 });
+  if (target.role !== undefined) string(target.role, `${path}.role`, { max: 128, pattern: ID_PATTERN });
+  if (target.exact !== undefined) boolean(target.exact, `${path}.exact`);
+  if (target.strategy === 'ROLE' && target.role === undefined) fail(`${path}.role is required for ROLE locators`);
+  if (target.strategy !== 'ROLE' && target.role !== undefined) fail(`${path}.role is allowed only for ROLE locators`);
+}
+
 function validateScenarioStep(step, index, collection) {
   const path = `$.${collection}[${index}]`;
   exactKeys(step, ['stepId', 'type'], ['stepId', 'type', 'target', 'input', 'timeoutMs'], path);
   id(step.stepId, `${path}.stepId`);
-  string(step.type, `${path}.type`, { max: 128, pattern: ID_PATTERN });
-  if (step.target !== undefined) string(step.target, `${path}.target`, { max: 512 });
+  enumValue(step.type, RUNTIME_ACTION_TYPES, `${path}.type`);
+  if (step.target !== undefined) validateScenarioLocator(step.target, `${path}.target`);
   if (step.input !== undefined && !['string', 'number', 'boolean'].includes(typeof step.input) && step.input !== null) {
     fail(`${path}.input must be a scalar or null`);
   }
   if (typeof step.input === 'string' && step.input.length > 4096) fail(`${path}.input is too long`);
   if (step.timeoutMs !== undefined) integer(step.timeoutMs, `${path}.timeoutMs`, { min: 1, max: 300000 });
+  const needsTarget = ['CLICK', 'FILL', 'SELECT_OPTION', 'CHECK', 'UNCHECK', 'PRESS', 'WAIT_FOR'].includes(step.type);
+  const needsInput = ['OPEN_PAGE', 'FILL', 'SELECT_OPTION', 'PRESS'].includes(step.type);
+  if (needsTarget && step.target === undefined) fail(`${path}.target is required for ${step.type}`);
+  if (!needsTarget && step.target !== undefined) fail(`${path}.target is not allowed for ${step.type}`);
+  if (needsInput && step.input === undefined) fail(`${path}.input is required for ${step.type}`);
+  if (!needsInput && step.input !== undefined) fail(`${path}.input is not allowed for ${step.type}`);
+  if (step.type === 'OPEN_PAGE' && (typeof step.input !== 'string' || !step.input.startsWith('/'))) fail(`${path}.input must be a same-origin absolute path for OPEN_PAGE`);
+  if (step.type === 'PRESS' && !['Enter', 'Escape', 'Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(step.input)) {
+    fail(`${path}.input is not an allowed key for PRESS`);
+  }
+  if (step.type === 'FILL' && SECRET_TARGET.test(`${step.target.value} ${step.target.role || ''}`)) {
+    fail(`${path} cannot persist authentication or secret entry; use the private browser authentication profile`);
+  }
 }
 
 function validateScenarioAssertion(assertion, index) {
   const path = `$.assertions[${index}]`;
   exactKeys(assertion, ['assertionId', 'observation', 'comparator'], ['assertionId', 'observation', 'comparator', 'expected', 'allowedDifference'], path);
   id(assertion.assertionId, `${path}.assertionId`);
-  string(assertion.observation, `${path}.observation`, { max: 512 });
+  exactKeys(assertion.observation, ['name', 'category', 'capture'], ['name', 'category', 'capture', 'target'], `${path}.observation`);
+  id(assertion.observation.name, `${path}.observation.name`);
+  enumValue(assertion.observation.category, ['UI', 'ROUTE', 'CONSOLE', 'NETWORK'], `${path}.observation.category`);
+  enumValue(assertion.observation.capture, RUNTIME_OBSERVATION_CAPTURES, `${path}.observation.capture`);
+  if (assertion.observation.target !== undefined) validateScenarioLocator(assertion.observation.target, `${path}.observation.target`);
+  if (assertion.observation.capture === 'URL') {
+    if (assertion.observation.category !== 'ROUTE' || assertion.observation.target !== undefined) fail(`${path}.observation URL capture must be a target-free ROUTE observation`);
+  } else if (assertion.observation.target === undefined && !['CONSOLE', 'NETWORK'].includes(assertion.observation.category)) {
+    fail(`${path}.observation.target is required for ${assertion.observation.capture}`);
+  }
   enumValue(assertion.comparator, ['V4_V5_EQUAL', 'V4_V5_SHAPE_EQUAL', 'EXPECTED_VALUE', 'NO_ERROR'], `${path}.comparator`);
+  if (assertion.comparator === 'NO_ERROR' && !['CONSOLE', 'NETWORK'].includes(assertion.observation.category)) fail(`${path}.NO_ERROR must observe CONSOLE or NETWORK`);
+  if (assertion.comparator !== 'NO_ERROR' && ['CONSOLE', 'NETWORK'].includes(assertion.observation.category)) fail(`${path} console/network assertions currently support only NO_ERROR`);
   if (assertion.expected !== undefined && !['string', 'number', 'boolean'].includes(typeof assertion.expected) && assertion.expected !== null) {
     fail(`${path}.expected must be a scalar or null`);
   }
@@ -330,8 +379,8 @@ function validateScenarioAssertion(assertion, index) {
 export function validateRuntimeScenario(document) {
   schemaHeader(document, 'runtime-scenario');
   exactKeys(document,
-    ['schemaVersion', 'kind', 'scenarioId', 'version', 'name', 'source', 'sideEffect', 'executionPolicy', 'preconditions', 'actions', 'assertions', 'cleanup', 'knowledgeRuleIds', 'createdAt', 'createdBy', 'sensitivity'],
-    ['schemaVersion', 'kind', 'scenarioId', 'version', 'name', 'source', 'sideEffect', 'executionPolicy', 'preconditions', 'actions', 'assertions', 'cleanup', 'knowledgeRuleIds', 'createdAt', 'createdBy', 'sensitivity'],
+    ['schemaVersion', 'kind', 'scenarioId', 'version', 'name', 'source', 'sideEffect', 'executionPolicy', 'networkPolicy', 'artifactPolicy', 'preconditions', 'actions', 'assertions', 'cleanup', 'knowledgeRuleIds', 'createdAt', 'createdBy', 'sensitivity'],
+    ['schemaVersion', 'kind', 'scenarioId', 'version', 'name', 'source', 'sideEffect', 'executionPolicy', 'networkPolicy', 'artifactPolicy', 'preconditions', 'actions', 'assertions', 'cleanup', 'knowledgeRuleIds', 'createdAt', 'createdBy', 'sensitivity'],
     '$');
   id(document.scenarioId, '$.scenarioId');
   integer(document.version, '$.version', { min: 1 });
@@ -344,9 +393,18 @@ export function validateRuntimeScenario(document) {
   enumValue(document.executionPolicy.mode, EXECUTION_MODES, '$.executionPolicy.mode');
   boolean(document.executionPolicy.authorizationRequired, '$.executionPolicy.authorizationRequired');
   boolean(document.executionPolicy.cleanupRequired, '$.executionPolicy.cleanupRequired');
+  exactKeys(document.networkPolicy, ['unsafeRequests'], ['unsafeRequests'], '$.networkPolicy');
+  enumValue(document.networkPolicy.unsafeRequests, ['BLOCK', 'ALLOW_WITH_AUTHORIZATION'], '$.networkPolicy.unsafeRequests');
+  exactKeys(document.artifactPolicy, ['screenshots', 'nativePlaywrightTrace'], ['screenshots', 'nativePlaywrightTrace'], '$.artifactPolicy');
+  enumValue(document.artifactPolicy.screenshots, ['OFF', 'FAILURES_ONLY'], '$.artifactPolicy.screenshots');
+  if (document.artifactPolicy.nativePlaywrightTrace !== false) fail('Native Playwright traces are forbidden because they may persist authentication and response data');
   uniqueStrings(document.preconditions, '$.preconditions', { max: 100 });
-  array(document.actions, '$.actions', { max: 200 }).forEach((step, index) => validateScenarioStep(step, index, 'actions'));
-  array(document.assertions, '$.assertions', { max: 200 }).forEach(validateScenarioAssertion);
+  const actions = array(document.actions, '$.actions', { max: 200 });
+  if (actions.length === 0) fail('Runtime Scenario requires at least one action');
+  actions.forEach((step, index) => validateScenarioStep(step, index, 'actions'));
+  const assertions = array(document.assertions, '$.assertions', { max: 200 });
+  if (assertions.length === 0) fail('Runtime Scenario requires at least one assertion');
+  assertions.forEach(validateScenarioAssertion);
   array(document.cleanup, '$.cleanup', { max: 100 }).forEach((step, index) => validateScenarioStep(step, index, 'cleanup'));
   uniqueStrings(document.knowledgeRuleIds, '$.knowledgeRuleIds', { max: 200 });
   validateArtifactMetadata(document);
@@ -354,11 +412,19 @@ export function validateRuntimeScenario(document) {
     if (!document.executionPolicy.authorizationRequired || !document.executionPolicy.cleanupRequired || document.cleanup.length === 0) {
       fail('REVERSIBLE scenarios require authorization and a non-empty cleanup plan');
     }
+    if (document.networkPolicy.unsafeRequests !== 'ALLOW_WITH_AUTHORIZATION') fail('REVERSIBLE scenarios must explicitly allow unsafe requests under authorization');
   }
   if (document.sideEffect === 'EXTERNAL_SIDE_EFFECT') {
     if (document.executionPolicy.mode !== 'USER_VISIBLE' || !document.executionPolicy.authorizationRequired) {
       fail('EXTERNAL_SIDE_EFFECT scenarios require USER_VISIBLE mode and authorization');
     }
+    if (document.networkPolicy.unsafeRequests !== 'ALLOW_WITH_AUTHORIZATION') fail('EXTERNAL_SIDE_EFFECT scenarios must explicitly allow unsafe requests under authorization');
+  }
+  if (document.sideEffect === 'READ_ONLY') {
+    if (document.executionPolicy.authorizationRequired || document.executionPolicy.cleanupRequired || document.cleanup.length > 0) {
+      fail('READ_ONLY scenarios cannot require authorization or cleanup');
+    }
+    if (document.networkPolicy.unsafeRequests !== 'BLOCK') fail('READ_ONLY scenarios must block unsafe network requests');
   }
   return document;
 }
@@ -435,6 +501,63 @@ export function validateBehaviorTrace(document) {
   return document;
 }
 
+function validateRuntimeAssertionResult(result, index) {
+  const path = `$.assertions[${index}]`;
+  exactKeys(result,
+    ['assertionId', 'status', 'reasonCode', 'sourceObservationIds', 'targetObservationIds', 'normalizations'],
+    ['assertionId', 'status', 'reasonCode', 'sourceObservationIds', 'targetObservationIds', 'normalizations'],
+    path);
+  id(result.assertionId, `${path}.assertionId`);
+  enumValue(result.status, ['PASSED', 'FAILED', 'INCONCLUSIVE'], `${path}.status`);
+  id(result.reasonCode, `${path}.reasonCode`);
+  uniqueStrings(result.sourceObservationIds, `${path}.sourceObservationIds`, { max: 100 });
+  uniqueStrings(result.targetObservationIds, `${path}.targetObservationIds`, { max: 100 });
+  uniqueStrings(result.normalizations, `${path}.normalizations`, { max: 100 });
+}
+
+export function validateRuntimeComparison(document) {
+  schemaHeader(document, 'runtime-comparison');
+  exactKeys(document,
+    ['schemaVersion', 'kind', 'comparisonId', 'reviewId', 'cycleId', 'scenarioId', 'sourceTraceId', 'targetTraceId', 'environment', 'status', 'assertions', 'coverage', 'runtime', 'evaluatedAt', 'createdAt', 'createdBy', 'sensitivity'],
+    ['schemaVersion', 'kind', 'comparisonId', 'reviewId', 'cycleId', 'scenarioId', 'sourceTraceId', 'targetTraceId', 'environment', 'status', 'assertions', 'coverage', 'runtime', 'evaluatedAt', 'createdAt', 'createdBy', 'sensitivity'],
+    '$');
+  id(document.comparisonId, '$.comparisonId');
+  reviewId(document.reviewId);
+  id(document.cycleId, '$.cycleId');
+  id(document.scenarioId, '$.scenarioId');
+  id(document.sourceTraceId, '$.sourceTraceId');
+  id(document.targetTraceId, '$.targetTraceId');
+  exactKeys(document.environment, ['comparisonId', 'status'], ['comparisonId', 'status'], '$.environment');
+  id(document.environment.comparisonId, '$.environment.comparisonId');
+  enumValue(document.environment.status, ENVIRONMENT_GATE_STATUSES, '$.environment.status');
+  enumValue(document.status, ['PARITY_PASSED', 'MISMATCH_DETECTED', 'INCONCLUSIVE'], '$.status');
+  const assertions = array(document.assertions, '$.assertions', { max: 200 });
+  const assertionIds = new Set();
+  assertions.forEach((result, index) => {
+    validateRuntimeAssertionResult(result, index);
+    if (assertionIds.has(result.assertionId)) fail(`$.assertions contains duplicate assertionId ${result.assertionId}`);
+    assertionIds.add(result.assertionId);
+  });
+  exactKeys(document.coverage, ['total', 'passed', 'failed', 'inconclusive'], ['total', 'passed', 'failed', 'inconclusive'], '$.coverage');
+  for (const key of ['total', 'passed', 'failed', 'inconclusive']) integer(document.coverage[key], `$.coverage.${key}`, { min: 0, max: 200 });
+  if (document.coverage.total !== assertions.length || document.coverage.total !== document.coverage.passed + document.coverage.failed + document.coverage.inconclusive) {
+    fail('$.coverage must exactly summarize assertion results');
+  }
+  if (document.status === 'PARITY_PASSED' && (document.coverage.failed || document.coverage.inconclusive)) fail('PARITY_PASSED requires every assertion to pass');
+  if (document.status === 'MISMATCH_DETECTED' && document.coverage.failed === 0) fail('MISMATCH_DETECTED requires a failed assertion');
+  if (document.status === 'INCONCLUSIVE' && document.coverage.inconclusive === 0) fail('INCONCLUSIVE requires an inconclusive assertion');
+  exactKeys(document.runtime, ['driver', 'driverVersion', 'sourceBrowserVersion', 'targetBrowserVersion', 'modes', 'humanTakeover'], ['driver', 'driverVersion', 'sourceBrowserVersion', 'targetBrowserVersion', 'modes', 'humanTakeover'], '$.runtime');
+  string(document.runtime.driver, '$.runtime.driver', { max: 128 });
+  string(document.runtime.driverVersion, '$.runtime.driverVersion', { max: 128 });
+  string(document.runtime.sourceBrowserVersion, '$.runtime.sourceBrowserVersion', { max: 128 });
+  string(document.runtime.targetBrowserVersion, '$.runtime.targetBrowserVersion', { max: 128 });
+  uniqueStrings(document.runtime.modes, '$.runtime.modes', { max: 2 }).forEach((mode, index) => enumValue(mode, EXECUTION_MODES, `$.runtime.modes[${index}]`));
+  boolean(document.runtime.humanTakeover, '$.runtime.humanTakeover');
+  isoDate(document.evaluatedAt, '$.evaluatedAt');
+  validateArtifactMetadata(document);
+  return document;
+}
+
 function validateEnvironmentField(field, index) {
   const path = `$.fields[${index}]`;
   exactKeys(field,
@@ -503,13 +626,18 @@ function validateEnvironmentComparisonField(field, index) {
 export function validateEnvironmentComparison(document) {
   schemaHeader(document, 'environment-comparison');
   exactKeys(document,
-    ['schemaVersion', 'kind', 'comparisonId', 'reviewId', 'sourceManifestId', 'targetManifestId', 'status', 'fields', 'normalizedPaths', 'requiredBindingPaths', 'blockedPaths', 'evaluatedAt', 'createdAt', 'createdBy', 'sensitivity'],
-    ['schemaVersion', 'kind', 'comparisonId', 'reviewId', 'sourceManifestId', 'targetManifestId', 'status', 'fields', 'normalizedPaths', 'requiredBindingPaths', 'blockedPaths', 'evaluatedAt', 'createdAt', 'createdBy', 'sensitivity'],
+    ['schemaVersion', 'kind', 'comparisonId', 'reviewId', 'sourceManifestId', 'targetManifestId', 'sourceRevision', 'targetRevision', 'status', 'fields', 'normalizedPaths', 'requiredBindingPaths', 'blockedPaths', 'evaluatedAt', 'createdAt', 'createdBy', 'sensitivity'],
+    ['schemaVersion', 'kind', 'comparisonId', 'reviewId', 'sourceManifestId', 'targetManifestId', 'sourceRevision', 'targetRevision', 'status', 'fields', 'normalizedPaths', 'requiredBindingPaths', 'blockedPaths', 'evaluatedAt', 'createdAt', 'createdBy', 'sensitivity'],
     '$');
   id(document.comparisonId, '$.comparisonId');
   reviewId(document.reviewId);
   id(document.sourceManifestId, '$.sourceManifestId');
   id(document.targetManifestId, '$.targetManifestId');
+  for (const [name, revision] of [['sourceRevision', document.sourceRevision], ['targetRevision', document.targetRevision]]) {
+    exactKeys(revision, ['nid', 'workId'], ['nid', 'workId'], `$.${name}`);
+    integer(revision.nid, `$.${name}.nid`, { min: 1 });
+    string(revision.workId, `$.${name}.workId`, { max: 256 });
+  }
   enumValue(document.status, ENVIRONMENT_GATE_STATUSES, '$.status');
   const fields = array(document.fields, '$.fields', { max: 10000 });
   const paths = new Set();
@@ -760,6 +888,7 @@ export const SCHEMA_V2_VALIDATORS = Object.freeze({
   'issue-classification': validateIssueClassificationV2,
   'runtime-scenario': validateRuntimeScenario,
   'behavior-trace': validateBehaviorTrace,
+  'runtime-comparison': validateRuntimeComparison,
   'environment-manifest': validateEnvironmentManifest,
   'environment-comparison': validateEnvironmentComparison,
   'human-finding': validateHumanFinding,

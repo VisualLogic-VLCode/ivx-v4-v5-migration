@@ -20,6 +20,8 @@ export function createAppPaths(appHome = resolveAppHome()) {
     workflows: path.join(appHome, 'workflows'),
     converters: path.join(appHome, 'converters'),
     knowledge: path.join(appHome, 'knowledge'),
+    browserAuth: path.join(appHome, 'browser-auth'),
+    browserProfile: path.join(appHome, 'browser-profile'),
     cache: path.join(appHome, 'cache'),
     agents: path.join(appHome, 'agents'),
   };

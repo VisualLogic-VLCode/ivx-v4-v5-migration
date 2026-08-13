@@ -27,9 +27,13 @@ export {
   RESPONSIBLE_PARTIES,
   REVIEW_CAPABILITIES,
   REVIEW_STATUSES,
+  RUNTIME_ACTION_TYPES,
+  RUNTIME_LOCATOR_STRATEGIES,
+  RUNTIME_OBSERVATION_CAPTURES,
   SCHEMA_V2_VALIDATORS,
   validateAutomaticRepairDecision,
   validateBehaviorTrace,
+  validateRuntimeComparison,
   validateDiagnosticSaveEligibility,
   validateEnvironmentComparison,
   validateEnvironmentManifest,
@@ -59,6 +63,12 @@ export {
   validateKnowledgeQuery,
 } from './knowledge/contracts.js';
 export { createKnowledgePin, KnowledgeRuntime } from './knowledge/runtime.js';
+export { compareRuntimeScenario } from './runtime/comparator.js';
+export { PlaywrightRuntimeDriver } from './runtime/playwright-driver.js';
+export { RuntimeReviewRunner } from './runtime/review-runner.js';
+export { normalizeCapturedTrace, normalizeRuntimeValue } from './runtime/trace-normalizer.js';
+export { redactedUrl, redactRuntimeText, runtimeValueDigest, runtimeValueShape, runtimeValueSummary, runtimeValueType } from './runtime/trace-redaction.js';
+export { waitForVisibleRuntimeTakeover } from './runtime/visible-takeover.js';
 export { classifyCaseVersion, classifyMetadataVersion, scanWorkVersionSignals } from './workflow/version-classifier.js';
 export { LocalConverterProvider } from './converter/local-provider.js';
 export { validateConvertedCase } from './validation/basic-validator.js';

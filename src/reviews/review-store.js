@@ -1,13 +1,21 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { validateHumanFinding, validateRuntimeReviewSession } from '../contracts/schema-v2.js';
+import {
+  validateBehaviorTrace,
+  validateEnvironmentComparison,
+  validateHumanFinding,
+  validateRuntimeComparison,
+  validateRuntimeReviewSession,
+  validateRuntimeScenario,
+} from '../contracts/schema-v2.js';
 import { invariant, WorkflowError } from '../errors.js';
 import { withFileLock } from '../fs/file-lock.js';
 import { ensurePrivateDir, readJson, writePrivateJson } from '../fs/secure-json.js';
 import { JobStore } from '../jobs/job-store.js';
 import { createAppPaths } from '../paths.js';
 import { createRedactedRevisionDiff, revisionValueDigest } from './revision-diff.js';
+import { redactRuntimeText } from '../runtime/trace-redaction.js';
 import { assertReviewTransition, TERMINAL_REVIEW_STATES } from './states.js';
 
 const REVIEWABLE_JOB_STATES = new Set(['SUCCEEDED', 'DIAGNOSTIC_COPY_CREATED']);
@@ -101,7 +109,7 @@ export class RuntimeReviewStore {
       };
       validateRuntimeReviewSession(review);
       const directory = ensurePrivateDir(this.reviewDir(reviewId));
-      for (const child of ['baselines', 'findings', 'revision-observations', 'observed-targets', 'baseline-acceptances', 'knowledge']) {
+      for (const child of ['baselines', 'findings', 'revision-observations', 'observed-targets', 'baseline-acceptances', 'knowledge', 'environment', 'scenarios', 'cycles', 'runtime-authorizations', 'reports']) {
         ensurePrivateDir(path.join(directory, child));
       }
       this.#writeBaselineSnapshot(reviewId, targetWorkId, targetSnapshot);
@@ -186,6 +194,224 @@ export class RuntimeReviewStore {
     return review.humanFindingIds.map((findingId) => validateHumanFinding(readJson(
       this.#artifactPath(reviewId, relativeArtifactPath('findings', `${findingId}.json`)),
     )));
+  }
+
+  addRuntimeScenario(reviewId, scenario) {
+    validateRuntimeScenario(scenario);
+    return this.#mutate(reviewId, (review) => {
+      const target = this.#artifactPath(reviewId, relativeArtifactPath('scenarios', `${scenario.scenarioId}.json`));
+      const existing = readJson(target, null);
+      if (existing) {
+        invariant(revisionValueDigest(existing) === revisionValueDigest(scenario), 'RUNTIME_SCENARIO_CONFLICT', 'Runtime Scenario id already exists with different content');
+      } else {
+        writePrivateJson(target, scenario);
+      }
+      if (!review.scenarioIds.includes(scenario.scenarioId)) review.scenarioIds.push(scenario.scenarioId);
+      review.scenarioIds.sort();
+      review.updatedAt = this.now().toISOString();
+      return { review, scenario };
+    });
+  }
+
+  listRuntimeScenarios(reviewId) {
+    const review = this.load(reviewId);
+    return review.scenarioIds.map((scenarioId) => validateRuntimeScenario(readJson(
+      this.#artifactPath(reviewId, relativeArtifactPath('scenarios', `${scenarioId}.json`)),
+    )));
+  }
+
+  runtimeCycleDir(reviewId, cycleId) {
+    normalizeId(cycleId, ARTIFACT_ID_PATTERN, 'INVALID_RUNTIME_CYCLE_ID', 'Invalid runtime cycle id');
+    return this.#artifactPath(reviewId, relativeArtifactPath('cycles', cycleId));
+  }
+
+  withRuntimeLease(reviewId, callback) {
+    const lockPath = path.join(this.paths.locks, `${reviewId}.runtime.lock`);
+    return withFileLock(
+      lockPath,
+      { pid: process.pid, reviewId, operation: 'runtime-cycle', at: this.now().toISOString() },
+      { code: 'RUNTIME_CYCLE_LOCKED', message: `A runtime cycle is already executing for this review: ${reviewId}` },
+      callback,
+    );
+  }
+
+  prepareRuntimeCycle(reviewId, { scenarioIds, source, target, environmentComparison, authorization = null } = {}) {
+    validateEnvironmentComparison(environmentComparison);
+    return this.#mutate(reviewId, (review) => {
+      invariant(environmentComparison.reviewId === reviewId, 'ENVIRONMENT_REVIEW_MISMATCH', 'Environment comparison belongs to another review');
+      invariant(Array.isArray(scenarioIds) && scenarioIds.length > 0 && scenarioIds.length <= 100, 'RUNTIME_SCENARIOS_REQUIRED', 'Runtime cycle requires 1-100 scenarios');
+      invariant(new Set(scenarioIds).size === scenarioIds.length, 'RUNTIME_SCENARIOS_INVALID', 'Runtime cycle scenario ids must be unique');
+      const scenarios = scenarioIds.map((scenarioId) => {
+        invariant(review.scenarioIds.includes(scenarioId), 'RUNTIME_SCENARIO_NOT_LINKED', `Runtime Scenario is not linked to this review: ${scenarioId}`);
+        return validateRuntimeScenario(readJson(this.#artifactPath(reviewId, relativeArtifactPath('scenarios', `${scenarioId}.json`))));
+      });
+      invariant(review.activeCycleId === null, 'RUNTIME_CYCLE_ACTIVE', 'Another runtime cycle is already active for this review');
+      invariant(source?.generation === 'V4' && positiveInteger(source.nid, 'source.nid') && nonEmptyString(source.workId, 'source.workId'), 'RUNTIME_SUBJECT_INVALID', 'Source runtime subject is invalid');
+      invariant(target?.generation === 'V5' && positiveInteger(target.nid, 'target.nid') && nonEmptyString(target.workId, 'target.workId'), 'RUNTIME_SUBJECT_INVALID', 'Target runtime subject is invalid');
+      invariant(source.workId === review.baseline.sourceWorkId, 'RUNTIME_SOURCE_REVISION_MISMATCH', 'Runtime source revision does not match the review baseline');
+      invariant(target.nid === review.target.nid && target.workId === review.baseline.targetWorkId, 'RUNTIME_TARGET_REVISION_MISMATCH', 'Runtime target revision does not match the review baseline');
+      invariant(environmentComparison.sourceRevision.nid === Number(source.nid) && environmentComparison.sourceRevision.workId === source.workId, 'RUNTIME_ENVIRONMENT_REVISION_MISMATCH', 'Environment comparison does not match the source runtime revision');
+      invariant(environmentComparison.targetRevision.nid === Number(target.nid) && environmentComparison.targetRevision.workId === target.workId, 'RUNTIME_ENVIRONMENT_REVISION_MISMATCH', 'Environment comparison does not match the target runtime revision');
+      const requiresAuthorization = scenarios.some((scenario) => scenario.executionPolicy.authorizationRequired);
+      if (requiresAuthorization) this.#validateRuntimeAuthorization(review, scenarios, authorization);
+      else invariant(authorization === null, 'RUNTIME_AUTHORIZATION_UNEXPECTED', 'READ_ONLY runtime cycles must not attach a side-effect authorization');
+
+      invariant(['REVIEW_OPEN', 'RUNTIME_NOT_TESTED', 'AWAITING_USER_BINDING', 'BLOCKED_ENVIRONMENT', 'ENVIRONMENT_PREFLIGHT', 'TEST_OR_ENV_REPAIR', 'TARGET_UPDATED', 'BLOCKED_PLATFORM_RUNTIME'].includes(review.status), 'REVIEW_STATE_MISMATCH', 'Review is not ready to evaluate a runtime environment', { status: review.status });
+      this.#writeImmutableJson(this.#artifactPath(reviewId, relativeArtifactPath('environment', `${environmentComparison.comparisonId}.json`)), environmentComparison, 'ENVIRONMENT_COMPARISON_CONFLICT');
+      if (['REVIEW_OPEN', 'RUNTIME_NOT_TESTED', 'AWAITING_USER_BINDING', 'BLOCKED_ENVIRONMENT'].includes(review.status)) {
+        assertReviewTransition(review.status, 'ENVIRONMENT_PREFLIGHT');
+        this.#setStatus(review, 'ENVIRONMENT_PREFLIGHT', `environment-comparison:${environmentComparison.comparisonId}`);
+      }
+      if (environmentComparison.status === 'REQUIRES_USER_BINDING') {
+        invariant(review.status === 'ENVIRONMENT_PREFLIGHT', 'REVIEW_STATE_MISMATCH', 'Environment binding decision requires environment preflight state');
+        assertReviewTransition(review.status, 'AWAITING_USER_BINDING');
+        this.#setStatus(review, 'AWAITING_USER_BINDING', `environment-comparison:${environmentComparison.comparisonId}`);
+        return { review, blocked: true, environmentComparison, scenarios };
+      }
+      if (environmentComparison.status === 'BLOCKED_ENVIRONMENT') {
+        invariant(review.status === 'ENVIRONMENT_PREFLIGHT', 'REVIEW_STATE_MISMATCH', 'Blocked environment decision requires environment preflight state');
+        assertReviewTransition(review.status, 'BLOCKED_ENVIRONMENT');
+        this.#setStatus(review, 'BLOCKED_ENVIRONMENT', `environment-comparison:${environmentComparison.comparisonId}`);
+        return { review, blocked: true, environmentComparison, scenarios };
+      }
+      invariant(['ENVIRONMENT_EQUIVALENT', 'NORMALIZED_EQUIVALENT'].includes(environmentComparison.status), 'RUNTIME_ENVIRONMENT_NOT_COMPARABLE', 'Runtime comparison requires an equivalent environment');
+      const nextStatus = review.status === 'TARGET_UPDATED' ? 'RUNTIME_RETESTING' : 'RUNTIME_TESTING';
+      invariant(['ENVIRONMENT_PREFLIGHT', 'TEST_OR_ENV_REPAIR', 'TARGET_UPDATED', 'BLOCKED_PLATFORM_RUNTIME'].includes(review.status), 'REVIEW_STATE_MISMATCH', 'Review is not ready to begin a runtime cycle', { status: review.status });
+      assertReviewTransition(review.status, nextStatus);
+      this.#setStatus(review, nextStatus, `runtime-cycle-started:${environmentComparison.comparisonId}`);
+      const startedAt = this.now().toISOString();
+      const cycleId = this.#createId('cycle', startedAt);
+      review.activeCycleId = cycleId;
+      const cycle = {
+        schemaVersion: 1,
+        kind: 'runtime-cycle',
+        cycleId,
+        reviewId,
+        phase: 'REPORT_ONLY',
+        status: 'RUNNING',
+        scenarioIds: [...scenarioIds],
+        source: { generation: 'V4', nid: Number(source.nid), workId: source.workId },
+        target: { generation: 'V5', nid: Number(target.nid), workId: target.workId },
+        environmentComparisonId: environmentComparison.comparisonId,
+        authorizationId: authorization?.authorizationId || null,
+        startedAt,
+        completedAt: null,
+        result: null,
+        sensitivity: 'PRIVATE',
+      };
+      const directory = ensurePrivateDir(this.runtimeCycleDir(reviewId, cycleId));
+      for (const child of ['traces', 'normalized', 'comparisons', 'screenshots']) ensurePrivateDir(path.join(directory, child));
+      writePrivateJson(path.join(directory, 'cycle.json'), cycle);
+      if (authorization) writePrivateJson(this.#artifactPath(reviewId, relativeArtifactPath('runtime-authorizations', `${authorization.authorizationId}.json`)), { ...authorization, usedByCycleId: cycleId });
+      return { review, blocked: false, cycle, environmentComparison, scenarios };
+    });
+  }
+
+  resumeRuntimeCycle(reviewId, { sourceBaseUrl, targetBaseUrl } = {}) {
+    const review = this.load(reviewId);
+    invariant(review.activeCycleId, 'RUNTIME_CYCLE_NOT_ACTIVE', 'There is no active runtime cycle to resume');
+    const cycle = readJson(path.join(this.runtimeCycleDir(reviewId, review.activeCycleId), 'cycle.json'), null);
+    invariant(cycle?.status === 'RUNNING' && cycle.reviewId === reviewId, 'RUNTIME_CYCLE_INVALID', 'Active runtime cycle record is missing or invalid');
+    const scenarios = cycle.scenarioIds.map((scenarioId) => validateRuntimeScenario(readJson(this.#artifactPath(reviewId, relativeArtifactPath('scenarios', `${scenarioId}.json`)))));
+    invariant(scenarios.every((scenario) => scenario.sideEffect === 'READ_ONLY'), 'RUNTIME_SIDE_EFFECT_RECONCILIATION_REQUIRED', 'A crashed side-effect runtime cycle requires user reconciliation and a new authorization');
+    const environmentComparison = validateEnvironmentComparison(readJson(this.#artifactPath(reviewId, relativeArtifactPath('environment', `${cycle.environmentComparisonId}.json`))));
+    const comparisonDir = path.join(this.runtimeCycleDir(reviewId, cycle.cycleId), 'comparisons');
+    const completedScenarioIds = cycle.scenarioIds.filter((scenarioId) => fs.existsSync(path.join(comparisonDir, `${scenarioId}.json`)));
+    return {
+      review,
+      blocked: false,
+      cycle,
+      scenarios,
+      completedScenarioIds,
+      environmentComparison,
+      source: { ...cycle.source, baseUrl: nonEmptyString(sourceBaseUrl, 'sourceBaseUrl', 2048) },
+      target: { ...cycle.target, baseUrl: nonEmptyString(targetBaseUrl, 'targetBaseUrl', 2048) },
+    };
+  }
+
+  persistRuntimeScenarioResult(reviewId, cycleId, { sourceTrace, targetTrace, sourceNormalized, targetNormalized, comparison } = {}) {
+    validateBehaviorTrace(sourceTrace);
+    validateBehaviorTrace(targetTrace);
+    validateRuntimeComparison(comparison);
+    return this.#withReviewLock(reviewId, () => {
+      const review = this.load(reviewId);
+      invariant(review.activeCycleId === cycleId, 'RUNTIME_CYCLE_MISMATCH', 'Runtime cycle is not active for this review');
+      invariant(sourceTrace.reviewId === reviewId && targetTrace.reviewId === reviewId && comparison.reviewId === reviewId, 'RUNTIME_REVIEW_MISMATCH', 'Runtime artifacts belong to another review');
+      invariant(sourceTrace.cycleId === cycleId && targetTrace.cycleId === cycleId && comparison.cycleId === cycleId, 'RUNTIME_CYCLE_MISMATCH', 'Runtime artifacts belong to another cycle');
+      invariant(sourceTrace.scenarioId === targetTrace.scenarioId && sourceTrace.scenarioId === comparison.scenarioId, 'RUNTIME_SCENARIO_MISMATCH', 'Runtime artifacts do not describe the same scenario');
+      const root = this.runtimeCycleDir(reviewId, cycleId);
+      writePrivateJson(path.join(root, 'traces', `${sourceTrace.scenarioId}.v4.json`), sourceTrace);
+      writePrivateJson(path.join(root, 'traces', `${targetTrace.scenarioId}.v5.json`), targetTrace);
+      writePrivateJson(path.join(root, 'normalized', `${sourceTrace.scenarioId}.v4.json`), sourceNormalized);
+      writePrivateJson(path.join(root, 'normalized', `${targetTrace.scenarioId}.v5.json`), targetNormalized);
+      writePrivateJson(path.join(root, 'comparisons', `${comparison.scenarioId}.json`), comparison);
+      return comparison;
+    });
+  }
+
+  completeRuntimeCycle(reviewId, cycleId) {
+    return this.#mutate(reviewId, (review) => {
+      invariant(review.activeCycleId === cycleId, 'RUNTIME_CYCLE_MISMATCH', 'Runtime cycle is not active for this review');
+      const root = this.runtimeCycleDir(reviewId, cycleId);
+      const cycle = readJson(path.join(root, 'cycle.json'));
+      const comparisons = cycle.scenarioIds.map((scenarioId) => validateRuntimeComparison(readJson(path.join(root, 'comparisons', `${scenarioId}.json`))));
+      const status = comparisons.some((entry) => entry.status === 'MISMATCH_DETECTED')
+        ? 'MISMATCH_DETECTED'
+        : comparisons.some((entry) => entry.status === 'INCONCLUSIVE')
+          ? 'INCONCLUSIVE'
+          : 'PARITY_PASSED';
+      cycle.status = 'COMPLETED';
+      cycle.completedAt = this.now().toISOString();
+      cycle.result = status;
+      writePrivateJson(path.join(root, 'cycle.json'), cycle);
+      const report = {
+        schemaVersion: 1,
+        kind: 'runtime-cycle-report',
+        reviewId,
+        cycleId,
+        status,
+        scenarioCount: comparisons.length,
+        comparisonIds: comparisons.map((entry) => entry.comparisonId),
+        completedAt: cycle.completedAt,
+        phase: 'REPORT_ONLY',
+        targetRepairAttempted: false,
+        platformWriteAttempted: false,
+        sensitivity: 'REDACTED',
+      };
+      writePrivateJson(path.join(root, 'report.json'), report);
+      writePrivateJson(this.#artifactPath(reviewId, relativeArtifactPath('reports', `runtime-${cycleId}.json`)), report);
+      review.activeCycleId = null;
+      const nextStatus = status === 'MISMATCH_DETECTED' ? 'MISMATCH_DETECTED' : status === 'PARITY_PASSED' ? 'RUNTIME_PARITY_PASSED' : 'RUNTIME_NOT_TESTED';
+      assertReviewTransition(review.status, nextStatus);
+      this.#setStatus(review, nextStatus, `runtime-cycle-completed:${cycleId}:${status}`);
+      return { review, cycle, report, comparisons };
+    });
+  }
+
+  interruptRuntimeCycle(reviewId, cycleId, error) {
+    return this.#mutate(reviewId, (review) => {
+      invariant(review.activeCycleId === cycleId, 'RUNTIME_CYCLE_MISMATCH', 'Runtime cycle is not active for this review');
+      const root = this.runtimeCycleDir(reviewId, cycleId);
+      const cycle = readJson(path.join(root, 'cycle.json'));
+      cycle.status = 'INTERRUPTED';
+      cycle.completedAt = this.now().toISOString();
+      cycle.result = 'INCONCLUSIVE';
+      writePrivateJson(path.join(root, 'cycle.json'), cycle);
+      writePrivateJson(path.join(root, 'interruption.json'), {
+        schemaVersion: 1,
+        kind: 'runtime-cycle-interruption',
+        reviewId,
+        cycleId,
+        code: error?.code || 'RUNTIME_DRIVER_FAILED',
+        message: redactRuntimeText(error?.message || error || 'Runtime cycle interrupted', { max: 4096 }),
+        interruptedAt: cycle.completedAt,
+        sensitivity: 'REDACTED',
+      });
+      review.activeCycleId = null;
+      assertReviewTransition(review.status, 'RUNTIME_NOT_TESTED');
+      this.#setStatus(review, 'RUNTIME_NOT_TESTED', `runtime-cycle-interrupted:${cycleId}`);
+      return { review, cycle };
+    });
   }
 
   observeTargetRevision(reviewId, { currentWorkId, targetSnapshot } = {}) {
@@ -290,10 +516,14 @@ export class RuntimeReviewStore {
       .map((file) => readJson(path.join(observationDirectory, file)))
       .sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.observationId.localeCompare(right.observationId));
     const latestObservation = observations.at(-1) || null;
+    const activeCycle = review.activeCycleId
+      ? readJson(path.join(this.runtimeCycleDir(reviewId, review.activeCycleId), 'cycle.json'), null)
+      : null;
     return {
       review,
       humanFindings: this.listHumanFindings(reviewId),
       latestObservation,
+      activeCycle,
       resumable: !TERMINAL_REVIEW_STATES.has(review.status),
     };
   }
@@ -338,6 +568,24 @@ export class RuntimeReviewStore {
     return `${prefix}_${timestampPart(new Date(at))}_${this.randomBytes(5).toString('hex')}`;
   }
 
+  #validateRuntimeAuthorization(review, scenarios, authorization) {
+    invariant(authorization && typeof authorization === 'object' && !Array.isArray(authorization), 'RUNTIME_AUTHORIZATION_REQUIRED', 'A side-effect runtime authorization is required');
+    const allowedKeys = new Set(['schemaVersion', 'kind', 'authorizationId', 'reviewId', 'scenarioIds', 'confirmation', 'expiresAt', 'createdAt', 'createdBy', 'sensitivity']);
+    for (const key of Object.keys(authorization)) invariant(allowedKeys.has(key), 'RUNTIME_AUTHORIZATION_INVALID', `Runtime authorization field is not allowed: ${key}`);
+    invariant(authorization.schemaVersion === 1 && authorization.kind === 'runtime-execution-authorization', 'RUNTIME_AUTHORIZATION_INVALID', 'Runtime authorization kind/schema is invalid');
+    normalizeId(authorization.authorizationId, ARTIFACT_ID_PATTERN, 'RUNTIME_AUTHORIZATION_INVALID', 'Runtime authorization id is invalid');
+    invariant(authorization.reviewId === review.reviewId, 'RUNTIME_AUTHORIZATION_INVALID', 'Runtime authorization belongs to another review');
+    invariant(authorization.createdBy === 'USER' && authorization.sensitivity === 'PRIVATE', 'RUNTIME_AUTHORIZATION_INVALID', 'Runtime authorization must be private USER evidence');
+    invariant(!Number.isNaN(Date.parse(authorization.createdAt)) && !Number.isNaN(Date.parse(authorization.expiresAt)) && Date.parse(authorization.expiresAt) > this.now().getTime(), 'RUNTIME_AUTHORIZATION_EXPIRED', 'Runtime authorization has expired or has an invalid date');
+    const expectedIds = scenarios.map((scenario) => scenario.scenarioId).sort();
+    invariant(Array.isArray(authorization.scenarioIds) && JSON.stringify([...authorization.scenarioIds].sort()) === JSON.stringify(expectedIds), 'RUNTIME_AUTHORIZATION_INVALID', 'Runtime authorization must name exactly the scenarios in this cycle');
+    const hasExternal = scenarios.some((scenario) => scenario.sideEffect === 'EXTERNAL_SIDE_EFFECT');
+    const expectedConfirmation = hasExternal ? 'RUN_EXTERNAL_SIDE_EFFECT_SCENARIO' : 'RUN_REVERSIBLE_SCENARIO';
+    invariant(authorization.confirmation === expectedConfirmation, 'RUNTIME_AUTHORIZATION_INVALID', `Runtime authorization confirmation must be ${expectedConfirmation}`);
+    const target = this.#artifactPath(review.reviewId, relativeArtifactPath('runtime-authorizations', `${authorization.authorizationId}.json`));
+    invariant(!fs.existsSync(target), 'RUNTIME_AUTHORIZATION_ALREADY_USED', 'Runtime authorization is single-use and has already been consumed');
+  }
+
   #artifactPath(reviewId, relativePath) {
     const root = this.reviewDir(reviewId);
     const target = path.resolve(root, relativePath);
@@ -358,6 +606,16 @@ export class RuntimeReviewStore {
       return target;
     }
     writePrivateJson(target, snapshot);
+    return target;
+  }
+
+  #writeImmutableJson(target, value, code) {
+    const existing = readJson(target, null);
+    if (existing !== null) {
+      invariant(revisionValueDigest(existing) === revisionValueDigest(value), code, 'Immutable review artifact id already exists with different content');
+      return target;
+    }
+    writePrivateJson(target, value);
     return target;
   }
 

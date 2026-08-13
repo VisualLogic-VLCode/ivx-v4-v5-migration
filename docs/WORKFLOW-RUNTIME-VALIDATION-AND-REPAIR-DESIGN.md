@@ -814,6 +814,8 @@ Converter 修复后由维护者发布新 Converter；用户更新后可以对原
 
 **验收门：**受控案例中无人值守重复执行稳定；认证数据不进入 Agent/Trace；已知环境差异不会产生 Converter 误报；外部副作用不会被静默执行。
 
+**本地实现记录（2026-08-13）：**Workflow 已锁定 Playwright 1.62.1，并将 Playwright/Playwright Core 打入签名 Workflow 包；Chromium 由该锁定 CLI 单独安装。Scenario 仅接受封闭动作和语义定位器；V4/V5 使用隔离 Context；原始捕获值只在进程内参与归一化和哈希，不落盘；原生 Playwright trace 因可能包含认证与响应数据而禁用。当前 Runtime Cycle 只能产出 `targetRepairAttempted:false`、`platformWriteAttempted:false` 的报告，不能调用目标修复或平台保存。真实本机 Chromium 的无副作用双服务冒烟已通过；公开案例验收仍归阶段 8。
+
 ### 阶段 6：Diagnosis v2 与维护者报告
 
 - AI 基于最小证据和 Knowledge Card 提交结构化分类，CLI 校验。

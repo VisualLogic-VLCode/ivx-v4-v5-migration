@@ -65,6 +65,36 @@ test('review CLI creates and recovers a local session across independent process
     const listed = runCli(temporary, ['review', 'list', '--job', job.jobId]);
     assert.equal(listed.reviews.length, 1);
     assert.equal(listed.reviews[0].reviewId, created.reviewId);
+
+    const scenarioFile = path.join(temporary, 'scenario.json');
+    fs.writeFileSync(scenarioFile, JSON.stringify({
+      schemaVersion: 2,
+      kind: 'runtime-scenario',
+      scenarioId: 'scenario-cli',
+      version: 1,
+      name: 'CLI scenario persistence',
+      source: { type: 'USER', reference: 'finding-cli' },
+      sideEffect: 'READ_ONLY',
+      executionPolicy: { mode: 'UNATTENDED', authorizationRequired: false, cleanupRequired: false },
+      networkPolicy: { unsafeRequests: 'BLOCK' },
+      artifactPolicy: { screenshots: 'OFF', nativePlaywrightTrace: false },
+      preconditions: [],
+      actions: [{ stepId: 'open', type: 'OPEN_PAGE', input: '/preview' }],
+      assertions: [{ assertionId: 'no-errors', observation: { name: 'errors', category: 'CONSOLE', capture: 'COUNT' }, comparator: 'NO_ERROR' }],
+      cleanup: [],
+      knowledgeRuleIds: [],
+      createdAt: new Date().toISOString(),
+      createdBy: 'USER',
+      sensitivity: 'REDACTED',
+    }));
+    assert.equal(runCli(temporary, ['review', 'scenario-add', '--review', created.reviewId, '--file', scenarioFile]).scenario.scenarioId, 'scenario-cli');
+    assert.equal(runCli(temporary, ['review', 'scenario-list', '--review', created.reviewId]).scenarios[0].scenarioId, 'scenario-cli');
+
+    const runtime = runCli(temporary, ['runtime', 'status']);
+    assert.equal(runtime.driver, 'playwright');
+    assert.equal(runtime.driverVersion, '1.62.1');
+    assert.equal(typeof runtime.browserInstalled, 'boolean');
+    assert.equal(runtime.authState, 'NOT_CONFIGURED');
   } finally {
     fs.rmSync(temporary, { recursive: true, force: true });
   }

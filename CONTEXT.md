@@ -28,6 +28,22 @@ _Avoid_: AI browser
 The unnormalized observable record produced by one Runtime Scenario execution.
 _Avoid_: Screenshot, verdict
 
+**Normalized Behavior Trace**:
+A derived, value-free comparison record in which only reviewed identity and volatility classes are replaced before hashing.
+_Avoid_: Rewritten Behavior Trace, raw browser log
+
+**Parity Assertion**:
+One declared observation and comparator that must be evaluated against both the V4 and V5 traces.
+_Avoid_: Browser action, AI opinion
+
+**Runtime Cycle**:
+One execution of a fixed scenario set against one source revision and one target revision under one Environment Gate decision.
+_Avoid_: Repair Attempt, whole Runtime Review Session
+
+**Runtime Comparison Report**:
+The redacted assertion-by-assertion result derived from the paired traces of one Runtime Scenario.
+_Avoid_: Behavior Trace, root-cause classification
+
 **Environment Manifest**:
 The typed, redacted description used to compare source and target runtime configuration without persisting original secret values.
 _Avoid_: Environment snapshot, config dump
