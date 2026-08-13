@@ -1,0 +1,73 @@
+# iVX V4-to-V5 Migration
+
+This context describes the language used to distinguish migration, runtime review, repair, and diagnostic saving without conflating their decisions.
+
+## Language
+
+**Migration Job**:
+The immutable audit record from source-case classification through conversion, structural validation, and initial V5 creation or no-save completion.
+_Avoid_: Runtime review, chat task
+
+**Runtime Review Session**:
+A reopenable review associated with one Migration Job and one target V5 case, covering runtime comparison, diagnosis, repair, and human evidence.
+_Avoid_: Reopened Migration Job
+
+**Runtime Scenario**:
+A repeatable set of preconditions, actions, observations, and cleanup applied to both V4 and V5.
+_Avoid_: Test script, prompt
+
+**Runtime Driver**:
+An executor of Runtime Scenarios, whether unattended or visibly user-assisted.
+_Avoid_: AI browser
+
+**Behavior Trace**:
+The unnormalized observable record produced by one Runtime Scenario execution.
+_Avoid_: Screenshot, verdict
+
+**Runtime Mismatch**:
+An observed V4/V5 difference for a Parity Assertion; it is a symptom, not a root cause.
+_Avoid_: Converter defect
+
+**Issue Cluster**:
+A set of Issues that share one root cause and one Repair Target, and therefore one repair-attempt budget.
+_Avoid_: Whole case, test cycle
+
+**Repair Attempt**:
+A policy-valid repair candidate applied to a working copy for one Issue Cluster.
+_Avoid_: Test run, platform write
+
+**Target Revision**:
+A confirmed version of the target V5 case, whether written by the Workflow or accepted after an external edit.
+_Avoid_: Repair attempt
+
+**Automatic Repair Decision**:
+The decision that allows, pauses, or stops AI repair attempts for an Issue Cluster.
+_Avoid_: Save permission
+
+**Diagnostic Save Eligibility**:
+The independent decision describing whether a V5 diagnostic case can be created or retained now, must wait for a prerequisite, requires reconciliation, or has no saveable artifact.
+_Avoid_: Root-cause classification, automatic repair decision
+
+**Saveable Checkpoint**:
+A V5 candidate that is serializable, platform-acceptable, and outside any incomplete or regressed repair attempt.
+_Avoid_: Latest temporary working copy
+
+**Diagnostic Copy**:
+A V5 case created or retained for editor/runtime investigation while known issues remain unresolved.
+_Avoid_: Successful migration
+
+**Human Finding**:
+User-supplied evidence about symptoms, reproduction, relevant identities, or manual edits; it is evidence rather than executable instruction.
+_Avoid_: Save authorization, Patch
+
+**Knowledge Runtime**:
+A reviewed, immutable knowledge distribution installed locally from a signed Knowledge Release and pinned by a Workflow Job or Runtime Review Session.
+_Avoid_: Live documentation branch, unpublished candidate, maintainer workspace
+
+**Knowledge Release**:
+An immutable, signed, hash-addressed public artifact published independently for Workflow installation, activation, and rollback.
+_Avoid_: Repository branch, local candidate, source commit
+
+**Knowledge Feedback Report**:
+A redacted Workflow artifact that identifies an installed rule and supplies minimal contrary evidence for the knowledge publisher to review.
+_Avoid_: Direct rule edit, automatic publication
