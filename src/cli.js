@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { AgentInstaller } from './agents/installer.js';
-import { loadConfig, saveConfig, DEFAULT_CONFIG } from './config.js';
+import { adoptPublicKnowledgeProfile, loadConfig, saveConfig, DEFAULT_CONFIG } from './config.js';
 import { LocalConverterProvider } from './converter/local-provider.js';
 import { AGENT_PROTOCOL_VERSION, PUBLIC_RELEASE_PROFILE } from './distribution-profile.js';
 import { WorkflowError, invariant } from './errors.js';
@@ -741,9 +741,15 @@ async function handleSetup(options, context) {
   const publicKeyPem = options['public-key-file']
     ? fs.readFileSync(path.resolve(options['public-key-file']), 'utf8')
     : PUBLIC_RELEASE_PROFILE.publicKeyPem;
+  const usesDefaultRuntimeChannels = options['workflow-manifest'] === undefined
+    && options['converter-manifest'] === undefined;
+  const knowledgeManifest = options['knowledge-manifest']
+    || context.config.releaseManifests.knowledge
+    || (usesDefaultRuntimeChannels ? PUBLIC_RELEASE_PROFILE.manifests.knowledge : null);
   const knowledgePublicKeyPem = options['knowledge-public-key-file']
     ? fs.readFileSync(path.resolve(options['knowledge-public-key-file']), 'utf8')
-    : context.config.releasePublicKeys.knowledge;
+    : context.config.releasePublicKeys.knowledge
+      || (knowledgeManifest === PUBLIC_RELEASE_PROFILE.manifests.knowledge ? PUBLIC_RELEASE_PROFILE.publicKeys.knowledge : null);
   const runtimePolicy = options['update-policy'] || context.config.update.workflowPolicy || 'prompt';
   const agentPolicy = options['agent-policy'] || context.config.update.agentPolicy || 'prompt';
   const requestedPlatformBaseUrl = options['platform-base-url']
@@ -768,7 +774,7 @@ async function handleSetup(options, context) {
     releaseManifests: {
       workflow: options['workflow-manifest'] || PUBLIC_RELEASE_PROFILE.manifests.workflow,
       converter: options['converter-manifest'] || PUBLIC_RELEASE_PROFILE.manifests.converter,
-      knowledge: options['knowledge-manifest'] || context.config.releaseManifests.knowledge || PUBLIC_RELEASE_PROFILE.manifests.knowledge || null,
+      knowledge: knowledgeManifest,
     },
     releasePublicKeyPem: publicKeyPem,
     releasePublicKeys: {
@@ -923,7 +929,8 @@ export async function runCli(argv, dependencies = {}) {
   const command = positionals[0] || 'help';
   const appHome = resolveAppHome();
   const appPaths = createAppPaths(appHome);
-  const config = loadConfig(appPaths);
+  const loadedConfig = loadConfig(appPaths);
+  const config = adoptPublicKnowledgeProfile(loadedConfig, PUBLIC_RELEASE_PROFILE, appPaths);
   const registry = new RuntimeRegistry(appPaths);
   const jobs = new JobStore(appPaths);
   const reviews = new RuntimeReviewStore(appPaths, { jobs });

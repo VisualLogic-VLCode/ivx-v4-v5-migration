@@ -102,3 +102,21 @@ export function saveConfig(config, appPaths = createAppPaths()) {
   writePrivateJson(appPaths.config, config);
   return config;
 }
+
+export function adoptPublicKnowledgeProfile(config, profile, appPaths = createAppPaths()) {
+  if (
+    config.releaseManifests.knowledge
+    || config.releasePublicKeys.knowledge
+    || !profile?.manifests?.knowledge
+    || !profile?.publicKeys?.knowledge
+  ) return config;
+  const isManagedPublicProfile = config.releaseManifests.workflow === profile.manifests.workflow
+    && config.releaseManifests.converter === profile.manifests.converter
+    && config.releasePublicKeyPem === profile.publicKeyPem;
+  if (!isManagedPublicProfile) return config;
+  return saveConfig({
+    ...config,
+    releaseManifests: { ...config.releaseManifests, knowledge: profile.manifests.knowledge },
+    releasePublicKeys: { ...config.releasePublicKeys, knowledge: profile.publicKeys.knowledge },
+  }, appPaths);
+}
