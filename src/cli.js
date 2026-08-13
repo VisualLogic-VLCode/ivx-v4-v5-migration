@@ -20,6 +20,7 @@ import { IvxPlatformAdapter, normalizePlatformBaseUrl } from './platform/http-ad
 import { inspectPlatformToken, normalizeTokenFilePath, readPlatformTokenFile, resolvePlatformToken } from './platform/token-source.js';
 import { promptAndPersistPlatformToken } from './platform/visible-token-prompt.js';
 import { SAVE_INTENTS, SaveAsOrchestrator } from './platform/save-as-orchestrator.js';
+import { TargetUpdateOrchestrator } from './repair/target-update-orchestrator.js';
 import { ArtifactInstaller } from './releases/artifact-installer.js';
 import { createSignedReleaseEnvelope, loadReleaseEnvelope } from './releases/release-envelope.js';
 import { evaluateRelease } from './releases/release-policy.js';
@@ -627,6 +628,33 @@ async function handleReview(positionals, options, context) {
     invariant(options.review, 'CLI_ARGUMENT_REQUIRED', '--review is required');
     return { diagnoses: context.reviews.listDiagnoses(options.review) };
   }
+  if (action === 'repair-authorize') {
+    invariant(options.review, 'CLI_ARGUMENT_REQUIRED', '--review is required');
+    return context.reviews.authorizeTargetRepair(options.review, readRequiredJson(options.file, 'target repair authorization'));
+  }
+  if (action === 'repair-propose') {
+    invariant(options.review, 'CLI_ARGUMENT_REQUIRED', '--review is required');
+    return context.reviews.submitRepairProposal(options.review, readRequiredJson(options.file, 'repair proposal'));
+  }
+  if (action === 'repair-list') {
+    invariant(options.review, 'CLI_ARGUMENT_REQUIRED', '--review is required');
+    return {
+      authorizations: context.reviews.listRepairAuthorizations(options.review),
+      attempts: context.reviews.listRepairAttempts(options.review),
+      batches: context.reviews.listRepairBatches(options.review),
+      checkpoints: context.reviews.listSaveableCheckpoints(options.review),
+    };
+  }
+  if (action === 'repair-update-target') {
+    invariant(options.review && options.batch, 'CLI_ARGUMENT_REQUIRED', '--review and --batch are required');
+    const adapter = createPlatformAdapter(options, context, { write: true, confirmation: 'UPDATE_V5_REPAIR' });
+    return new TargetUpdateOrchestrator({ reviews: context.reviews, adapter }).run(options.review, options.batch);
+  }
+  if (action === 'repair-reconcile') {
+    invariant(options.review && options.batch, 'CLI_ARGUMENT_REQUIRED', '--review and --batch are required');
+    const adapter = createPlatformAdapter(options, context);
+    return new TargetUpdateOrchestrator({ reviews: context.reviews, adapter }).reconcile(options.review, options.batch);
+  }
   if (action === 'runtime-run') {
     invariant(options.review, 'CLI_ARGUMENT_REQUIRED', '--review is required');
     invariant(options.scenario, 'CLI_ARGUMENT_REQUIRED', '--scenario is required');
@@ -1045,6 +1073,11 @@ export async function runCli(argv, dependencies = {}) {
         'ivx-migrate review diagnostic-checkpoint --review <reviewId>',
         'ivx-migrate review diagnose --review <reviewId> --file <classification-v2.json> [--eligibility-file <save-prerequisites.json>]',
         'ivx-migrate review diagnosis-list --review <reviewId>',
+        'ivx-migrate review repair-authorize --review <reviewId> --file <authorization.json>',
+        'ivx-migrate review repair-propose --review <reviewId> --file <proposal.json>',
+        'ivx-migrate review repair-list --review <reviewId>',
+        'ivx-migrate review repair-update-target --review <reviewId> --batch <batchId> --confirm-live-write UPDATE_V5_REPAIR',
+        'ivx-migrate review repair-reconcile --review <reviewId> --batch <batchId>',
         'ivx-migrate review runtime-run --review <reviewId> --scenario <id[,id]> --source-url <url> --target-url <url> --environment-file <comparison.json> [--authorization-file <authorization.json>]',
         'ivx-migrate review runtime-resume --review <reviewId> --source-url <url> --target-url <url>',
         'ivx-migrate runtime status',

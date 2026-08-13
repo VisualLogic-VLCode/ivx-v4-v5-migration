@@ -3,7 +3,7 @@ import { validateIssueClassificationCompatible } from '../contracts/compatibilit
 
 const ALLOWED_OPERATIONS = new Set(['add', 'remove', 'replace']);
 const ALLOWED_ROOTS = new Set(['case', 'stage', 'server']);
-const DENIED_SEGMENTS = /^(?:id|nid|gid|uid|eid|workid|moddbid|token|secret|password|cookie|authorization)$/i;
+const DENIED_SEGMENTS = /^(?:id|nid|gid|uid|eid|workid|moddbid|token|secret|password|cookie|authorization|__proto__|prototype|constructor)$/i;
 
 function containsProtectedKey(value, seen = new Set()) {
   if (!value || typeof value !== 'object' || seen.has(value)) return false;
@@ -17,12 +17,16 @@ function decodePointer(path) {
   return path.slice(1).split('/').map((segment) => segment.replace(/~1/g, '/').replace(/~0/g, '~'));
 }
 
-export function validateRepairPatch(patch, { maxOperations = 20, maxValueBytes = 64 * 1024 } = {}) {
+export function validateRepairPatch(patch, { maxOperations = 20, maxValueBytes = 64 * 1024, maxPatchBytes = 256 * 1024 } = {}) {
   invariant(Array.isArray(patch), 'INVALID_JSON_PATCH', 'Repair patch must be an array');
   invariant(patch.length > 0 && patch.length <= maxOperations, 'INVALID_JSON_PATCH', `Repair patch must contain 1-${maxOperations} operations`);
+  invariant(Buffer.byteLength(JSON.stringify(patch), 'utf8') <= maxPatchBytes, 'PATCH_TOO_LARGE', `Repair patch must not exceed ${maxPatchBytes} bytes`);
   return patch.map((operation, index) => {
     invariant(operation && typeof operation === 'object', 'INVALID_JSON_PATCH', `Patch operation ${index} must be an object`);
+    const allowedKeys = operation.op === 'remove' ? new Set(['op', 'path']) : new Set(['op', 'path', 'value']);
+    invariant(Object.keys(operation).every((key) => allowedKeys.has(key)), 'INVALID_JSON_PATCH', `Patch operation ${index} contains unsupported fields`);
     invariant(ALLOWED_OPERATIONS.has(operation.op), 'PATCH_OPERATION_FORBIDDEN', `Patch operation ${operation.op} is not allowed`);
+    invariant(operation.op === 'remove' || Object.hasOwn(operation, 'value'), 'INVALID_JSON_PATCH', `Patch operation ${index} requires a value`);
     const segments = decodePointer(operation.path);
     invariant(ALLOWED_ROOTS.has(segments[0]), 'PATCH_PATH_FORBIDDEN', `Patch path must be under /case, /stage, or /server: ${operation.path}`);
     invariant(segments.length > 1, 'PATCH_PATH_FORBIDDEN', `Replacing or adding an entire root object is forbidden: ${operation.path}`);

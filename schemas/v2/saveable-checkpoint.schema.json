@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.ivx.local/migration/v2/saveable-checkpoint.schema.json",
+  "title": "iVX Saveable Checkpoint v2",
+  "type": "object",
+  "required": ["schemaVersion", "kind", "checkpointId", "reviewId", "checkpointType", "artifact", "sha256", "targetNid", "targetWorkId", "sourceAttemptId", "sourceBatchId", "staticValidation", "createdAt", "createdBy", "sensitivity"],
+  "properties": {
+    "schemaVersion": { "const": 2 }, "kind": { "const": "saveable-checkpoint" },
+    "checkpointId": { "$ref": "common.schema.json#/$defs/id" }, "reviewId": { "$ref": "common.schema.json#/$defs/reviewId" },
+    "checkpointType": { "enum": ["CONVERTER_OUTPUT", "STATICALLY_SAFE_CANDIDATE", "CONFIRMED_TARGET_REVISION"] }, "artifact": { "$ref": "common.schema.json#/$defs/safeRelativePath" }, "sha256": { "$ref": "common.schema.json#/$defs/sha256" },
+    "targetNid": { "type": ["integer", "null"], "minimum": 1 }, "targetWorkId": { "type": ["string", "null"] }, "sourceAttemptId": { "oneOf": [{ "$ref": "common.schema.json#/$defs/id" }, { "type": "null" }] }, "sourceBatchId": { "oneOf": [{ "$ref": "common.schema.json#/$defs/id" }, { "type": "null" }] },
+    "staticValidation": { "type": "object", "required": ["passed", "issueCount", "blockerCount"], "properties": { "passed": { "type": "boolean" }, "issueCount": { "type": "integer", "minimum": 0 }, "blockerCount": { "type": "integer", "minimum": 0 } }, "additionalProperties": false },
+    "createdAt": { "$ref": "common.schema.json#/$defs/dateTime" }, "createdBy": { "const": "CLI" }, "sensitivity": { "const": "PRIVATE" }
+  },
+  "additionalProperties": false
+}

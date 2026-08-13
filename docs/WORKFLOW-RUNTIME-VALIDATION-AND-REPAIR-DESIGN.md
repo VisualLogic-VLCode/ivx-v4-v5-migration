@@ -836,6 +836,8 @@ Converter 修复后由维护者发布新 Converter；用户更新后可以对原
 
 **验收门：**任何目标写入都可审计、可恢复；`AUTO_REPAIR_STOPPED` 不会错误禁止诊断另存；预算与保护路径无法被 Agent 绕过。
 
+> 实现记录（2026-08-13）：已实现本阶段的本地与平台适配边界。Review 持久化 `3+2`/`10+5` 预算、过期授权、Repair Proposal/Attempt/Batch 和三类 Saveable Checkpoint；CLI 只允许高置信 `SOURCE_DATA`/`TARGET_CASE` 的受限 V5 Patch。目标更新使用 operation lease、nid/workId/内容 CAS、写前日志、写后读回与未知结果只读对账，禁止自动重放；成功后强制复测来源及受影响场景。重复 Patch、A→B→A、范围持续扩大和新高严重度回归均停止自动修复，但不改变诊断另存资格，Human Finding 可在新 Agent 会话继续同一 Review。
+
 ### 阶段 8：真实案例验收与分发
 
 至少覆盖：

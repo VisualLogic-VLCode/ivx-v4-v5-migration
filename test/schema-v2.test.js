@@ -482,10 +482,15 @@ test('all distributable schema-v2 documents are valid JSON with stable identifie
     'issue-classification.schema.json',
     'issue-cluster.schema.json',
     'job-state.schema.json',
+    'repair-attempt.schema.json',
+    'repair-batch.schema.json',
     'repair-budget.schema.json',
+    'repair-proposal.schema.json',
     'runtime-comparison.schema.json',
     'runtime-review-session.schema.json',
     'runtime-scenario.schema.json',
+    'saveable-checkpoint.schema.json',
+    'target-repair-authorization.schema.json',
   ];
   assert.deepEqual(fs.readdirSync(schemaDir).filter((file) => file.endsWith('.json')).sort(), expected);
   for (const file of expected) {

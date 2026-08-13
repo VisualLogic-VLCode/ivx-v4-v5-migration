@@ -16,7 +16,7 @@
     "reasonCode": { "$ref": "common.schema.json#/$defs/id" },
     "reason": { "type": "string", "minLength": 1, "maxLength": 8192 },
     "budgetId": { "$ref": "common.schema.json#/$defs/id" },
-    "budgetState": { "enum": ["AVAILABLE", "FROZEN", "EXHAUSTED"] },
+    "budgetState": { "enum": ["AVAILABLE", "PAUSED", "FROZEN", "EXHAUSTED"] },
     "remainingAttempts": { "type": "integer", "minimum": 0, "maximum": 100 },
     "evidenceRefs": { "$ref": "common.schema.json#/$defs/stringArray" },
     "knowledgeRuleIds": { "$ref": "common.schema.json#/$defs/stringArray" },

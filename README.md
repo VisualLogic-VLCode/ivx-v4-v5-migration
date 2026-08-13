@@ -22,11 +22,12 @@ Public stable Workflow is `0.3.8`, with Agent protocol 4 and Converter `1.2.1`. 
 - independent private Runtime Review Session persistence, one-writer-per-target-revision leases, Human Finding evidence, and external-revision baseline reconciliation;
 - a locked Playwright Runtime Driver with closed declarative scenarios, isolated V4/V5 contexts, private browser authentication state, redacted traces, reviewed normalization, side-effect gates, and report-only parity comparison;
 - Diagnosis v2 with evidence-backed Issue Clusters, policy-computed automatic-repair decisions, independent diagnostic-save eligibility, calibration fixtures, and redacted owner-specific maintainer reports;
+- bounded target repair with private authorization leases, per-cluster `3+2` attempts, per-review `10+5` confirmed revisions, V5-only Patch policy, static regression gates, Saveable Checkpoints, target CAS, unknown-write reconciliation, verified read-back, and affected-scenario retesting;
 - a complete local-file dry run and a mock-platform integration-tested online flow.
 
 Platform writes remain disabled by default. A verified save requires private config `platform.writeMode: "explicit"` and `--confirm-live-write SAVE_V5`. A Job with classified `CONVERTER`, `SOURCE`, or `UNKNOWN` issues may use the separate command and confirmation `SAVE_V5_WITH_KNOWN_ISSUES`; it finishes as `DIAGNOSTIC_COPY_CREATED`, never `SUCCEEDED`. `PLATFORM` and `AUTHORIZATION` issues remain ineligible. Non-owner group participants remain blocked as `UNKNOWN_SERVER_POLICY` until their deployment-specific server permission is verified.
 
-The source tree contains additive [Schema v2 development contracts](schemas/v2/README.md) for runtime review and repair. The closed environment field-policy registry, redacted Environment Manifest/Environment Gate evaluator, stable environment reader, narrow routing-binding adapter, independent Runtime Review Store, Human Finding continuation, revision-drift reconciliation, and signed Knowledge Runtime consumer are implemented behind local APIs/tests. Review/Knowledge commands do not instantiate a platform adapter, and no existing migration/save policy is changed. Schema-v1 artifacts remain readable; any Job-state migration is an explicit, non-destructive copy rather than an in-place rewrite.
+The source tree contains additive [Schema v2 development contracts](schemas/v2/README.md) for runtime review and repair. The closed environment field-policy registry, redacted Environment Manifest/Environment Gate evaluator, stable environment reader, narrow routing-binding adapter, independent Runtime Review Store, Human Finding continuation, revision-drift reconciliation, bounded target-update journal, and signed Knowledge Runtime consumer are implemented behind local APIs/tests. Read-only Review/Knowledge commands do not instantiate a write adapter; a repair update requires the explicit write mode and literal `UPDATE_V5_REPAIR` confirmation. Schema-v1 artifacts remain readable; any Job-state migration is an explicit, non-destructive copy rather than an in-place rewrite.
 
 ## Data location
 
@@ -166,7 +167,7 @@ ivx-migrate review runtime-resume \
   --target-url <v5-preview-url>
 ```
 
-Runtime Scenario actions use only the published action/semantic-locator vocabulary; arbitrary JavaScript, CSS/XPath, credential entry, and native Playwright traces are rejected. `READ_ONLY` blocks non-idempotent requests. `REVERSIBLE` requires cleanup and a single-use USER authorization; `EXTERNAL_SIDE_EFFECT` additionally requires a visible takeover. Browser storage state is a private `0600` file and is never returned. A Runtime Cycle sets `targetRepairAttempted:false` and `platformWriteAttempted:false`; mismatch reports do not modify or save the target. Automatic target Patch/update orchestration remains a later phase.
+Runtime Scenario actions use only the published action/semantic-locator vocabulary; arbitrary JavaScript, CSS/XPath, credential entry, and native Playwright traces are rejected. `READ_ONLY` blocks non-idempotent requests. `REVERSIBLE` requires cleanup and a single-use USER authorization; `EXTERNAL_SIDE_EFFECT` additionally requires a visible takeover. Browser storage state is a private `0600` file and is never returned. Runtime cycles remain evidence-only: they never apply a Patch or invoke a platform write. A later, separately authorized repair operation may consume their redacted evidence.
 
 When a Runtime Cycle reports a mismatch, Diagnosis v2 exposes stable candidates and accepts only a complete Schema-v2 Root Cause Classification. Every issue must cite its actual local comparison artifact; Knowledge rule IDs must have been retrieved by this review. The Workflow independently computes repair and diagnostic-save decisions and produces a redacted JSON/Markdown owner report:
 
@@ -180,7 +181,26 @@ ivx-migrate review diagnose \
 ivx-migrate review diagnosis-list --review <reviewId>
 ```
 
-Only high-confidence `SOURCE_DATA` and `TARGET_CASE` clusters with one V5 artifact target can receive `AUTO_REPAIR_ALLOWED`; this phase still does not apply a Patch. Converter, platform, Knowledge, authorization, and unknown causes stop target repair and produce the corresponding maintainer report. Diagnostic Save Eligibility is evaluated separately from cause and cannot bypass authentication, server permission, explicit user authorization, platform availability, revision safety, reconciliation, or checkpoint integrity.
+Only high-confidence `SOURCE_DATA` and `TARGET_CASE` clusters with one V5 artifact target can receive `AUTO_REPAIR_ALLOWED`. Converter, platform, Knowledge, authorization, and unknown causes stop target repair and produce the corresponding maintainer report. Diagnostic Save Eligibility is evaluated separately from cause and cannot bypass authentication, server permission, explicit user authorization, platform availability, revision safety, reconciliation, or checkpoint integrity.
+
+For a repairable cluster, the Agent submits evidence-linked data; it never writes the platform itself:
+
+```bash
+ivx-migrate review repair-authorize --review <reviewId> --file ./repair-authorization.json
+ivx-migrate review repair-propose --review <reviewId> --file ./repair-proposal.json
+ivx-migrate review repair-list --review <reviewId>
+
+# This is the only mutating repair command. It requires platform.writeMode=explicit.
+ivx-migrate review repair-update-target \
+  --review <reviewId> \
+  --batch <batchId> \
+  --confirm-live-write UPDATE_V5_REPAIR
+
+# Read-only recovery for a lost/unknown write response; it never replays the save.
+ivx-migrate review repair-reconcile --review <reviewId> --batch <batchId>
+```
+
+A Repair Attempt is counted only after the Patch passes the closed policy and is applied to a local copy. A Target Revision is counted only after platform read-back matches the statically safe candidate. The first three attempts per Issue Cluster and first ten confirmed revisions require an initial lease; the extra two/five require a separate USER extension. Duplicate Patch, A→B→A oscillation, sustained scope growth, new high-severity regression, external revision drift, or an unknown write result stops automatic progress. These stops do not delete the target, invalidate existing Diagnostic Save Eligibility, or prevent a later Human Finding from continuing the same Review.
 
 Load the current work with the caller's token, classify it, convert only supported V4, and stop at the save gate:
 

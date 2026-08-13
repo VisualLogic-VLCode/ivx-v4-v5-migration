@@ -13,7 +13,7 @@ The first Runtime Driver is Playwright locked as an exact Workflow dependency. I
 
 The driver produces a redacted Behavior Trace and an ephemeral captured-value map. The latter is normalized and hashed in process, then discarded. Persisted normalized traces and Runtime Comparison reports contain digests and declared normalization categories, not observed values. Native Playwright trace archives are forbidden. Failure screenshots are optional, private, and mask standard credential inputs.
 
-This stage is report-only: a Runtime Cycle cannot invoke target repair, the Platform Adapter, or a save operation. `READ_ONLY` scenarios block unsafe network methods; `REVERSIBLE` and `EXTERNAL_SIDE_EFFECT` scenarios require single-use USER authorization, and external effects require visible takeover.
+Every Runtime Cycle remains report-only: it cannot invoke target repair, the Platform Adapter, or a save operation. `READ_ONLY` scenarios block unsafe network methods; `REVERSIBLE` and `EXTERNAL_SIDE_EFFECT` scenarios require single-use USER authorization, and external effects require visible takeover. A separate bounded repair operation may later consume the cycle evidence under its own USER authorization, Patch policy, CAS, journal, and read-back gates.
 
 ## Consequences
 
@@ -21,4 +21,4 @@ This stage is report-only: a Runtime Cycle cannot invoke target repair, the Plat
 - Authentication state and response content are excluded from Agent output and structured traces.
 - Some applications that use POST for semantically read-only services require a separately reviewed side-effect classification instead of an Agent exception.
 - Native Playwright debugging archives are unavailable; diagnosis relies on bounded structured evidence and masked failure screenshots.
-- Target repair remains unavailable until the later bounded-repair stage supplies independent policy, authorization, CAS, and read-back controls.
+- Target repair stays outside the browser driver and is available only through the independent bounded-repair controls recorded in ADR 0005.

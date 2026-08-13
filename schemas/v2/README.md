@@ -15,7 +15,7 @@ This directory contains the additive contracts for runtime review, environment g
 - Behavior Traces contain only redacted summaries and hashes; Normalized Behavior Traces contain comparison digests only. Runtime Comparison reports state assertion coverage and allowed normalization categories without exposing captured values.
 - Report-only Runtime Cycles may run browsers and persist evidence, but cannot repair or write a target. Environment blocking and missing side-effect authorization stop before browser execution.
 - Diagnosis v2 persists validated Issue Clusters, independent automatic-repair and diagnostic-save decisions, plus redacted maintainer reports. Classifications may reference only existing review artifacts.
-- Automatic platform revision observation and target update behavior remain deferred; the current local interface accepts an already read-back target document and performs no platform access.
+- Bounded repair uses private USER authorization leases, `3+2` per-cluster attempts, `10+5` confirmed target revisions, statically safe checkpoints, compare-and-swap revision checks, unknown-write reconciliation, verified read-back, and affected-scenario retesting.
 
 The JSON Schema files are distributable descriptions. Cross-document and security-sensitive rules are also enforced by the closed validators in `src/contracts/schema-v2.js`, including redaction requirements, side-effect authorization, automatic-repair limits, diagnostic-save prerequisites, Human Finding provenance, and review baseline consistency.
 

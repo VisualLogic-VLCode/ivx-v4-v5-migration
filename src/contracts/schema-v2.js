@@ -54,8 +54,21 @@ export const AUTOMATIC_REPAIR_DECISIONS = Object.freeze([
 
 export const REPAIR_BUDGET_STATES = Object.freeze([
   'AVAILABLE',
+  'PAUSED',
   'FROZEN',
   'EXHAUSTED',
+]);
+
+export const REPAIR_AUTHORIZATION_SCOPES = Object.freeze(['INITIAL', 'EXTENSION']);
+export const REPAIR_BATCH_STATES = Object.freeze([
+  'LOCAL_VALIDATED',
+  'WRITE_REQUESTED',
+  'WRITE_OUTCOME_UNKNOWN',
+  'READBACK_VERIFIED',
+  'RECONCILIATION_REQUIRED',
+  'RUNTIME_TESTING',
+  'RUNTIME_VERIFIED',
+  'RUNTIME_FAILED',
 ]);
 
 export const DIAGNOSTIC_SAVE_STATUSES = Object.freeze([
@@ -775,6 +788,159 @@ export function validateRepairBudget(document) {
   return document;
 }
 
+function validateJsonPatchOperation(operation, index) {
+  const path = `$.patch[${index}]`;
+  exactKeys(operation, ['op', 'path'], ['op', 'path', 'value'], path);
+  enumValue(operation.op, ['add', 'remove', 'replace'], `${path}.op`);
+  string(operation.path, `${path}.path`, { max: 2048 });
+  if (!operation.path.startsWith('/')) fail(`${path}.path must be a JSON pointer`);
+  if (operation.op === 'remove' && Object.hasOwn(operation, 'value')) fail(`${path}.value is forbidden for remove`);
+  if (operation.op !== 'remove' && !Object.hasOwn(operation, 'value')) fail(`${path}.value is required for ${operation.op}`);
+}
+
+export function validateTargetRepairAuthorization(document) {
+  schemaHeader(document, 'target-repair-authorization');
+  exactKeys(document,
+    ['schemaVersion', 'kind', 'authorizationId', 'reviewId', 'scope', 'clusterIds', 'maxAttemptsPerCluster', 'maxTargetRevisions', 'confirmation', 'expiresAt', 'createdAt', 'createdBy', 'sensitivity'],
+    ['schemaVersion', 'kind', 'authorizationId', 'reviewId', 'scope', 'clusterIds', 'maxAttemptsPerCluster', 'maxTargetRevisions', 'confirmation', 'expiresAt', 'createdAt', 'createdBy', 'sensitivity'],
+    '$');
+  id(document.authorizationId, '$.authorizationId');
+  reviewId(document.reviewId);
+  enumValue(document.scope, REPAIR_AUTHORIZATION_SCOPES, '$.scope');
+  uniqueStrings(document.clusterIds, '$.clusterIds', { max: 200 });
+  if (document.clusterIds.length === 0) fail('$.clusterIds must contain at least one Issue Cluster');
+  integer(document.maxAttemptsPerCluster, '$.maxAttemptsPerCluster', { min: 1, max: 3 });
+  integer(document.maxTargetRevisions, '$.maxTargetRevisions', { min: 1, max: 10 });
+  const expectedAttempts = document.scope === 'INITIAL' ? 3 : 2;
+  const expectedRevisions = document.scope === 'INITIAL' ? 10 : 5;
+  if (document.maxAttemptsPerCluster > expectedAttempts || document.maxTargetRevisions > expectedRevisions) {
+    fail(`${document.scope} authorization exceeds its bounded allowance`);
+  }
+  const expectedConfirmation = document.scope === 'INITIAL' ? 'AUTHORIZE_TARGET_REPAIR' : 'AUTHORIZE_REPAIR_EXTENSION';
+  if (document.confirmation !== expectedConfirmation) fail(`$.confirmation must be ${expectedConfirmation}`);
+  isoDate(document.expiresAt, '$.expiresAt');
+  validateArtifactMetadata(document);
+  if (document.createdBy !== 'USER' || document.sensitivity !== 'PRIVATE') fail('Target repair authorization must be private USER evidence');
+  if (Date.parse(document.expiresAt) <= Date.parse(document.createdAt)) fail('Target repair authorization must expire after creation');
+  if (Date.parse(document.expiresAt) - Date.parse(document.createdAt) > 8 * 60 * 60 * 1000) fail('Target repair authorization cannot last longer than 8 hours');
+  return document;
+}
+
+export function validateRepairProposal(document) {
+  schemaHeader(document, 'repair-proposal');
+  exactKeys(document,
+    ['schemaVersion', 'kind', 'proposalId', 'reviewId', 'authorizationId', 'clusterIds', 'baseTarget', 'patch', 'affectedScenarioIds', 'evidenceRefs', 'knowledgeRuleIds', 'confidence', 'rationale', 'createdAt', 'createdBy', 'sensitivity'],
+    ['schemaVersion', 'kind', 'proposalId', 'reviewId', 'authorizationId', 'clusterIds', 'baseTarget', 'patch', 'affectedScenarioIds', 'evidenceRefs', 'knowledgeRuleIds', 'confidence', 'rationale', 'createdAt', 'createdBy', 'sensitivity'],
+    '$');
+  id(document.proposalId, '$.proposalId');
+  reviewId(document.reviewId);
+  id(document.authorizationId, '$.authorizationId');
+  uniqueStrings(document.clusterIds, '$.clusterIds', { max: 50 });
+  if (document.clusterIds.length === 0) fail('$.clusterIds must contain at least one Issue Cluster');
+  exactKeys(document.baseTarget, ['nid', 'workId', 'sha256'], ['nid', 'workId', 'sha256'], '$.baseTarget');
+  integer(document.baseTarget.nid, '$.baseTarget.nid', { min: 1 });
+  string(document.baseTarget.workId, '$.baseTarget.workId', { max: 256 });
+  sha256(document.baseTarget.sha256, '$.baseTarget.sha256');
+  const patch = array(document.patch, '$.patch', { max: 20 });
+  if (patch.length === 0) fail('$.patch must contain at least one operation');
+  patch.forEach(validateJsonPatchOperation);
+  uniqueStrings(document.affectedScenarioIds, '$.affectedScenarioIds', { max: 100 });
+  if (document.affectedScenarioIds.length === 0) fail('$.affectedScenarioIds must contain at least one scenario');
+  validateEvidenceRefs(document, '$');
+  number(document.confidence, '$.confidence');
+  string(document.rationale, '$.rationale', { max: 8192 });
+  validateArtifactMetadata(document);
+  if (document.createdBy !== 'AGENT' || document.sensitivity !== 'REDACTED') fail('Repair Proposal must be a redacted AGENT artifact');
+  return document;
+}
+
+export function validateSaveableCheckpoint(document) {
+  schemaHeader(document, 'saveable-checkpoint');
+  exactKeys(document,
+    ['schemaVersion', 'kind', 'checkpointId', 'reviewId', 'checkpointType', 'artifact', 'sha256', 'targetNid', 'targetWorkId', 'sourceAttemptId', 'sourceBatchId', 'staticValidation', 'createdAt', 'createdBy', 'sensitivity'],
+    ['schemaVersion', 'kind', 'checkpointId', 'reviewId', 'checkpointType', 'artifact', 'sha256', 'targetNid', 'targetWorkId', 'sourceAttemptId', 'sourceBatchId', 'staticValidation', 'createdAt', 'createdBy', 'sensitivity'],
+    '$');
+  id(document.checkpointId, '$.checkpointId');
+  reviewId(document.reviewId);
+  enumValue(document.checkpointType, ['CONVERTER_OUTPUT', 'STATICALLY_SAFE_CANDIDATE', 'CONFIRMED_TARGET_REVISION'], '$.checkpointType');
+  string(document.artifact, '$.artifact', { max: 1024 });
+  if (document.artifact.startsWith('/') || document.artifact.includes('..')) fail('$.artifact must be a safe relative path');
+  sha256(document.sha256, '$.sha256');
+  if (document.targetNid !== null) integer(document.targetNid, '$.targetNid', { min: 1 });
+  if (document.targetWorkId !== null) string(document.targetWorkId, '$.targetWorkId', { max: 256 });
+  if (document.sourceAttemptId !== null) id(document.sourceAttemptId, '$.sourceAttemptId');
+  if (document.sourceBatchId !== null) id(document.sourceBatchId, '$.sourceBatchId');
+  exactKeys(document.staticValidation, ['passed', 'issueCount', 'blockerCount'], ['passed', 'issueCount', 'blockerCount'], '$.staticValidation');
+  boolean(document.staticValidation.passed, '$.staticValidation.passed');
+  integer(document.staticValidation.issueCount, '$.staticValidation.issueCount', { min: 0, max: 100000 });
+  integer(document.staticValidation.blockerCount, '$.staticValidation.blockerCount', { min: 0, max: 100000 });
+  validateArtifactMetadata(document);
+  if (document.checkpointType === 'CONFIRMED_TARGET_REVISION' && (document.targetNid === null || document.targetWorkId === null)) fail('Confirmed target checkpoints require target identity');
+  if (document.checkpointType === 'STATICALLY_SAFE_CANDIDATE' && !document.staticValidation.passed) fail('Statically safe checkpoints require passing static validation');
+  return document;
+}
+
+export function validateRepairAttempt(document) {
+  schemaHeader(document, 'repair-attempt');
+  exactKeys(document,
+    ['schemaVersion', 'kind', 'attemptId', 'reviewId', 'proposalId', 'authorizationId', 'clusterIds', 'patchSha256', 'baseCheckpointId', 'candidateCheckpointId', 'outcome', 'stopReason', 'validation', 'scope', 'createdAt', 'createdBy', 'sensitivity'],
+    ['schemaVersion', 'kind', 'attemptId', 'reviewId', 'proposalId', 'authorizationId', 'clusterIds', 'patchSha256', 'baseCheckpointId', 'candidateCheckpointId', 'outcome', 'stopReason', 'validation', 'scope', 'createdAt', 'createdBy', 'sensitivity'],
+    '$');
+  id(document.attemptId, '$.attemptId');
+  reviewId(document.reviewId);
+  id(document.proposalId, '$.proposalId');
+  id(document.authorizationId, '$.authorizationId');
+  uniqueStrings(document.clusterIds, '$.clusterIds', { max: 50 });
+  sha256(document.patchSha256, '$.patchSha256');
+  id(document.baseCheckpointId, '$.baseCheckpointId');
+  if (document.candidateCheckpointId !== null) id(document.candidateCheckpointId, '$.candidateCheckpointId');
+  enumValue(document.outcome, ['LOCAL_VALIDATION_PASSED', 'LOCAL_VALIDATION_FAILED', 'AUTO_REPAIR_STOPPED'], '$.outcome');
+  nullableString(document.stopReason, '$.stopReason', { max: 512 });
+  exactKeys(document.validation, ['passed', 'issueCount', 'blockerCount', 'newHighSeverityIssueIds'], ['passed', 'issueCount', 'blockerCount', 'newHighSeverityIssueIds'], '$.validation');
+  boolean(document.validation.passed, '$.validation.passed');
+  integer(document.validation.issueCount, '$.validation.issueCount', { min: 0, max: 100000 });
+  integer(document.validation.blockerCount, '$.validation.blockerCount', { min: 0, max: 100000 });
+  uniqueStrings(document.validation.newHighSeverityIssueIds, '$.validation.newHighSeverityIssueIds', { max: 1000 });
+  exactKeys(document.scope, ['operationCount', 'distinctPathCount', 'patchBytes'], ['operationCount', 'distinctPathCount', 'patchBytes'], '$.scope');
+  integer(document.scope.operationCount, '$.scope.operationCount', { min: 1, max: 20 });
+  integer(document.scope.distinctPathCount, '$.scope.distinctPathCount', { min: 1, max: 20 });
+  integer(document.scope.patchBytes, '$.scope.patchBytes', { min: 1, max: 262144 });
+  validateArtifactMetadata(document);
+  return document;
+}
+
+export function validateRepairBatch(document) {
+  schemaHeader(document, 'repair-batch');
+  exactKeys(document,
+    ['schemaVersion', 'kind', 'batchId', 'reviewId', 'attemptIds', 'clusterIds', 'state', 'authorizationId', 'expectedTarget', 'candidate', 'affectedScenarioIds', 'write', 'createdAt', 'updatedAt', 'createdBy', 'sensitivity'],
+    ['schemaVersion', 'kind', 'batchId', 'reviewId', 'attemptIds', 'clusterIds', 'state', 'authorizationId', 'expectedTarget', 'candidate', 'affectedScenarioIds', 'write', 'createdAt', 'updatedAt', 'createdBy', 'sensitivity'],
+    '$');
+  id(document.batchId, '$.batchId');
+  reviewId(document.reviewId);
+  uniqueStrings(document.attemptIds, '$.attemptIds', { max: 50 });
+  uniqueStrings(document.clusterIds, '$.clusterIds', { max: 50 });
+  enumValue(document.state, REPAIR_BATCH_STATES, '$.state');
+  id(document.authorizationId, '$.authorizationId');
+  exactKeys(document.expectedTarget, ['nid', 'workId', 'sha256'], ['nid', 'workId', 'sha256'], '$.expectedTarget');
+  integer(document.expectedTarget.nid, '$.expectedTarget.nid', { min: 1 });
+  string(document.expectedTarget.workId, '$.expectedTarget.workId', { max: 256 });
+  sha256(document.expectedTarget.sha256, '$.expectedTarget.sha256');
+  exactKeys(document.candidate, ['checkpointId', 'artifact', 'sha256'], ['checkpointId', 'artifact', 'sha256'], '$.candidate');
+  id(document.candidate.checkpointId, '$.candidate.checkpointId');
+  string(document.candidate.artifact, '$.candidate.artifact', { max: 1024 });
+  sha256(document.candidate.sha256, '$.candidate.sha256');
+  uniqueStrings(document.affectedScenarioIds, '$.affectedScenarioIds', { max: 100 });
+  exactKeys(document.write, ['requestedAt', 'outcome', 'observedWorkId', 'observedSha256', 'errorCode'], ['requestedAt', 'outcome', 'observedWorkId', 'observedSha256', 'errorCode'], '$.write');
+  nullableIsoDate(document.write.requestedAt, '$.write.requestedAt');
+  enumValue(document.write.outcome, ['NOT_ATTEMPTED', 'REQUESTED', 'UNKNOWN', 'VERIFIED', 'RECONCILIATION_REQUIRED'], '$.write.outcome');
+  nullableString(document.write.observedWorkId, '$.write.observedWorkId', { max: 256 });
+  nullableSha256(document.write.observedSha256, '$.write.observedSha256');
+  nullableString(document.write.errorCode, '$.write.errorCode', { max: 128 });
+  isoDate(document.updatedAt, '$.updatedAt');
+  validateArtifactMetadata(document);
+  return document;
+}
+
 export function validateAutomaticRepairDecision(document) {
   schemaHeader(document, 'automatic-repair-decision');
   exactKeys(document,
@@ -986,6 +1152,11 @@ export const SCHEMA_V2_VALIDATORS = Object.freeze({
   'environment-comparison': validateEnvironmentComparison,
   'human-finding': validateHumanFinding,
   'repair-budget': validateRepairBudget,
+  'target-repair-authorization': validateTargetRepairAuthorization,
+  'repair-proposal': validateRepairProposal,
+  'repair-attempt': validateRepairAttempt,
+  'repair-batch': validateRepairBatch,
+  'saveable-checkpoint': validateSaveableCheckpoint,
   'automatic-repair-decision': validateAutomaticRepairDecision,
   'diagnostic-save-eligibility': validateDiagnosticSaveEligibility,
   'runtime-review-session': validateRuntimeReviewSession,

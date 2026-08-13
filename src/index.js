@@ -23,6 +23,8 @@ export {
   ENVIRONMENT_GATE_STATUSES,
   ISSUE_CAUSES,
   REPAIR_BUDGET_STATES,
+  REPAIR_AUTHORIZATION_SCOPES,
+  REPAIR_BATCH_STATES,
   REPAIR_TARGETS,
   RESPONSIBLE_PARTIES,
   REVIEW_CAPABILITIES,
@@ -42,9 +44,14 @@ export {
   validateIssueCluster,
   validateIssueClassificationV2,
   validateRepairBudget,
+  validateRepairAttempt,
+  validateRepairBatch,
+  validateRepairProposal,
   validateRuntimeReviewSession,
   validateRuntimeScenario,
+  validateSaveableCheckpoint,
   validateSchemaV2Artifact,
+  validateTargetRepairAuthorization,
 } from './contracts/schema-v2.js';
 export {
   AUTO_REPAIR_CONFIDENCE_THRESHOLD,
@@ -82,6 +89,8 @@ export { classifyCaseVersion, classifyMetadataVersion, scanWorkVersionSignals } 
 export { LocalConverterProvider } from './converter/local-provider.js';
 export { validateConvertedCase } from './validation/basic-validator.js';
 export { validateRepairPatch, applyRepairPatch } from './workflow/patch-policy.js';
+export { assertRepairableCluster, evaluateRepairCandidate, newHighSeverityIssues, repairPatchDigest, repairPatchMetrics } from './repair/repair-engine.js';
+export { TargetUpdateOrchestrator } from './repair/target-update-orchestrator.js';
 export { encodePlatformWork, decodePlatformWork } from './platform/work-codec.js';
 export { IvxPlatformAdapter, mergeSaveAsConfig, normalizePlatformBaseUrl } from './platform/http-adapter.js';
 export { inspectPlatformToken, normalizeTokenFilePath, readPlatformTokenFile, resolvePlatformToken } from './platform/token-source.js';

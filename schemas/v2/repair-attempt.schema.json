@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.ivx.local/migration/v2/repair-attempt.schema.json",
+  "title": "iVX Repair Attempt v2",
+  "type": "object",
+  "required": ["schemaVersion", "kind", "attemptId", "reviewId", "proposalId", "authorizationId", "clusterIds", "patchSha256", "baseCheckpointId", "candidateCheckpointId", "outcome", "stopReason", "validation", "scope", "createdAt", "createdBy", "sensitivity"],
+  "properties": {
+    "schemaVersion": { "const": 2 }, "kind": { "const": "repair-attempt" },
+    "attemptId": { "$ref": "common.schema.json#/$defs/id" }, "reviewId": { "$ref": "common.schema.json#/$defs/reviewId" },
+    "proposalId": { "$ref": "common.schema.json#/$defs/id" }, "authorizationId": { "$ref": "common.schema.json#/$defs/id" },
+    "clusterIds": { "$ref": "common.schema.json#/$defs/stringArray", "minItems": 1, "maxItems": 50 }, "patchSha256": { "$ref": "common.schema.json#/$defs/sha256" },
+    "baseCheckpointId": { "$ref": "common.schema.json#/$defs/id" }, "candidateCheckpointId": { "oneOf": [{ "$ref": "common.schema.json#/$defs/id" }, { "type": "null" }] },
+    "outcome": { "enum": ["LOCAL_VALIDATION_PASSED", "LOCAL_VALIDATION_FAILED", "AUTO_REPAIR_STOPPED"] }, "stopReason": { "type": ["string", "null"] },
+    "validation": { "type": "object", "required": ["passed", "issueCount", "blockerCount", "newHighSeverityIssueIds"], "properties": { "passed": { "type": "boolean" }, "issueCount": { "type": "integer", "minimum": 0 }, "blockerCount": { "type": "integer", "minimum": 0 }, "newHighSeverityIssueIds": { "$ref": "common.schema.json#/$defs/stringArray" } }, "additionalProperties": false },
+    "scope": { "type": "object", "required": ["operationCount", "distinctPathCount", "patchBytes"], "properties": { "operationCount": { "type": "integer", "minimum": 1, "maximum": 20 }, "distinctPathCount": { "type": "integer", "minimum": 1, "maximum": 20 }, "patchBytes": { "type": "integer", "minimum": 1, "maximum": 262144 } }, "additionalProperties": false },
+    "createdAt": { "$ref": "common.schema.json#/$defs/dateTime" }, "createdBy": { "const": "CLI" }, "sensitivity": { "const": "REDACTED" }
+  },
+  "additionalProperties": false
+}

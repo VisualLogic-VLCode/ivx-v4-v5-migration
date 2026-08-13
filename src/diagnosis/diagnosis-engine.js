@@ -110,19 +110,39 @@ function createBudget(reviewId, clusterId, createdAt) {
 function createAutomaticDecision(reviewId, cluster, budget, createdAt) {
   const repairable = ['SOURCE_DATA', 'TARGET_CASE'].includes(cluster.cause) && cluster.repairTarget === 'V5_ARTIFACT';
   const confident = cluster.confidence.minimum >= AUTO_REPAIR_CONFIDENCE_THRESHOLD;
-  const decision = repairable && confident
-    ? 'AUTO_REPAIR_ALLOWED'
-    : repairable || ['TEST_HARNESS', 'ENVIRONMENT_CONFIGURATION'].includes(cluster.cause)
-      ? 'AUTO_REPAIR_PAUSED'
-      : 'AUTO_REPAIR_STOPPED';
+  const remainingInitial = Math.max(0, budget.attempts.automaticLimit - budget.attempts.automaticUsed);
+  const remainingExtension = Math.max(0, budget.attempts.extensionLimit - budget.attempts.extensionUsed);
+  const exhausted = budget.status === 'EXHAUSTED' || (remainingInitial === 0 && remainingExtension === 0);
+  const frozen = budget.status === 'FROZEN';
+  const extensionAuthorizationRequired = budget.status === 'PAUSED' || (remainingInitial === 0 && remainingExtension > 0);
+  const decision = exhausted || frozen
+    ? 'AUTO_REPAIR_STOPPED'
+    : repairable && confident && !extensionAuthorizationRequired
+      ? 'AUTO_REPAIR_ALLOWED'
+      : repairable && confident && extensionAuthorizationRequired
+        ? 'AUTO_REPAIR_PAUSED'
+        : repairable || ['TEST_HARNESS', 'ENVIRONMENT_CONFIGURATION'].includes(cluster.cause)
+          ? 'AUTO_REPAIR_PAUSED'
+          : 'AUTO_REPAIR_STOPPED';
   const reasonCode = decision === 'AUTO_REPAIR_ALLOWED'
     ? 'UNIQUE_V5_REPAIR_TARGET_CONFIRMED'
+    : exhausted
+      ? 'REPAIR_BUDGET_EXHAUSTED'
+      : frozen
+        ? 'REPAIR_BUDGET_FROZEN'
+        : extensionAuthorizationRequired
+          ? 'REPAIR_EXTENSION_AUTHORIZATION_REQUIRED'
     : repairable
       ? 'CONFIDENCE_BELOW_THRESHOLD'
       : ['TEST_HARNESS', 'ENVIRONMENT_CONFIGURATION'].includes(cluster.cause)
         ? 'NON_TARGET_REPAIR_PATH'
         : `CAUSE_${cluster.cause}_FORBIDS_TARGET_PATCH`;
-  const budgetState = decision === 'AUTO_REPAIR_ALLOWED' ? 'AVAILABLE' : 'FROZEN';
+  const budgetState = exhausted ? 'EXHAUSTED' : frozen ? 'FROZEN' : extensionAuthorizationRequired ? 'PAUSED' : decision === 'AUTO_REPAIR_ALLOWED' ? 'AVAILABLE' : 'FROZEN';
+  const remainingAttempts = decision === 'AUTO_REPAIR_ALLOWED'
+    ? remainingInitial
+    : extensionAuthorizationRequired
+      ? remainingExtension
+      : 0;
   return validateAutomaticRepairDecision({
     schemaVersion: 2,
     kind: 'automatic-repair-decision',
@@ -138,7 +158,7 @@ function createAutomaticDecision(reviewId, cluster, budget, createdAt) {
       : 'Automatic target repair is paused or stopped by the closed cause, target, confidence, and budget policy.',
     budgetId: budget.budgetId,
     budgetState,
-    remainingAttempts: decision === 'AUTO_REPAIR_ALLOWED' ? 3 : 0,
+    remainingAttempts,
     evidenceRefs: cluster.evidenceRefs,
     knowledgeRuleIds: cluster.knowledgeRuleIds,
     decidedAt: createdAt,
