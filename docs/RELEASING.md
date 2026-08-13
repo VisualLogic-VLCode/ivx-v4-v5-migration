@@ -42,7 +42,7 @@ The rules intentionally permit ordinary fast-forward source pushes and the signe
 
 ## User update flow
 
-The recommended first installation is Agent-first. The maintainer sends the user the copyable [Agent starter prompt](templates/AI-AGENT-ACCEPTANCE-PROMPT.md), which points to the immutable tagged [bootstrap procedure](AI-AGENT-BOOTSTRAP.md). The user's local Codex or Claude Code executes every command, while the user only types the Token into the visible native macOS secure-input dialog opened by the Launcher. After setup, the installed managed Skill becomes authoritative.
+The recommended first installation is Agent-first. The user gives their local Codex or Claude Code the copyable [general-user starter prompt](templates/AI-AGENT-STARTER-PROMPT.md), which points to the immutable tagged [bootstrap procedure](AI-AGENT-BOOTSTRAP.md). The Agent executes every command, while the user only types the Token into the visible native macOS secure-input dialog opened by the Launcher. After setup, the installed managed Skill becomes authoritative. The separate [acceptance prompt](templates/AI-AGENT-ACCEPTANCE-PROMPT.md) is maintainer QA and must not be presented as the ordinary onboarding path.
 
 The bootstrap procedure uses the stable `0.4.3` Launcher asset. Workflow `0.3.4` and later Releases are immutable at the repository level:
 

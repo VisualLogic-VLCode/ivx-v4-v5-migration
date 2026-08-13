@@ -4,13 +4,15 @@
 
 ## 推荐入口：从一开始交给 AI Agent
 
-普通用户不需要先打开终端学习命令。把[AI Agent 首次安装与验收提示](templates/AI-AGENT-ACCEPTANCE-PROMPT.md)交给本机 Codex 或 Claude Code，并填写要处理的 `nid`。Agent 会自行安装 Launcher、初始化签名运行时、检查更新、完成权限预检与转换，再按受管 `v4-to-v5-workflow` Skill 进行诊断和验证。
+普通用户不需要先打开终端学习命令。首次使用时，把[AI Agent 安装与初始化提示](templates/AI-AGENT-STARTER-PROMPT.md)交给本机 Codex 或 Claude Code；这一步不填写 `nid`，只安装或更新 Launcher、初始化签名运行时、检查 Token 和 Agent Skill，然后停在就绪状态。
 
-用户只需在 Launcher 打开的可见 macOS 原生安全输入框中输入自己的 Token；不要把 Token、Cookie 或 Authorization 内容发到聊天。Agent 不得使用后台 PTY、终端 `read` 或临时脚本代替该输入框。第一阶段默认不保存，Agent 在没有获得具体 Job 的另存授权时不会创建 V5 案例。
+用户只需在 Launcher 打开的可见 macOS 原生安全输入框中输入自己的 Token；不要把 Token、Cookie 或 Authorization 内容发到聊天。Agent 不得使用后台 PTY、终端 `read` 或临时脚本代替该输入框。现有 Token 状态正常时不应要求用户重复输入。
 
 首次安装成功后，可以直接对 Agent 说：
 
-> 请使用 v4-to-v5-workflow，把 nid 12345678 转成 V5。先完成判版、权限预检、转换、诊断和验证；没有我针对具体 Job 的另存授权时不要创建 V5 案例。
+> 请使用 v4-to-v5-workflow，把 nid 12345678 转成 V5。
+
+这句话已经授权一次通过确定性门禁后的普通 V5 另存。如果只想检查而不创建案例，应明确说“完成诊断和验证，但不要创建 V5 案例”。如果还要 Playwright 运行时对照和受限自动修复，可以在同一句中增加“创建成功后进行无副作用运行时对照，并自动修复工作流允许的高置信非转换器问题”。完整自然语言示例见[通过 AI Agent 使用工作流](AI-USER-GUIDE.md)。
 
 下面的命令用于说明 Agent 实际执行的流程，也可作为故障排查时的人工参考；Agent-first 用户不需要逐条复制。
 
@@ -114,7 +116,7 @@ Job 默认位于 `~/.ivx-v4-v5/jobs/`，不放在当前项目目录。Token 内�
 
 ## 6. 审核后另存 V5
 
-只有 Job 已到达 `READY_TO_SAVE`，且用户对这个具体 Job 明确授权创建新案例时，才临时打开写入门禁：
+只有 Job 已到达 `READY_TO_SAVE`，且当前任务包含普通另存授权时，才临时打开写入门禁。用户最初明确要求“转成/创建 V5”已经构成该 Job 的普通另存授权；只要求检查、测试或诊断的 Job 则需用户后来单独授权。
 
 ```bash
 ivx-migrate config write-mode \
@@ -214,7 +216,7 @@ ivx-migrate rollback --kind converter
 
 若旧版运行时在更新 Workflow 时返回 `RUNTIME_DOWNLOAD_FAILED`，Agent 可执行一次受限恢复，不需要用户重新输入 Token：先从上面的不可变 `0.4.3` Release 重新安装 Launcher，再执行 `ivx-migrate setup --force --launcher-recovery RECOVER_SIGNED_RUNTIME`。协调式 setup 会保留现有 Token 路径，并一次补齐 Workflow、Converter、Knowledge 和 Agent 配置；不要只更新 Workflow，因为旧环境可能尚未安装所需 Knowledge Runtime。该确认只允许新版或同版 Launcher 接管 setup/update/rollback/Agent 同步，旧 Launcher 不能借此覆盖更高版本。成功后恢复正常的 `update apply` 流程。
 
-首次在维护者电脑之外验证公开安装、普通参与者权限与默认不保存边界时，先把 [Agent 启动提示](templates/AI-AGENT-ACCEPTANCE-PROMPT.md)交给测试用户，再严格按[外部普通用户验收清单](EXTERNAL-USER-ACCEPTANCE.md)核对 Agent 的执行结果，并为每个案例提交一份脱敏的[第一阶段结果模板](templates/EXTERNAL-USER-ACCEPTANCE-RESULT.md)。外部验收第一阶段禁止创建或保存 V5 案例；维护者另行指定具体 Job 并授权后，第二阶段使用独立的[另存结果模板](templates/EXTERNAL-USER-SAVE-AS-RESULT.md)。
+维护者首次在其他用户电脑上验证公开安装、普通参与者权限与默认不保存边界时，才使用单独的[验收专用 Agent 提示](templates/AI-AGENT-ACCEPTANCE-PROMPT.md)和[外部普通用户验收清单](EXTERNAL-USER-ACCEPTANCE.md)。该流程不是普通用户快速入门；它的第一阶段故意禁止保存，并使用独立的[无保存结果模板](templates/EXTERNAL-USER-ACCEPTANCE-RESULT.md)和[另存结果模板](templates/EXTERNAL-USER-SAVE-AS-RESULT.md)。
 
 ## 10. 常见 Token 文件错误
 
@@ -228,4 +230,4 @@ ivx-migrate rollback --kind converter
 | `TOKEN_PROMPT_CANCELLED` | 用户已取消；停止并在用户准备好后重新执行 `setup --prompt-token` |
 | `VISIBLE_TOKEN_PROMPT_UNAVAILABLE` | 当前系统或图形界面不支持内置输入框；停止，不要降级到后台 PTY 或聊天输入 |
 
-需要更完整的安全、恢复、外部验收和发布说明，请参阅 [PLATFORM-INTEGRATION.md](PLATFORM-INTEGRATION.md)、[EXTERNAL-USER-ACCEPTANCE.md](EXTERNAL-USER-ACCEPTANCE.md) 和 [RELEASING.md](RELEASING.md)。
+普通用户的完整 AI 用法见 [AI-USER-GUIDE.md](AI-USER-GUIDE.md)。需要更完整的安全、恢复、维护者外部验收和发布说明，请参阅 [PLATFORM-INTEGRATION.md](PLATFORM-INTEGRATION.md)、[EXTERNAL-USER-ACCEPTANCE.md](EXTERNAL-USER-ACCEPTANCE.md) 和 [RELEASING.md](RELEASING.md)。

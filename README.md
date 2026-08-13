@@ -75,11 +75,11 @@ The private `config.json` stores the platform origin, optional Token-file path, 
 
 ## Agent-first start
 
-Ordinary users should start in Codex or Claude Code, not in a terminal. Give the local Agent the copyable [first-install and acceptance prompt](docs/templates/AI-AGENT-ACCEPTANCE-PROMPT.md). The Agent reads the immutable [bootstrap procedure](docs/AI-AGENT-BOOTSTRAP.md), performs installation, setup, update checks, preflight, migration, diagnostics, and validation, then hands control to the installed managed Skill.
+Ordinary users should start in Codex or Claude Code, not in a terminal. Give the local Agent the copyable [installation and initialization prompt](docs/templates/AI-AGENT-STARTER-PROMPT.md). The Agent reads the immutable [bootstrap procedure](docs/AI-AGENT-BOOTSTRAP.md), installs or updates the signed runtimes, opens the native Token prompt only when required, verifies health, reads the managed Skill, and stops at a clear ready state without choosing a case.
 
-The user intervenes only to type their own Token into a visible native macOS hidden-answer dialog owned by the Launcher. The Token is never pasted into Agent chat or command arguments, and the Agent never opens the Token file. Background PTYs and Agent-generated input scripts are forbidden. First-stage migration is no-save by default; creating a V5 case always requires separate authorization for the exact Job.
+The user intervenes only to type their own Token into a visible native macOS hidden-answer dialog owned by the Launcher. The Token is never pasted into Agent chat or command arguments, and the Agent never opens the Token file. Background PTYs and Agent-generated input scripts are forbidden. A healthy existing Token is preserved without asking the user to enter it again.
 
-After first installation, a user can simply ask the Agent to migrate a nid. The managed Skill will automatically check the current runtime and apply the Workflow's version, permission, diagnosis, repair, and save gates.
+After initialization, a user can simply ask the Agent `请使用 v4-to-v5-workflow，把 nid <NID> 转成 V5。` That phrase authorizes one ordinary validated Save As. Inspect-only, runtime comparison/repair, Group, resume, and Human Finding examples are in the [AI user guide](docs/AI-USER-GUIDE.md). The managed Skill applies the Workflow's version, permission, diagnosis, repair, and write gates; known-issues copies, side-effect scenarios, repair-budget extensions, and manual-baseline acceptance remain separately authorized.
 
 ## CLI reference
 
@@ -273,7 +273,7 @@ npm run release:publish -- \
   --confirm PUBLISH_STABLE_RELEASE
 ```
 
-Start with the [Chinese user quick start](docs/QUICKSTART.md). For the first ordinary-user test outside the maintainer's machine, send the tester the [Agent starter prompt](docs/templates/AI-AGENT-ACCEPTANCE-PROMPT.md), follow the [external-user acceptance checklist](docs/EXTERNAL-USER-ACCEPTANCE.md), submit one redacted [no-save result](docs/templates/EXTERNAL-USER-ACCEPTANCE-RESULT.md) per case, and use the separate [Save As result](docs/templates/EXTERNAL-USER-SAVE-AS-RESULT.md) only after case-specific authorization. The complete promotion, user synchronization, and rollback procedure is in [docs/RELEASING.md](docs/RELEASING.md). Platform behavior, Token handling, and recovery limits are in [docs/PLATFORM-INTEGRATION.md](docs/PLATFORM-INTEGRATION.md).
+Ordinary users should start with the [AI user guide](docs/AI-USER-GUIDE.md) or [Chinese command reference](docs/QUICKSTART.md). Maintainers running distribution, no-save, runtime-repair, or Group permission QA should start from the separate [acceptance index](docs/acceptance/README.md). The complete promotion, user synchronization, and rollback procedure is in [docs/RELEASING.md](docs/RELEASING.md). Platform behavior, Token handling, and recovery limits are in [docs/PLATFORM-INTEGRATION.md](docs/PLATFORM-INTEGRATION.md).
 
 Unsigned manifests are rejected. For local release-protocol tests only, set `allowUnsignedLocalManifests: true` in the private config file.
 
