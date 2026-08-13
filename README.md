@@ -4,7 +4,7 @@ This project is the distributable local workflow used by Codex or Claude Code. I
 
 ## Current status
 
-The stable `0.4.3` release uses Agent protocol 5 with Converter `1.2.1` and the signed Knowledge Runtime. It provides:
+The current stable runtime set is Workflow `0.4.3` with Agent protocol 5, Converter `1.2.2`, and Knowledge Runtime `0.1.2`. It provides:
 
 - private global Job storage with atomic state writes and per-Job locks;
 - metadata + physical work version classification;
@@ -23,7 +23,7 @@ The stable `0.4.3` release uses Agent protocol 5 with Converter `1.2.1` and the 
 - a locked Playwright Runtime Driver with closed declarative scenarios, isolated V4/V5 contexts, private browser authentication state, redacted traces, reviewed normalization, side-effect gates, and report-only parity comparison;
 - Diagnosis v2 with evidence-backed Issue Clusters, policy-computed automatic-repair decisions, independent diagnostic-save eligibility, calibration fixtures, and redacted owner-specific maintainer reports;
 - bounded target repair with private authorization leases, per-cluster `3+2` attempts, per-review `10+5` confirmed revisions, V5-only Patch policy, static regression gates, Saveable Checkpoints, target CAS, unknown-write reconciliation, verified read-back, and affected-scenario retesting;
-- a complete local-file dry run and a mock-platform integration-tested online flow.
+- a complete local-file dry run, mock-platform fault coverage, and a controlled real-case Save As, environment-equivalence, and runtime-parity acceptance flow.
 
 Platform writes remain disabled by default. A verified save requires private config `platform.writeMode: "explicit"` and `--confirm-live-write SAVE_V5`. A Job with any fully classified known issue may use the separate command and confirmation `SAVE_V5_WITH_KNOWN_ISSUES`; it finishes as `DIAGNOSTIC_COPY_CREATED`, never `SUCCEEDED`. Classification never bypasses authentication, actual server permission, current platform availability, source-revision safety, or user authorization. Non-owner group participants remain blocked as `UNKNOWN_SERVER_POLICY` until their deployment-specific server permission is verified.
 

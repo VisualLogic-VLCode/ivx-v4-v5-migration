@@ -6,7 +6,7 @@
 
 - 首次引导使用的稳定 Launcher：`0.4.3`
 - 本文发布后签名通道安装的 Workflow：`0.4.3`
-- Converter：`1.2.1`
+- Converter：`1.2.2`
 - Agent protocol：`5`
 - 默认平台：`https://dev.ivx.cn`
 
