@@ -20,7 +20,7 @@
 
 ```bash
 npm install --global \
-  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.3.8/ivx-v4-v5-migration-0.3.8.tgz
+  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.4.0/ivx-v4-v5-migration-0.4.0.tgz
 ```
 
 ## 2. 命令行参考：安全录入 Token 并初始化
@@ -114,14 +114,12 @@ Job 默认位于 `~/.ivx-v4-v5/jobs/`，不放在当前项目目录。Token 内�
 
 ## 6. 审核后另存 V5
 
-只有 Job 已到达 `READY_TO_SAVE`，且用户对这个具体 Job 明确授权创建新案例时，才编辑已有的 `~/.ivx-v4-v5/config.json`。保留其他全部配置，只把已有 `platform.writeMode` 临时改为：
+只有 Job 已到达 `READY_TO_SAVE`，且用户对这个具体 Job 明确授权创建新案例时，才临时打开写入门禁：
 
-```json
-{
-  "platform": {
-    "writeMode": "explicit"
-  }
-}
+```bash
+ivx-migrate config write-mode \
+  --mode explicit \
+  --confirm ENABLE_LIVE_WRITES
 ```
 
 然后执行：
@@ -132,14 +130,10 @@ ivx-migrate job resume-save \
   --confirm-live-write SAVE_V5
 ```
 
-无论命令成功、失败还是被中断，完成本次操作后都必须立即把同一字段恢复为：
+无论命令成功、失败还是被中断，完成本次操作后都必须立即关闭写入门禁：
 
-```json
-{
-  "platform": {
-    "writeMode": "disabled"
-  }
-}
+```bash
+ivx-migrate config write-mode --mode disabled
 ```
 
 不要在两个 Job 之间保持 `explicit`。只有 CLI 完成保存后读回验证并返回 `SUCCEEDED`，才算转换成功。网络结果不明确时不要重新创建；应保留同一 Job，按它的可恢复状态继续。
@@ -177,7 +171,34 @@ ivx-migrate job resume-diagnostic-save \
 
 普通 `resume-save ... SAVE_V5` 不能绕过 `BLOCKED_CONVERTER_DEFECT`；诊断命令也不能用于普通 `READY_TO_SAVE` Job。
 
-## 8. 更新和回滚
+## 8. 对已创建目标进行运行时对照和受限修复
+
+当用户要求“自动测试并修复”，受管 Agent 会在同一 Job 的 V5 目标上建立独立 Review；Migration Job 的终态不会被重写：
+
+```bash
+ivx-migrate review create-platform \
+  --job <jobId> \
+  --capability WRITE
+
+ivx-migrate review environment-check --review <reviewId>
+ivx-migrate review scenario-add --review <reviewId> --file <scenario.json>
+ivx-migrate review runtime-run-platform \
+  --review <reviewId> \
+  --scenario <scenarioId> \
+  --environment-id <comparisonId>
+```
+
+Workflow 会先对 V4/V5 的配置、设置、域名、路由和绑定做脱敏环境比较。只有 `ENVIRONMENT_EQUIVALENT` 或 `NORMALIZED_EQUIVALENT` 才开始浏览器对照；需用户绑定或环境阻塞时不会把差异归因给 Converter。预览 URL 来自平台当前元数据并与源/目标 `workId` 复核，不需要用户手填。
+
+首次浏览器对照可能需要安装与 Workflow 锁定的 Chromium。登录必须由用户在可见浏览器完成，V4/V5 不同预览源使用彼此隔离的私有认证文件；Agent 不读取 Cookie 或 storage state。`READ_ONLY` 场景可无人值守，带副作用场景另行授权。
+
+出现差异后，Agent 只能依据本 Review 的脱敏证据和锁定 Knowledge 卡片提交完整分类。`CONVERTER`、平台运行时、知识缺口、认证和未知根因停止自动修改并生成报告；只有 CLI 判定为高置信 `SOURCE_DATA` / `TARGET_CASE` 且修复目标为 `V5_ARTIFACT` 的问题簇可以进入自动修复。
+
+初始授权最多允许每个问题簇 3 次本地 Repair Attempt，以及整个 Review 最多 10 个已读回确认的目标 revision。额外 `+2` 次尝试和 `+5` 个 revision 必须再次获得用户授权。重复 Patch、A→B→A 振荡、范围持续扩大、新高严重度问题、目标被外部修改或写入结果未知都会停止。每次目标更新都要先做 revision CAS、静态全量验证，再通过写后读回确认；未知写入结果只能对账，不能重放。
+
+修复后必须重新检查环境并复测原场景及受影响场景。只有 Review 到达 `RUNTIME_PARITY_PASSED` 才能汇报运行时一致；没有稳定断言时只能汇报 `RUNTIME_NOT_TESTED`。用户后续手动定位出的信息通过 `review finding-add` 追加到同一个 Review，它是证据而不是新的写入授权。
+
+## 9. 更新和回滚
 
 ```bash
 ivx-migrate update check
@@ -191,7 +212,7 @@ ivx-migrate rollback --kind converter
 
 首次在维护者电脑之外验证公开安装、普通参与者权限与默认不保存边界时，先把 [Agent 启动提示](templates/AI-AGENT-ACCEPTANCE-PROMPT.md)交给测试用户，再严格按[外部普通用户验收清单](EXTERNAL-USER-ACCEPTANCE.md)核对 Agent 的执行结果，并为每个案例提交一份脱敏的[第一阶段结果模板](templates/EXTERNAL-USER-ACCEPTANCE-RESULT.md)。外部验收第一阶段禁止创建或保存 V5 案例；维护者另行指定具体 Job 并授权后，第二阶段使用独立的[另存结果模板](templates/EXTERNAL-USER-SAVE-AS-RESULT.md)。
 
-## 9. 常见 Token 文件错误
+## 10. 常见 Token 文件错误
 
 | 错误码 | 处理方式 |
 |---|---|

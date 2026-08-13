@@ -82,6 +82,7 @@ export { createKnowledgePin, KnowledgeRuntime } from './knowledge/runtime.js';
 export { compareRuntimeScenario } from './runtime/comparator.js';
 export { PlaywrightRuntimeDriver } from './runtime/playwright-driver.js';
 export { RuntimeReviewRunner } from './runtime/review-runner.js';
+export { resolvePlatformPreviewUrl } from './runtime/platform-preview.js';
 export { normalizeCapturedTrace, normalizeRuntimeValue } from './runtime/trace-normalizer.js';
 export { redactedUrl, redactRuntimeText, runtimeValueDigest, runtimeValueShape, runtimeValueSummary, runtimeValueType } from './runtime/trace-redaction.js';
 export { waitForVisibleRuntimeTakeover } from './runtime/visible-takeover.js';

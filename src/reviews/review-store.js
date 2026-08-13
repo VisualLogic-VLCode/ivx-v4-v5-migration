@@ -7,6 +7,7 @@ import {
   validateDiagnosisReport,
   validateDiagnosticSaveEligibility,
   validateEnvironmentComparison,
+  validateEnvironmentManifest,
   validateHumanFinding,
   validateIssueClassificationV2,
   validateIssueCluster,
@@ -406,6 +407,33 @@ export class RuntimeReviewStore {
       targetNid: review.target.nid,
       targetWorkId: review.baseline.targetWorkId,
     };
+  }
+
+  recordEnvironmentEvaluation(reviewId, { sourceManifest, targetManifest, comparison } = {}) {
+    validateEnvironmentManifest(sourceManifest);
+    validateEnvironmentManifest(targetManifest);
+    validateEnvironmentComparison(comparison);
+    return this.#withReviewLock(reviewId, () => {
+      const review = this.load(reviewId);
+      invariant(sourceManifest.reviewId === reviewId && targetManifest.reviewId === reviewId && comparison.reviewId === reviewId, 'ENVIRONMENT_REVIEW_MISMATCH', 'Environment evaluation belongs to another review');
+      invariant(comparison.sourceManifestId === sourceManifest.manifestId && comparison.targetManifestId === targetManifest.manifestId, 'ENVIRONMENT_MANIFEST_MISMATCH', 'Environment comparison does not reference its supplied manifests');
+      invariant(sourceManifest.revision.nid === Number(this.jobs.load(review.jobId).input.sourceNid) && sourceManifest.revision.workId === review.baseline.sourceWorkId, 'ENVIRONMENT_REVISION_MISMATCH', 'Source Environment Manifest does not match the review baseline');
+      invariant(targetManifest.revision.nid === review.target.nid && targetManifest.revision.workId === review.baseline.targetWorkId, 'ENVIRONMENT_REVISION_MISMATCH', 'Target Environment Manifest does not match the review baseline');
+      this.#writeImmutableJson(this.#artifactPath(reviewId, relativeArtifactPath('environment', `${sourceManifest.manifestId}.json`)), sourceManifest, 'ENVIRONMENT_MANIFEST_CONFLICT');
+      this.#writeImmutableJson(this.#artifactPath(reviewId, relativeArtifactPath('environment', `${targetManifest.manifestId}.json`)), targetManifest, 'ENVIRONMENT_MANIFEST_CONFLICT');
+      this.#writeImmutableJson(this.#artifactPath(reviewId, relativeArtifactPath('environment', `${comparison.comparisonId}.json`)), comparison, 'ENVIRONMENT_COMPARISON_CONFLICT');
+      return { sourceManifest, targetManifest, comparison };
+    });
+  }
+
+  loadEnvironmentComparison(reviewId, comparisonId) {
+    this.load(reviewId);
+    normalizeId(comparisonId, ARTIFACT_ID_PATTERN, 'INVALID_ENVIRONMENT_COMPARISON_ID', 'Invalid Environment Comparison id');
+    const relativePath = relativeArtifactPath('environment', `${comparisonId}.json`);
+    const target = this.#assertPrivateRegularArtifact(reviewId, relativePath, 'ENVIRONMENT_COMPARISON_NOT_FOUND', `Environment Comparison not found or unsafe: ${comparisonId}`);
+    const comparison = readJson(target, null);
+    invariant(comparison, 'ENVIRONMENT_COMPARISON_NOT_FOUND', `Environment Comparison not found: ${comparisonId}`);
+    return validateEnvironmentComparison(comparison);
   }
 
   runtimeCycleDir(reviewId, cycleId) {

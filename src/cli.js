@@ -13,8 +13,10 @@ import { JobStore } from './jobs/job-store.js';
 import { KnowledgeRuntime } from './knowledge/runtime.js';
 import { createAppPaths, resolveAppHome } from './paths.js';
 import { RuntimeReviewStore } from './reviews/review-store.js';
+import { evaluateEnvironmentGate } from './environment/environment-gate.js';
 import { PlaywrightRuntimeDriver } from './runtime/playwright-driver.js';
 import { RuntimeReviewRunner } from './runtime/review-runner.js';
+import { resolvePlatformPreviewUrl } from './runtime/platform-preview.js';
 import { waitForVisibleRuntimeTakeover } from './runtime/visible-takeover.js';
 import { IvxPlatformAdapter, normalizePlatformBaseUrl } from './platform/http-adapter.js';
 import { inspectPlatformToken, normalizeTokenFilePath, readPlatformTokenFile, resolvePlatformToken } from './platform/token-source.js';
@@ -98,6 +100,37 @@ function knowledgePin(descriptor) {
     schemaVersion: descriptor.knowledgeSchemaVersion,
     ruleIds: [],
   };
+}
+
+function reviewRuntimePins(job, context) {
+  const current = context.registry.readCurrent();
+  const runtimePin = (name, jobRuntime) => {
+    invariant(jobRuntime?.version, 'REVIEW_RUNTIME_PIN_MISSING', `Job does not pin a ${name} version`);
+    const active = current[name];
+    const sha256 = jobRuntime.sha256
+      || jobRuntime.artifactSha256
+      || jobRuntime.entrySha256
+      || (active?.version === jobRuntime.version ? active.artifactSha256 : null);
+    invariant(typeof sha256 === 'string' && /^[a-f0-9]{64}$/.test(sha256), 'REVIEW_RUNTIME_PIN_MISSING', `Job does not have a recoverable ${name} SHA-256 pin`);
+    return { version: jobRuntime.version, sha256 };
+  };
+  const knowledge = job.runtime?.knowledge;
+  invariant(knowledge?.version && knowledge?.sha256 && knowledge?.contentSha256 && knowledge?.schemaVersion, 'REVIEW_RUNTIME_PIN_MISSING', 'Job does not pin a complete Knowledge Runtime');
+  return {
+    workflow: runtimePin('workflow', job.runtime?.workflow),
+    converter: runtimePin('converter', job.runtime?.converter),
+    knowledge: {
+      version: knowledge.version,
+      sha256: knowledge.sha256,
+      contentSha256: knowledge.contentSha256,
+      schemaVersion: knowledge.schemaVersion,
+      ruleIds: [...(knowledge.ruleIds || [])],
+    },
+  };
+}
+
+function environmentArtifactId(prefix, reviewId, at) {
+  return `${prefix}-${crypto.createHash('sha256').update(`${reviewId}:${at}:${prefix}`).digest('hex').slice(0, 20)}`;
 }
 
 function agentStatus(context, workflow = context.registry.readCurrent().workflow) {
@@ -567,6 +600,22 @@ async function handleReview(positionals, options, context) {
       targetSnapshot,
     });
   }
+  if (action === 'create-platform') {
+    invariant(options.job, 'CLI_ARGUMENT_REQUIRED', '--job is required');
+    const job = context.jobs.load(options.job);
+    invariant(['SUCCEEDED', 'DIAGNOSTIC_COPY_CREATED'].includes(job.status), 'REVIEW_JOB_NOT_COMPLETE', 'Runtime Review requires a completed platform target');
+    invariant(job.target?.nid && job.target?.workId, 'REVIEW_TARGET_MISSING', 'Completed Job has no confirmed target revision');
+    const adapter = createPlatformAdapter(options, context);
+    const metadata = await adapter.getCaseInfo(job.target.nid);
+    invariant(metadata?.workId === job.target.workId, 'REVIEW_TARGET_REVISION_CHANGED', 'Target revision changed after the Migration Job completed; reconcile it before creating a Review');
+    const targetSnapshot = await adapter.loadWork({ nid: job.target.nid, workId: job.target.workId });
+    return context.reviews.create({
+      jobId: options.job,
+      capability: options.capability || 'READ_ONLY',
+      runtime: reviewRuntimePins(job, context),
+      targetSnapshot,
+    });
+  }
   if (action === 'status') {
     invariant(options.review, 'CLI_ARGUMENT_REQUIRED', '--review is required');
     return context.reviews.load(options.review);
@@ -592,6 +641,18 @@ async function handleReview(positionals, options, context) {
       targetSnapshot: readRequiredJson(options['target-file'], 'target'),
     });
   }
+  if (action === 'observe-platform-revision') {
+    invariant(options.review, 'CLI_ARGUMENT_REQUIRED', '--review is required');
+    const review = context.reviews.load(options.review);
+    const adapter = createPlatformAdapter(options, context);
+    const metadata = await adapter.getCaseInfo(review.target.nid);
+    invariant(typeof metadata?.workId === 'string' && metadata.workId, 'PLATFORM_RESPONSE_INVALID', 'Target metadata has no workId');
+    const targetSnapshot = await adapter.loadWork({ nid: review.target.nid, workId: metadata.workId });
+    return context.reviews.observeTargetRevision(options.review, {
+      currentWorkId: metadata.workId,
+      targetSnapshot,
+    });
+  }
   if (action === 'accept-baseline') {
     invariant(options.review, 'CLI_ARGUMENT_REQUIRED', '--review is required');
     invariant(options.observation, 'CLI_ARGUMENT_REQUIRED', '--observation is required');
@@ -608,6 +669,28 @@ async function handleReview(positionals, options, context) {
   if (action === 'scenario-list') {
     invariant(options.review, 'CLI_ARGUMENT_REQUIRED', '--review is required');
     return { scenarios: context.reviews.listRuntimeScenarios(options.review) };
+  }
+  if (action === 'environment-check') {
+    invariant(options.review, 'CLI_ARGUMENT_REQUIRED', '--review is required');
+    const review = context.reviews.load(options.review);
+    const job = context.jobs.load(review.jobId);
+    const adapter = createPlatformAdapter(options, context);
+    const [source, target] = await Promise.all([
+      adapter.getWorkEnvironment({ nid: job.input.sourceNid, workId: review.baseline.sourceWorkId }),
+      adapter.getWorkEnvironment({ nid: review.target.nid, workId: review.baseline.targetWorkId }),
+    ]);
+    const evaluatedAt = new Date().toISOString();
+    const evaluation = evaluateEnvironmentGate({
+      reviewId: review.reviewId,
+      sourceManifestId: environmentArtifactId('source-environment', review.reviewId, evaluatedAt),
+      targetManifestId: environmentArtifactId('target-environment', review.reviewId, evaluatedAt),
+      comparisonId: environmentArtifactId('environment-comparison', review.reviewId, evaluatedAt),
+      source: { ...source, revision: { nid: Number(job.input.sourceNid), workId: review.baseline.sourceWorkId } },
+      target: { ...target, revision: { nid: review.target.nid, workId: review.baseline.targetWorkId } },
+      bindingAssertions: options['binding-assertions-file'] ? readRequiredJson(options['binding-assertions-file'], 'environment binding assertions') : {},
+      evaluatedAt,
+    });
+    return context.reviews.recordEnvironmentEvaluation(review.reviewId, evaluation);
   }
   if (action === 'diagnosis-candidates') {
     invariant(options.review, 'CLI_ARGUMENT_REQUIRED', '--review is required');
@@ -662,11 +745,36 @@ async function handleReview(positionals, options, context) {
     const review = context.reviews.load(options.review);
     const job = context.jobs.load(review.jobId);
     const scenarioIds = String(options.scenario).split(',').map((value) => value.trim()).filter(Boolean);
+    invariant(Boolean(options['environment-file']) !== Boolean(options['environment-id']), 'CLI_ARGUMENT_REQUIRED', 'Exactly one of --environment-file or --environment-id is required');
+    const environmentComparison = options['environment-id']
+      ? context.reviews.loadEnvironmentComparison(options.review, options['environment-id'])
+      : readRequiredJson(options['environment-file'], 'environment comparison');
     return context.runtimeRunner.runCycle(options.review, {
       scenarioIds,
       source: { generation: 'V4', nid: job.input.sourceNid, workId: review.baseline.sourceWorkId, baseUrl: options['source-url'] },
       target: { generation: 'V5', nid: review.target.nid, workId: review.baseline.targetWorkId, baseUrl: options['target-url'] },
-      environmentComparison: readRequiredJson(options['environment-file'], 'environment comparison'),
+      environmentComparison,
+      authorization: options['authorization-file'] ? readRequiredJson(options['authorization-file'], 'runtime authorization') : null,
+    });
+  }
+  if (action === 'runtime-run-platform') {
+    invariant(options.review, 'CLI_ARGUMENT_REQUIRED', '--review is required');
+    invariant(options.scenario, 'CLI_ARGUMENT_REQUIRED', '--scenario is required');
+    invariant(options['environment-id'], 'CLI_ARGUMENT_REQUIRED', '--environment-id is required');
+    const review = context.reviews.load(options.review);
+    const job = context.jobs.load(review.jobId);
+    const adapter = createPlatformAdapter(options, context);
+    const [sourceInfo, targetInfo] = await Promise.all([
+      adapter.getCaseInfo(job.input.sourceNid),
+      adapter.getCaseInfo(review.target.nid),
+    ]);
+    invariant(sourceInfo?.workId === review.baseline.sourceWorkId && targetInfo?.workId === review.baseline.targetWorkId, 'RUNTIME_PLATFORM_REVISION_MISMATCH', 'Platform source or target revision changed before runtime testing');
+    const scenarioIds = String(options.scenario).split(',').map((value) => value.trim()).filter(Boolean);
+    return context.runtimeRunner.runCycle(options.review, {
+      scenarioIds,
+      source: { generation: 'V4', nid: job.input.sourceNid, workId: review.baseline.sourceWorkId, baseUrl: resolvePlatformPreviewUrl(sourceInfo) },
+      target: { generation: 'V5', nid: review.target.nid, workId: review.baseline.targetWorkId, baseUrl: resolvePlatformPreviewUrl(targetInfo) },
+      environmentComparison: context.reviews.loadEnvironmentComparison(options.review, options['environment-id']),
       authorization: options['authorization-file'] ? readRequiredJson(options['authorization-file'], 'runtime authorization') : null,
     });
   }
@@ -676,6 +784,21 @@ async function handleReview(positionals, options, context) {
     return context.runtimeRunner.resumeCycle(options.review, {
       sourceBaseUrl: options['source-url'],
       targetBaseUrl: options['target-url'],
+    });
+  }
+  if (action === 'runtime-resume-platform') {
+    invariant(options.review, 'CLI_ARGUMENT_REQUIRED', '--review is required');
+    const review = context.reviews.load(options.review);
+    const job = context.jobs.load(review.jobId);
+    const adapter = createPlatformAdapter(options, context);
+    const [sourceInfo, targetInfo] = await Promise.all([
+      adapter.getCaseInfo(job.input.sourceNid),
+      adapter.getCaseInfo(review.target.nid),
+    ]);
+    invariant(sourceInfo?.workId === review.baseline.sourceWorkId && targetInfo?.workId === review.baseline.targetWorkId, 'RUNTIME_PLATFORM_REVISION_MISMATCH', 'Platform source or target revision changed before runtime recovery');
+    return context.runtimeRunner.resumeCycle(options.review, {
+      sourceBaseUrl: resolvePlatformPreviewUrl(sourceInfo),
+      targetBaseUrl: resolvePlatformPreviewUrl(targetInfo),
     });
   }
   throw new WorkflowError('CLI_COMMAND_UNKNOWN', `Unknown review action: ${action || ''}`);
@@ -1018,6 +1141,16 @@ export async function runCli(argv, dependencies = {}) {
   } else if (command === 'config' && positionals[1] === 'show') result = config;
   else if (command === 'config' && positionals[1] === 'init') {
     result = saveConfig(DEFAULT_CONFIG, appPaths);
+  } else if (command === 'config' && positionals[1] === 'write-mode') {
+    invariant(['disabled', 'explicit'].includes(options.mode), 'CLI_ARGUMENT_INVALID', '--mode must be disabled or explicit');
+    if (options.mode === 'explicit') {
+      invariant(options.confirm === 'ENABLE_LIVE_WRITES', 'LIVE_WRITE_CONFIRMATION_REQUIRED', '--confirm ENABLE_LIVE_WRITES is required');
+    }
+    const updated = saveConfig({
+      ...config,
+      platform: { ...config.platform, writeMode: options.mode },
+    }, appPaths);
+    result = { writeMode: updated.platform.writeMode };
   } else if (command === 'job') result = await handleJob(positionals, options, context);
   else if (command === 'review') result = await handleReview(positionals, options, context);
   else if (command === 'knowledge') result = await handleKnowledge(positionals, options, context);
@@ -1052,6 +1185,8 @@ export async function runCli(argv, dependencies = {}) {
         'ivx-migrate update check',
         'ivx-migrate update apply [--kind workflow|converter|knowledge] [--force]',
         'ivx-migrate rollback --kind workflow|converter|knowledge',
+        'ivx-migrate config write-mode --mode explicit --confirm ENABLE_LIVE_WRITES',
+        'ivx-migrate config write-mode --mode disabled',
         'ivx-migrate dry-run --input <app.json> --nid <nid> [--converter-path <development-package>] [--metadata <json>]',
         'ivx-migrate platform preflight --nid <nid> [--gid <gid>] [--token-file <0600-file>]',
         'ivx-migrate migrate --nid <nid> [--gid <gid>] [--token-file <0600-file>] [--converter-path <development-package>] [--save --confirm-live-write SAVE_V5]',
@@ -1061,14 +1196,17 @@ export async function runCli(argv, dependencies = {}) {
         'ivx-migrate job resume-save --job <jobId> --confirm-live-write SAVE_V5',
         'ivx-migrate job resume-diagnostic-save --job <jobId> --confirm-live-write SAVE_V5_WITH_KNOWN_ISSUES',
         'ivx-migrate review create --job <jobId> --capability READ_ONLY|WRITE --runtime-file <runtime-pins.json> --target-file <target-readback.json>',
+        'ivx-migrate review create-platform --job <jobId> --capability READ_ONLY|WRITE',
         'ivx-migrate review status|recover --review <reviewId>',
         'ivx-migrate review list [--job <jobId>] [--nid <targetNid>]',
         'ivx-migrate review finding-add --review <reviewId> --file <finding.json>',
         'ivx-migrate review finding-list --review <reviewId>',
         'ivx-migrate review observe-revision --review <reviewId> --work-id <workId> --target-file <target-readback.json>',
+        'ivx-migrate review observe-platform-revision --review <reviewId>',
         'ivx-migrate review accept-baseline --review <reviewId> --observation <observationId> --finding <findingId>',
         'ivx-migrate review scenario-add --review <reviewId> --file <runtime-scenario.json>',
         'ivx-migrate review scenario-list --review <reviewId>',
+        'ivx-migrate review environment-check --review <reviewId> [--binding-assertions-file <user-assertions.json>]',
         'ivx-migrate review diagnosis-candidates --review <reviewId>',
         'ivx-migrate review diagnostic-checkpoint --review <reviewId>',
         'ivx-migrate review diagnose --review <reviewId> --file <classification-v2.json> [--eligibility-file <save-prerequisites.json>]',
@@ -1078,8 +1216,10 @@ export async function runCli(argv, dependencies = {}) {
         'ivx-migrate review repair-list --review <reviewId>',
         'ivx-migrate review repair-update-target --review <reviewId> --batch <batchId> --confirm-live-write UPDATE_V5_REPAIR',
         'ivx-migrate review repair-reconcile --review <reviewId> --batch <batchId>',
-        'ivx-migrate review runtime-run --review <reviewId> --scenario <id[,id]> --source-url <url> --target-url <url> --environment-file <comparison.json> [--authorization-file <authorization.json>]',
+        'ivx-migrate review runtime-run --review <reviewId> --scenario <id[,id]> --source-url <url> --target-url <url> (--environment-id <id> | --environment-file <comparison.json>) [--authorization-file <authorization.json>]',
+        'ivx-migrate review runtime-run-platform --review <reviewId> --scenario <id[,id]> --environment-id <id> [--authorization-file <authorization.json>]',
         'ivx-migrate review runtime-resume --review <reviewId> --source-url <url> --target-url <url>',
+        'ivx-migrate review runtime-resume-platform --review <reviewId>',
         'ivx-migrate runtime status',
         'ivx-migrate runtime browser-install',
         'ivx-migrate runtime auth --url <platform-preview-origin> --confirm-visible AUTH_BROWSER',
@@ -1091,7 +1231,7 @@ export async function runCli(argv, dependencies = {}) {
         'ivx-migrate agents status',
         'ivx-migrate agents sync [--force]',
       ],
-      note: 'Platform writes require config platform.writeMode=explicit. Validated saves use SAVE_V5; a separately authorized diagnostic copy with CONVERTER, SOURCE, or UNKNOWN issues uses SAVE_V5_WITH_KNOWN_ISSUES and never reports normal success.',
+      note: 'Platform writes require config platform.writeMode=explicit. Validated saves use SAVE_V5; a separately authorized diagnostic copy with classified known issues uses SAVE_V5_WITH_KNOWN_ISSUES and never reports normal success.',
     };
   } else {
     throw new WorkflowError('CLI_COMMAND_UNKNOWN', `Unknown command: ${positionals.join(' ')}`);

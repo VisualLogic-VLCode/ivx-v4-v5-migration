@@ -44,11 +44,11 @@ The rules intentionally permit ordinary fast-forward source pushes and the signe
 
 The recommended first installation is Agent-first. The maintainer sends the user the copyable [Agent starter prompt](templates/AI-AGENT-ACCEPTANCE-PROMPT.md), which points to the immutable tagged [bootstrap procedure](AI-AGENT-BOOTSTRAP.md). The user's local Codex or Claude Code executes every command, while the user only types the Token into the visible native macOS secure-input dialog opened by the Launcher. After setup, the installed managed Skill becomes authoritative.
 
-The bootstrap procedure for this candidate uses the stable `0.3.8` Launcher asset. Workflow `0.3.4` and later Releases are immutable at the repository level:
+The bootstrap procedure for this candidate uses the `0.4.0` Launcher asset. Workflow `0.3.4` and later Releases are immutable at the repository level:
 
 ```bash
 npm install --global \
-  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.3.8/ivx-v4-v5-migration-0.3.8.tgz
+  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.4.0/ivx-v4-v5-migration-0.4.0.tgz
 ivx-migrate setup --prompt-token
 ```
 
@@ -86,7 +86,7 @@ Codex and Claude adapters are bundled with Workflow releases. Ordinary Workflow 
 
 Workflow `0.3.4` introduced Agent protocol 2 because the managed procedure forbids Agents from opening Token files and relies exclusively on redacted doctor status.
 
-Public Workflow `0.3.5` introduced Agent protocol 3 because the managed procedure added the separately authorized known-issues diagnostic-copy path and requires Agents to distinguish `DIAGNOSTIC_COPY_CREATED` from normal success. Workflow `0.3.6` and `0.3.7` kept protocol 3. Candidate `0.3.8` raises the protocol to 4 because both first-install and post-install missing/expired Token handling must use `setup --prompt-token`, warn before opening the native dialog, and forbid background PTY/chat/plaintext fallbacks.
+Public Workflow `0.3.5` introduced Agent protocol 3 because the managed procedure added the separately authorized known-issues diagnostic-copy path and requires Agents to distinguish `DIAGNOSTIC_COPY_CREATED` from normal success. Workflow `0.3.6` and `0.3.7` kept protocol 3. Workflow `0.3.8` raised the protocol to 4 because both first-install and post-install missing/expired Token handling use `setup --prompt-token`, warn before opening the native dialog, and forbid background PTY/chat/plaintext fallbacks. Candidate `0.4.0` raises the protocol to 5 for platform-backed Runtime Review creation, revision-pinned Environment Gates and preview URLs, per-origin browser authentication, evidence-backed diagnosis, bounded `3+2`/`10+5` target repair, and Human Finding continuation.
 
 `update apply` synchronizes adapters from the activated Workflow. Unmodified managed files update automatically. A manually modified file causes `AGENT_FILE_CONFLICT`; `--force` backs it up before replacement.
 

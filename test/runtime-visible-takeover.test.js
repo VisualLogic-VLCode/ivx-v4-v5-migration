@@ -49,10 +49,11 @@ test('browser authentication capture persists private storage state without retu
   const appPaths = createAppPaths(path.join(temporary, 'home'));
   const privateCookie = 'private-cookie-value';
   let takeoverCount = 0;
+  let currentHost = 'example.test';
   const context = {
     pages: () => [],
-    newPage: async () => ({ goto: async () => {} }),
-    storageState: async () => ({ cookies: [{ name: 'session', value: privateCookie, domain: 'example.test', path: '/', expires: -1, httpOnly: true, secure: true, sameSite: 'Lax' }], origins: [] }),
+    newPage: async () => ({ goto: async (url) => { currentHost = new URL(url).hostname; } }),
+    storageState: async () => ({ cookies: [{ name: 'session', value: privateCookie, domain: currentHost, path: '/', expires: -1, httpOnly: true, secure: true, sameSite: 'Lax' }], origins: [] }),
     close: async () => {},
   };
   const playwright = { chromium: { launchPersistentContext: async () => context, executablePath: () => '/fake/chromium' } };
@@ -63,13 +64,17 @@ test('browser authentication capture persists private storage state without retu
       onTakeover: async () => { takeoverCount += 1; },
     });
     const result = await driver.captureAuthentication({ url: 'https://example.test/' });
-    const statePath = path.join(appPaths.browserAuth, 'storage-state.json');
+    const statePath = path.join(appPaths.browserAuth, fs.readdirSync(appPaths.browserAuth).find((file) => file.startsWith('storage-state-')));
     assert.deepEqual(result, { authState: 'AVAILABLE', origin: 'https://example.test' });
     assert.equal(JSON.stringify(result).includes(privateCookie), false);
     assert.equal(fs.readFileSync(statePath, 'utf8').includes(privateCookie), true);
     assert.equal(fs.statSync(statePath).mode & 0o777, 0o600);
     assert.equal(fs.statSync(path.dirname(statePath)).mode & 0o777, 0o700);
     assert.equal(takeoverCount, 1);
+    const second = await driver.captureAuthentication({ url: 'https://other.test/' });
+    assert.deepEqual(second, { authState: 'AVAILABLE', origin: 'https://other.test' });
+    assert.equal(fs.readdirSync(appPaths.browserAuth).filter((file) => file.startsWith('storage-state-')).length, 2);
+    assert.equal(takeoverCount, 2);
   } finally {
     fs.rmSync(temporary, { recursive: true, force: true });
   }

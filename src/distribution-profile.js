@@ -1,4 +1,4 @@
-export const AGENT_PROTOCOL_VERSION = 4;
+export const AGENT_PROTOCOL_VERSION = 5;
 
 export const PUBLIC_RELEASE_PROFILE = Object.freeze({
   channel: 'stable',

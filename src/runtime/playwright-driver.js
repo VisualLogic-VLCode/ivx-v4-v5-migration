@@ -46,13 +46,49 @@ function locatorFor(page, target) {
   return page.getByTestId(target.value);
 }
 
-function privateStorageState(appPaths) {
-  const target = path.join(appPaths.browserAuth, 'storage-state.json');
-  if (!fs.existsSync(target)) return null;
+function storageStatePath(appPaths, origin) {
+  const digest = crypto.createHash('sha256').update(origin).digest('hex').slice(0, 24);
+  return path.join(appPaths.browserAuth, `storage-state-${digest}.json`);
+}
+
+function assertPrivateStorageState(target) {
   const stat = fs.lstatSync(target);
   invariant(stat.isFile() && !stat.isSymbolicLink(), 'BROWSER_AUTH_STATE_UNSAFE', 'Browser authentication state must be a regular non-symlink file');
   if (process.platform !== 'win32') invariant((stat.mode & 0o077) === 0, 'BROWSER_AUTH_STATE_UNSAFE', 'Browser authentication state permissions must be 0600');
   return target;
+}
+
+function legacyStateMatchesOrigin(target, origin) {
+  try {
+    const state = JSON.parse(fs.readFileSync(target, 'utf8'));
+    const expected = new URL(origin);
+    const origins = Array.isArray(state.origins) ? state.origins : [];
+    const cookies = Array.isArray(state.cookies) ? state.cookies : [];
+    const originMatches = origins.every((entry) => entry?.origin === expected.origin);
+    const cookieMatches = cookies.every((cookie) => {
+      const domain = String(cookie?.domain || '').replace(/^\./, '').toLowerCase();
+      return domain && (expected.hostname.toLowerCase() === domain || expected.hostname.toLowerCase().endsWith(`.${domain}`));
+    });
+    return originMatches && cookieMatches && (origins.length > 0 || cookies.length > 0);
+  } catch {
+    return false;
+  }
+}
+
+function privateStorageState(appPaths, origin = null) {
+  if (origin) {
+    const scoped = storageStatePath(appPaths, origin);
+    if (fs.existsSync(scoped)) return assertPrivateStorageState(scoped);
+    const legacy = path.join(appPaths.browserAuth, 'storage-state.json');
+    if (fs.existsSync(legacy) && legacyStateMatchesOrigin(legacy, origin)) return assertPrivateStorageState(legacy);
+    return null;
+  }
+  if (!fs.existsSync(appPaths.browserAuth)) return null;
+  const target = fs.readdirSync(appPaths.browserAuth)
+    .filter((file) => /^storage-state(?:-[a-f0-9]{24})?\.json$/.test(file))
+    .map((file) => path.join(appPaths.browserAuth, file))
+    .find((file) => fs.existsSync(file));
+  return target ? assertPrivateStorageState(target) : null;
 }
 
 function runtimeError(code, message, source, at) {
@@ -125,7 +161,7 @@ export class PlaywrightRuntimeDriver {
         }),
         origins: (state.origins || []).filter((entry) => entry.origin === baseUrl.origin),
       };
-      const target = path.join(this.appPaths.browserAuth, 'storage-state.json');
+      const target = storageStatePath(this.appPaths, baseUrl.origin);
       writePrivateFile(target, `${JSON.stringify(scopedState)}\n`);
       return { authState: 'AVAILABLE', origin: baseUrl.origin };
     } finally {
@@ -175,7 +211,7 @@ export class PlaywrightRuntimeDriver {
       return observationId;
     };
     try {
-      const storageState = privateStorageState(this.appPaths);
+      const storageState = privateStorageState(this.appPaths, baseUrl.origin);
       context = await browser.newContext({ ...(storageState ? { storageState } : {}) });
       if (scenario.networkPolicy.unsafeRequests === 'BLOCK') {
         await context.route('**/*', async (route) => {

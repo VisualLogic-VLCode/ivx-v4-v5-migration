@@ -4,7 +4,7 @@ This project is the distributable local workflow used by Codex or Claude Code. I
 
 ## Current status
 
-Public stable Workflow is `0.3.8`, with Agent protocol 4 and Converter `1.2.1`. The source tree also contains later unreleased runtime-review development. It provides:
+The `0.4.0` release candidate uses Agent protocol 5 with Converter `1.2.1` and the signed Knowledge Runtime. It provides:
 
 - private global Job storage with atomic state writes and per-Job locks;
 - metadata + physical work version classification;
@@ -87,7 +87,7 @@ The commands below document what the Agent executes and remain available as a ma
 
 ```bash
 npm install --global \
-  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.3.8/ivx-v4-v5-migration-0.3.8.tgz
+  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.4.0/ivx-v4-v5-migration-0.4.0.tgz
 ```
 
 ```bash
@@ -118,14 +118,12 @@ ivx-migrate job classify --job <jobId> --file ./classification.json
 ivx-migrate job apply-patch --job <jobId> --file ./repair.patch.json
 ```
 
-After a completed Job has an existing V5 target, the unreleased Runtime Review interface can create and recover an independent session from confirmed runtime pins and target read-back data:
+After a completed Job has an existing V5 target, Workflow `0.4.0` can create and recover an independent Runtime Review Session from the Job's runtime pins and a revision-checked platform read-back:
 
 ```bash
-ivx-migrate review create \
+ivx-migrate review create-platform \
   --job <jobId> \
-  --capability READ_ONLY \
-  --runtime-file ./runtime-pins.json \
-  --target-file ./target-readback.json
+  --capability READ_ONLY
 
 ivx-migrate review status --review <reviewId>
 ivx-migrate review recover --review <reviewId>
@@ -134,9 +132,9 @@ ivx-migrate review finding-add --review <reviewId> --file ./finding.json
 ivx-migrate review finding-list --review <reviewId>
 ```
 
-`finding-add` records USER evidence only. If a separately observed target revision differs, `observe-revision` creates a bounded redacted diff and pauses the review as `TARGET_EXTERNALLY_MODIFIED`. `accept-baseline` requires both that observation and a matching USER Human Finding that requested `ACCEPT_TARGET_REVISION`; it adopts the snapshot locally and returns to `LOCAL_VALIDATING`.
+`finding-add` records USER evidence only. If the target may have been edited, `observe-platform-revision` reads it through the Platform Adapter, creates a bounded redacted diff, and pauses the review as `TARGET_EXTERNALLY_MODIFIED`. `accept-baseline` requires both that observation and a matching USER Human Finding that requested `ACCEPT_TARGET_REVISION`; it adopts the snapshot locally and returns to `LOCAL_VALIDATING`.
 
-The unreleased report-only runtime layer stores a closed declarative scenario, checks the Environment Gate, runs the same scenario in isolated V4/V5 browser contexts, and persists redacted traces plus assertion results:
+The Runtime Driver stores a closed declarative scenario, persists a revision-pinned redacted Environment Gate, resolves the verified V4/V5 platform preview URLs, runs the same scenario in isolated browser contexts, and persists redacted traces plus assertion results:
 
 ```bash
 ivx-migrate runtime status
@@ -152,22 +150,21 @@ ivx-migrate review scenario-add \
   --review <reviewId> \
   --file ./runtime-scenario.json
 
-ivx-migrate review runtime-run \
+ivx-migrate review environment-check \
+  --review <reviewId>
+
+ivx-migrate review runtime-run-platform \
   --review <reviewId> \
   --scenario <scenarioId> \
-  --source-url <v4-preview-url> \
-  --target-url <v5-preview-url> \
-  --environment-file ./environment-comparison.json
+  --environment-id <comparisonId>
 
 # A fresh Agent may resume only a crashed READ_ONLY cycle. Side-effect cycles
 # require reconciliation and a new authorization instead of automatic replay.
-ivx-migrate review runtime-resume \
-  --review <reviewId> \
-  --source-url <v4-preview-url> \
-  --target-url <v5-preview-url>
+ivx-migrate review runtime-resume-platform \
+  --review <reviewId>
 ```
 
-Runtime Scenario actions use only the published action/semantic-locator vocabulary; arbitrary JavaScript, CSS/XPath, credential entry, and native Playwright traces are rejected. `READ_ONLY` blocks non-idempotent requests. `REVERSIBLE` requires cleanup and a single-use USER authorization; `EXTERNAL_SIDE_EFFECT` additionally requires a visible takeover. Browser storage state is a private `0600` file and is never returned. Runtime cycles remain evidence-only: they never apply a Patch or invoke a platform write. A later, separately authorized repair operation may consume their redacted evidence.
+Runtime Scenario actions use only the published action/semantic-locator vocabulary; arbitrary JavaScript, CSS/XPath, credential entry, and native Playwright traces are rejected. `READ_ONLY` blocks non-idempotent requests. `REVERSIBLE` requires cleanup and a single-use USER authorization; `EXTERNAL_SIDE_EFFECT` additionally requires a visible takeover. Browser storage state is kept in separate private `0600` files per preview origin and is never returned. Runtime cycles remain evidence-only: they never apply a Patch or invoke a platform write. A later, separately authorized repair operation may consume their redacted evidence.
 
 When a Runtime Cycle reports a mismatch, Diagnosis v2 exposes stable candidates and accepts only a complete Schema-v2 Root Cause Classification. Every issue must cite its actual local comparison artifact; Knowledge rule IDs must have been retrieved by this review. The Workflow independently computes repair and diagnostic-save decisions and produces a redacted JSON/Markdown owner report:
 
@@ -210,12 +207,14 @@ ivx-migrate migrate \
   --gid 25391
 ```
 
-After reviewing `READY_TO_SAVE`, enable `platform.writeMode: "explicit"` and resume the same Job:
+After reviewing `READY_TO_SAVE`, open the live-write gate and resume the same Job:
 
 ```bash
+ivx-migrate config write-mode --mode explicit --confirm ENABLE_LIVE_WRITES
 ivx-migrate job resume-save \
   --job <jobId> \
   --confirm-live-write SAVE_V5
+ivx-migrate config write-mode --mode disabled
 ```
 
 Restore `platform.writeMode` to `"disabled"` immediately after every save attempt, including failures or interruptions. A normal save is successful only at `SUCCEEDED` after read-back verification. Re-running `migrate --nid <targetNid>` must classify the target as `SKIPPED_ALREADY_V5`; do not use a compatibility `edtVer` field by itself to decide the target format.
@@ -312,7 +311,7 @@ Workflow, Converter, and Knowledge releases are independently versioned. Reposit
 
 ## Safety boundary
 
-- `CONVERTER` issues are never repaired here. `CONVERTER`, `SOURCE`, and `UNKNOWN` issues may be preserved in a separately authorized diagnostic copy, but its terminal state is never normal success.
+- `CONVERTER` issues are never repaired here. Any fully classified issue may be preserved in a separately authorized diagnostic copy only after the independent live-write hard gates pass; its terminal state is never normal success.
 - AI may only submit schema-valid issue classifications and policy-approved RFC 6902 source repairs.
 - Generated V5 files cannot be edited directly by an Agent and then treated as verified.
 - Agents must use redacted `doctor` status and must never open, print, copy, hash, or inspect Token files.
