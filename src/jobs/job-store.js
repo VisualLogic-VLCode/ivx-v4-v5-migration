@@ -5,6 +5,7 @@ import { createAppPaths, resolveWorkspaceReferenceDir } from '../paths.js';
 import { ensurePrivateDir, readJson, writePrivateFile, writePrivateJson } from '../fs/secure-json.js';
 import { WorkflowError, invariant } from '../errors.js';
 import { migrateJobStateV1ToV2, readJobStateCompatible } from '../contracts/compatibility.js';
+import { acquireFileLock, releaseFileLock } from '../fs/file-lock.js';
 import { assertTransition } from './states.js';
 
 function createJobId(now = new Date()) {
@@ -17,48 +18,6 @@ function normalizePositiveInteger(value, name, { optional = false } = {}) {
   const number = Number(value);
   invariant(Number.isSafeInteger(number) && number > 0, 'INVALID_JOB_INPUT', `${name} must be a positive integer`);
   return number;
-}
-
-function lockOwnerIsDead(lockPath) {
-  let metadata;
-  try {
-    metadata = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
-  } catch {
-    return false;
-  }
-  const pid = Number(metadata?.pid);
-  if (!Number.isSafeInteger(pid) || pid <= 0 || pid === process.pid) return false;
-  try {
-    process.kill(pid, 0);
-    return false;
-  } catch (error) {
-    return error?.code === 'ESRCH';
-  }
-}
-
-function acquireLock(lockPath, metadata, code, message) {
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    try {
-      const handle = fs.openSync(lockPath, 'wx', 0o600);
-      fs.writeFileSync(handle, `${JSON.stringify(metadata)}\n`);
-      return handle;
-    } catch (error) {
-      if (error?.code !== 'EEXIST') throw error;
-      if (attempt === 0 && lockOwnerIsDead(lockPath)) {
-        try { fs.unlinkSync(lockPath); } catch (unlinkError) {
-          if (unlinkError?.code !== 'ENOENT') throw unlinkError;
-        }
-        continue;
-      }
-      throw new WorkflowError(code, message);
-    }
-  }
-  throw new WorkflowError(code, message);
-}
-
-function releaseLock(lockPath, handle) {
-  try { fs.closeSync(handle); } catch {}
-  try { fs.unlinkSync(lockPath); } catch {}
 }
 
 export class JobStore {
@@ -189,29 +148,27 @@ export class JobStore {
 
   withLock(jobId, callback) {
     const lockPath = path.join(this.paths.locks, `${jobId}.lock`);
-    const handle = acquireLock(
+    const handle = acquireFileLock(
       lockPath,
       { pid: process.pid, at: new Date().toISOString() },
-      'JOB_LOCKED',
-      `Job is already being modified: ${jobId}`,
+      { code: 'JOB_LOCKED', message: `Job is already being modified: ${jobId}` },
     );
     try {
       return callback();
     } finally {
-      releaseLock(lockPath, handle);
+      releaseFileLock(lockPath, handle);
     }
   }
 
   withOperationLease(jobId, operation, callback) {
     invariant(/^[a-z][a-z0-9-]*$/.test(operation), 'INVALID_OPERATION', 'Invalid operation lease name');
     const lockPath = path.join(this.paths.locks, `${jobId}.${operation}.lock`);
-    const handle = acquireLock(
+    const handle = acquireFileLock(
       lockPath,
       { pid: process.pid, operation, at: new Date().toISOString() },
-      'JOB_OPERATION_LOCKED',
-      `Job operation is already running: ${operation}`,
+      { code: 'JOB_OPERATION_LOCKED', message: `Job operation is already running: ${operation}` },
     );
-    const release = () => releaseLock(lockPath, handle);
+    const release = () => releaseFileLock(lockPath, handle);
     try {
       const result = callback();
       if (result && typeof result.then === 'function') return result.finally(release);

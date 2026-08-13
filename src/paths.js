@@ -13,6 +13,8 @@ export function createAppPaths(appHome = resolveAppHome()) {
     registry: path.join(appHome, 'registry.json'),
     current: path.join(appHome, 'current.json'),
     jobs: path.join(appHome, 'jobs'),
+    reviews: path.join(appHome, 'reviews'),
+    reviewRegistry: path.join(appHome, 'review-registry.json'),
     locks: path.join(appHome, 'locks'),
     logs: path.join(appHome, 'logs'),
     workflows: path.join(appHome, 'workflows'),

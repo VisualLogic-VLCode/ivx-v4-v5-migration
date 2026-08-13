@@ -32,8 +32,8 @@
       "items": { "enum": ["RERUN", "RECLASSIFY", "CONVERTER_REPORT", "TRY_REPAIR", "ACCEPT_TARGET_REVISION"] }
     },
     "createdAt": { "$ref": "common.schema.json#/$defs/dateTime" },
-    "createdBy": { "$ref": "common.schema.json#/$defs/createdBy" },
-    "sensitivity": { "$ref": "common.schema.json#/$defs/sensitivity" }
+    "createdBy": { "const": "USER" },
+    "sensitivity": { "const": "PRIVATE" }
   },
   "additionalProperties": false,
   "allOf": [

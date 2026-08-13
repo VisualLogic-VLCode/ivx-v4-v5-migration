@@ -4,7 +4,7 @@ This project is the distributable local workflow used by Codex or Claude Code. I
 
 ## Current status
 
-The source tree is the `0.3.8` candidate. Public stable Workflow `0.3.7` and Converter `1.2.1` remain unchanged until this candidate is reviewed and published; this candidate raises the Agent protocol from 3 to 4. It provides:
+Public stable Workflow is `0.3.8`, with Agent protocol 4 and Converter `1.2.1`. The source tree also contains later unreleased runtime-review development. It provides:
 
 - private global Job storage with atomic state writes and per-Job locks;
 - metadata + physical work version classification;
@@ -19,11 +19,12 @@ The source tree is the `0.3.8` candidate. Public stable Workflow `0.3.7` and Con
 - bearer-token metadata/load/config adapters with token redaction and strict `0600` Token-file support;
 - permission preflight, source revision checks, resumable Save As checkpoints, final nid rewrite, and post-save read-back verification;
 - a separately authorized diagnostic Save As path that creates an editor-openable V5 copy for classified Converter, source, or unknown issues without reporting normal success;
+- independent private Runtime Review Session persistence, one-writer-per-target-revision leases, Human Finding evidence, and external-revision baseline reconciliation;
 - a complete local-file dry run and a mock-platform integration-tested online flow.
 
 Platform writes remain disabled by default. A verified save requires private config `platform.writeMode: "explicit"` and `--confirm-live-write SAVE_V5`. A Job with classified `CONVERTER`, `SOURCE`, or `UNKNOWN` issues may use the separate command and confirmation `SAVE_V5_WITH_KNOWN_ISSUES`; it finishes as `DIAGNOSTIC_COPY_CREATED`, never `SUCCEEDED`. `PLATFORM` and `AUTHORIZATION` issues remain ineligible. Non-owner group participants remain blocked as `UNKNOWN_SERVER_POLICY` until their deployment-specific server permission is verified.
 
-The candidate also contains additive [Schema v2 development contracts](schemas/v2/README.md) for the planned runtime-review and repair workflow. A closed environment field-policy registry, redacted Environment Manifest/Environment Gate evaluator, stable environment reader, and narrow routing-binding adapter are implemented behind local APIs and mock tests; no current CLI command activates them yet. They do not yet activate Runtime Review Session persistence or change the current schema-v1 save policy. Schema-v1 artifacts remain readable; any Job-state migration is an explicit, non-destructive copy rather than an in-place rewrite.
+The source tree contains additive [Schema v2 development contracts](schemas/v2/README.md) for runtime review and repair. The closed environment field-policy registry, redacted Environment Manifest/Environment Gate evaluator, stable environment reader, narrow routing-binding adapter, independent Runtime Review Store, Human Finding continuation, and revision-drift reconciliation are implemented behind local APIs/tests. Review commands do not instantiate a platform adapter, and no existing migration/save policy is changed. Schema-v1 artifacts remain readable; any Job-state migration is an explicit, non-destructive copy rather than an in-place rewrite.
 
 ## Data location
 
@@ -32,6 +33,8 @@ Authoritative Job data defaults to:
 ```text
 ~/.ivx-v4-v5/
 ├── jobs/
+├── reviews/
+├── review-registry.json
 ├── locks/
 ├── workflows/
 ├── converters/
@@ -108,6 +111,24 @@ ivx-migrate job status --job <jobId>
 ivx-migrate job classify --job <jobId> --file ./classification.json
 ivx-migrate job apply-patch --job <jobId> --file ./repair.patch.json
 ```
+
+After a completed Job has an existing V5 target, the unreleased Stage 3 local interface can create and recover an independent Runtime Review Session from confirmed runtime pins and target read-back data:
+
+```bash
+ivx-migrate review create \
+  --job <jobId> \
+  --capability READ_ONLY \
+  --runtime-file ./runtime-pins.json \
+  --target-file ./target-readback.json
+
+ivx-migrate review status --review <reviewId>
+ivx-migrate review recover --review <reviewId>
+ivx-migrate review list --job <jobId>
+ivx-migrate review finding-add --review <reviewId> --file ./finding.json
+ivx-migrate review finding-list --review <reviewId>
+```
+
+`finding-add` records USER evidence only. If a separately observed target revision differs, `observe-revision` creates a bounded redacted diff and pauses the review as `TARGET_EXTERNALLY_MODIFIED`. `accept-baseline` requires both that observation and a matching USER Human Finding that requested `ACCEPT_TARGET_REVISION`; it adopts the snapshot locally and returns to `LOCAL_VALIDATING`. None of these commands read a Token or write the platform. Automatic target read-back and update orchestration are later phases.
 
 Load the current work with the caller's token, classify it, convert only supported V4, and stop at the save gate:
 

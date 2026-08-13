@@ -90,6 +90,8 @@ export const REVIEW_STATUSES = Object.freeze([
   'RUNTIME_NOT_TESTED',
 ]);
 
+export const REVIEW_CAPABILITIES = Object.freeze(['READ_ONLY', 'WRITE']);
+
 const CREATED_BY = new Set(['CLI', 'AGENT', 'USER']);
 const SENSITIVITY = new Set(['PRIVATE', 'REDACTED']);
 const SIDE_EFFECTS = new Set(['READ_ONLY', 'REVERSIBLE', 'EXTERNAL_SIDE_EFFECT']);
@@ -569,6 +571,8 @@ export function validateHumanFinding(document) {
   if (document.targetManuallyEdited && document.targetRevision === null) fail('targetRevision is required when targetManuallyEdited is true');
   if (!document.targetManuallyEdited && document.requests.includes('ACCEPT_TARGET_REVISION')) fail('ACCEPT_TARGET_REVISION requires targetManuallyEdited');
   validateArtifactMetadata(document);
+  if (document.createdBy !== 'USER') fail('Human Finding createdBy must be USER');
+  if (document.sensitivity !== 'PRIVATE') fail('Human Finding sensitivity must be PRIVATE');
   return document;
 }
 
@@ -706,14 +710,15 @@ function validateRuntimePin(pin, path) {
 export function validateRuntimeReviewSession(document) {
   schemaHeader(document, 'runtime-review-session');
   exactKeys(document,
-    ['schemaVersion', 'kind', 'reviewId', 'jobId', 'target', 'status', 'runtime', 'baseline', 'activeCycleId', 'issueClusterIds', 'scenarioIds', 'humanFindingIds', 'repairBudgetIds', 'history', 'createdAt', 'updatedAt', 'createdBy', 'sensitivity'],
-    ['schemaVersion', 'kind', 'reviewId', 'jobId', 'target', 'status', 'runtime', 'baseline', 'activeCycleId', 'issueClusterIds', 'scenarioIds', 'humanFindingIds', 'repairBudgetIds', 'history', 'createdAt', 'updatedAt', 'createdBy', 'sensitivity'],
+    ['schemaVersion', 'kind', 'reviewId', 'jobId', 'target', 'capability', 'status', 'runtime', 'baseline', 'activeCycleId', 'issueClusterIds', 'scenarioIds', 'humanFindingIds', 'repairBudgetIds', 'history', 'createdAt', 'updatedAt', 'createdBy', 'sensitivity'],
+    ['schemaVersion', 'kind', 'reviewId', 'jobId', 'target', 'capability', 'status', 'runtime', 'baseline', 'activeCycleId', 'issueClusterIds', 'scenarioIds', 'humanFindingIds', 'repairBudgetIds', 'history', 'createdAt', 'updatedAt', 'createdBy', 'sensitivity'],
     '$');
   reviewId(document.reviewId);
   jobId(document.jobId);
   exactKeys(document.target, ['nid', 'workId'], ['nid', 'workId'], '$.target');
   integer(document.target.nid, '$.target.nid', { min: 1 });
   string(document.target.workId, '$.target.workId', { max: 256 });
+  enumValue(document.capability, REVIEW_CAPABILITIES, '$.capability');
   enumValue(document.status, REVIEW_STATUSES, '$.status');
   exactKeys(document.runtime, ['workflow', 'converter', 'knowledge'], ['workflow', 'converter', 'knowledge'], '$.runtime');
   validateRuntimePin(document.runtime.workflow, '$.runtime.workflow');

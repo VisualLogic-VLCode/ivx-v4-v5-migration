@@ -231,6 +231,7 @@ function reviewSession() {
     reviewId: 'rev_20260813040000_abcde',
     jobId: 'mig_20260813040000_abcde',
     target: { nid: 123456, workId: 'target-work-1' },
+    capability: 'WRITE',
     status: 'REVIEW_OPEN',
     runtime: {
       workflow: { version: '0.4.0', sha256: HASH_A },
@@ -261,6 +262,19 @@ test('all schema-v2 artifact contracts accept a complete valid document', () => 
   assert.equal(validateDiagnosticSaveEligibility(diagnosticSaveEligibility()).kind, 'diagnostic-save-eligibility');
   assert.equal(validateRuntimeReviewSession(reviewSession()).kind, 'runtime-review-session');
   assert.equal(validateSchemaV2Artifact(runtimeScenario()).kind, 'runtime-scenario');
+});
+
+test('review capability and Human Finding provenance are closed contracts', () => {
+  const review = reviewSession();
+  review.capability = 'UNBOUNDED_WRITE';
+  assert.throws(() => validateRuntimeReviewSession(review), /capability/);
+
+  const finding = humanFinding();
+  finding.createdBy = 'AGENT';
+  assert.throws(() => validateHumanFinding(finding), /createdBy must be USER/);
+  finding.createdBy = 'USER';
+  finding.sensitivity = 'REDACTED';
+  assert.throws(() => validateHumanFinding(finding), /sensitivity must be PRIVATE/);
 });
 
 test('schema-v2 classification separates cause, responsibility, target, and repair permission', () => {

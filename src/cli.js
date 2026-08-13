@@ -11,6 +11,7 @@ import { diagnosticOwnerBucket, issueAutoRepairAllowed, issueCause } from './con
 import { readJson, sha256File, writePrivateJson } from './fs/secure-json.js';
 import { JobStore } from './jobs/job-store.js';
 import { createAppPaths, resolveAppHome } from './paths.js';
+import { RuntimeReviewStore } from './reviews/review-store.js';
 import { IvxPlatformAdapter, normalizePlatformBaseUrl } from './platform/http-adapter.js';
 import { inspectPlatformToken, normalizeTokenFilePath, readPlatformTokenFile, resolvePlatformToken } from './platform/token-source.js';
 import { promptAndPersistPlatformToken } from './platform/visible-token-prompt.js';
@@ -532,6 +533,56 @@ async function handleJob(positionals, options, context) {
   throw new WorkflowError('CLI_COMMAND_UNKNOWN', `Unknown job action: ${action || ''}`);
 }
 
+async function handleReview(positionals, options, context) {
+  const action = positionals[1];
+  if (action === 'create') {
+    invariant(options.job, 'CLI_ARGUMENT_REQUIRED', '--job is required');
+    const runtime = readRequiredJson(options['runtime-file'], 'runtime');
+    const targetSnapshot = readRequiredJson(options['target-file'], 'target');
+    return context.reviews.create({
+      jobId: options.job,
+      capability: options.capability || 'READ_ONLY',
+      runtime,
+      targetSnapshot,
+    });
+  }
+  if (action === 'status') {
+    invariant(options.review, 'CLI_ARGUMENT_REQUIRED', '--review is required');
+    return context.reviews.load(options.review);
+  }
+  if (action === 'list') return { reviews: context.reviews.list({ jobId: options.job, targetNid: options.nid }) };
+  if (action === 'recover') {
+    invariant(options.review, 'CLI_ARGUMENT_REQUIRED', '--review is required');
+    return context.reviews.recover(options.review);
+  }
+  if (action === 'finding-add') {
+    invariant(options.review, 'CLI_ARGUMENT_REQUIRED', '--review is required');
+    return context.reviews.submitHumanFinding(options.review, readRequiredJson(options.file, 'finding'));
+  }
+  if (action === 'finding-list') {
+    invariant(options.review, 'CLI_ARGUMENT_REQUIRED', '--review is required');
+    return { findings: context.reviews.listHumanFindings(options.review) };
+  }
+  if (action === 'observe-revision') {
+    invariant(options.review, 'CLI_ARGUMENT_REQUIRED', '--review is required');
+    invariant(options['work-id'], 'CLI_ARGUMENT_REQUIRED', '--work-id is required');
+    return context.reviews.observeTargetRevision(options.review, {
+      currentWorkId: options['work-id'],
+      targetSnapshot: readRequiredJson(options['target-file'], 'target'),
+    });
+  }
+  if (action === 'accept-baseline') {
+    invariant(options.review, 'CLI_ARGUMENT_REQUIRED', '--review is required');
+    invariant(options.observation, 'CLI_ARGUMENT_REQUIRED', '--observation is required');
+    invariant(options.finding, 'CLI_ARGUMENT_REQUIRED', '--finding is required');
+    return context.reviews.acceptExternalRevision(options.review, {
+      observationId: options.observation,
+      findingId: options.finding,
+    });
+  }
+  throw new WorkflowError('CLI_COMMAND_UNKNOWN', `Unknown review action: ${action || ''}`);
+}
+
 function createUpdateManager(context) {
   return new UpdateManager({
     config: context.config,
@@ -715,12 +766,14 @@ export async function runCli(argv, dependencies = {}) {
   const appPaths = createAppPaths(appHome);
   const config = loadConfig(appPaths);
   const registry = new RuntimeRegistry(appPaths);
+  const jobs = new JobStore(appPaths);
   const context = {
     appHome,
     appPaths,
     config,
     registry,
-    jobs: new JobStore(appPaths),
+    jobs,
+    reviews: new RuntimeReviewStore(appPaths, { jobs }),
     installer: new ArtifactInstaller({ appPaths, registry }),
     promptPlatformToken: dependencies.promptPlatformToken || promptAndPersistPlatformToken,
   };
@@ -761,6 +814,7 @@ export async function runCli(argv, dependencies = {}) {
   else if (command === 'config' && positionals[1] === 'init') {
     result = saveConfig(DEFAULT_CONFIG, appPaths);
   } else if (command === 'job') result = await handleJob(positionals, options, context);
+  else if (command === 'review') result = await handleReview(positionals, options, context);
   else if (command === 'classify') {
     result = classifyCaseVersion({
       metadata: options.metadata ? readRequiredJson(options.metadata, 'metadata') : {},
@@ -799,6 +853,13 @@ export async function runCli(argv, dependencies = {}) {
         'ivx-migrate job apply-patch --job <jobId> --file <patch.json>',
         'ivx-migrate job resume-save --job <jobId> --confirm-live-write SAVE_V5',
         'ivx-migrate job resume-diagnostic-save --job <jobId> --confirm-live-write SAVE_V5_WITH_KNOWN_ISSUES',
+        'ivx-migrate review create --job <jobId> --capability READ_ONLY|WRITE --runtime-file <runtime-pins.json> --target-file <target-readback.json>',
+        'ivx-migrate review status|recover --review <reviewId>',
+        'ivx-migrate review list [--job <jobId>] [--nid <targetNid>]',
+        'ivx-migrate review finding-add --review <reviewId> --file <finding.json>',
+        'ivx-migrate review finding-list --review <reviewId>',
+        'ivx-migrate review observe-revision --review <reviewId> --work-id <workId> --target-file <target-readback.json>',
+        'ivx-migrate review accept-baseline --review <reviewId> --observation <observationId> --finding <findingId>',
         'ivx-migrate release sign --payload <payload.json> --private-key <key.pem> --output <manifest.json>',
         'ivx-migrate release check|install|list|activate|rollback --kind workflow|converter',
         'ivx-migrate agents status',

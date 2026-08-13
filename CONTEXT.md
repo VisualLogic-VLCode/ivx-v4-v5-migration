@@ -12,6 +12,10 @@ _Avoid_: Runtime review, chat task
 A reopenable review associated with one Migration Job and one target V5 case, covering runtime comparison, diagnosis, repair, and human evidence.
 _Avoid_: Reopened Migration Job
 
+**Review Write Lease**:
+The exclusive claim allowing one Runtime Review Session to prepare target updates against one Target Revision; it does not itself authorize a platform write.
+_Avoid_: Save authorization, global case lock
+
 **Runtime Scenario**:
 A repeatable set of preconditions, actions, observations, and cleanup applied to both V4 and V5.
 _Avoid_: Test script, prompt

@@ -2,6 +2,9 @@ export { loadConfig, saveConfig, DEFAULT_CONFIG } from './config.js';
 export { AGENT_PROTOCOL_VERSION, PUBLIC_RELEASE_PROFILE } from './distribution-profile.js';
 export { createAppPaths, resolveAppHome } from './paths.js';
 export { JobStore } from './jobs/job-store.js';
+export { RuntimeReviewStore } from './reviews/review-store.js';
+export { createRedactedRevisionDiff, revisionValueDigest } from './reviews/revision-diff.js';
+export { assertReviewTransition, REVIEW_TRANSITIONS, TERMINAL_REVIEW_STATES } from './reviews/states.js';
 export {
   diagnosticOwnerBucket,
   issueAutoRepairAllowed,
@@ -22,6 +25,7 @@ export {
   REPAIR_BUDGET_STATES,
   REPAIR_TARGETS,
   RESPONSIBLE_PARTIES,
+  REVIEW_CAPABILITIES,
   REVIEW_STATUSES,
   SCHEMA_V2_VALIDATORS,
   validateAutomaticRepairDecision,
