@@ -198,6 +198,11 @@ export function diagnosticOwnerBucket(classification, issue) {
   const cause = issueCause(classification, issue);
   if (cause === 'CONVERTER') return 'CONVERTER';
   if (cause === 'SOURCE_DATA' || cause === 'TARGET_CASE') return 'SOURCE';
+  if (cause === 'TEST_HARNESS') return 'TEST_HARNESS';
+  if (cause === 'ENVIRONMENT_CONFIGURATION') return 'ENVIRONMENT';
+  if (cause === 'PLATFORM_RUNTIME') return 'PLATFORM';
+  if (cause === 'KNOWLEDGE_GAP') return 'KNOWLEDGE';
+  if (cause === 'AUTHORIZATION') return 'AUTHORIZATION';
   if (cause === 'UNKNOWN') return 'UNKNOWN';
   return null;
 }

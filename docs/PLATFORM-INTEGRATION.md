@@ -48,7 +48,7 @@ Normal remote Save As may start only when:
 - source `workId` is unchanged; and
 - destination preflight is `ALLOWED`.
 
-Classified known issues have one explicit exception for diagnosis. The Job must be `BLOCKED_CONVERTER_DEFECT`, `AI_REPAIR_REQUIRED`, or an eligible `NEEDS_REVIEW`; every issue must be owned by `CONVERTER`, `SOURCE`, or `UNKNOWN`; and the caller must use `resume-diagnostic-save` with `SAVE_V5_WITH_KNOWN_ISSUES`. Any `PLATFORM` or `AUTHORIZATION` issue refuses the operation. The workflow persists a bounded authorization artifact and diagnostic save intent. All permission, revision, checkpoint, config, nid-rewrite, and read-back protections remain unchanged. Completion is `DIAGNOSTIC_COPY_CREATED`, not `SUCCEEDED`.
+Classified known issues have one explicit exception for diagnosis. The Job must be `BLOCKED_CONVERTER_DEFECT`, `AI_REPAIR_REQUIRED`, or an eligible `NEEDS_REVIEW`; every issue must have a supported closed classification; and the caller must use `resume-diagnostic-save` with `SAVE_V5_WITH_KNOWN_ISSUES`. Cause does not grant or deny the write: authentication, actual server permission, explicit user authorization, current platform path, source revision, checkpoint, config, nid rewrite, known write outcome, and read-back protections are enforced independently. A previous `PLATFORM` or `AUTHORIZATION` diagnosis can therefore proceed only after the corresponding current hard prerequisite is satisfied. Completion is `DIAGNOSTIC_COPY_CREATED`, not `SUCCEEDED`.
 
 ## Recovery semantics
 

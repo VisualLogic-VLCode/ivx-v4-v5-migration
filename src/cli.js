@@ -209,14 +209,14 @@ function authorizeKnownIssuesDiagnosticSave(jobId, context) {
     readJson(path.join(context.jobs.jobDir(jobId), 'reports', 'issue-classification.json'), null),
     validation,
   );
-  const allowedOwners = new Set(['CONVERTER', 'SOURCE', 'UNKNOWN']);
-  const forbiddenIssues = classification.issues.filter((issue) => diagnosticOwnerBucket(classification, issue) === null);
+  const ownerBuckets = ['CONVERTER', 'SOURCE', 'TEST_HARNESS', 'ENVIRONMENT', 'PLATFORM', 'KNOWLEDGE', 'AUTHORIZATION', 'UNKNOWN'];
+  const unclassifiedIssues = classification.issues.filter((issue) => diagnosticOwnerBucket(classification, issue) === null);
   invariant(classification.issues.length > 0, 'DIAGNOSTIC_SAVE_ISSUES_REQUIRED', 'Diagnostic Save As requires at least one classified issue');
-  invariant(forbiddenIssues.length === 0, 'DIAGNOSTIC_SAVE_OWNERS_FORBIDDEN', 'Platform or authorization issues must be resolved before creating a diagnostic copy', {
-    owners: [...new Set(forbiddenIssues.map((issue) => issueCause(classification, issue)))].sort(),
+  invariant(unclassifiedIssues.length === 0, 'DIAGNOSTIC_SAVE_CLASSIFICATION_UNSUPPORTED', 'Diagnostic Save As contains an unsupported issue classification', {
+    causes: [...new Set(unclassifiedIssues.map((issue) => issueCause(classification, issue)))].sort(),
   });
   const issueCountsByOwner = Object.fromEntries(
-    [...allowedOwners].map((owner) => [owner, classification.issues.filter((issue) => diagnosticOwnerBucket(classification, issue) === owner).length]),
+    ownerBuckets.map((owner) => [owner, classification.issues.filter((issue) => diagnosticOwnerBucket(classification, issue) === owner).length]),
   );
   const authorizedAt = new Date().toISOString();
   const authorization = {

@@ -18,14 +18,14 @@ Public stable Workflow is `0.3.8`, with Agent protocol 4 and Converter `1.2.1`. 
 - an editor-compatible binary work codec;
 - bearer-token metadata/load/config adapters with token redaction and strict `0600` Token-file support;
 - permission preflight, source revision checks, resumable Save As checkpoints, final nid rewrite, and post-save read-back verification;
-- a separately authorized diagnostic Save As path that creates an editor-openable V5 copy for classified Converter, source, or unknown issues without reporting normal success;
+- a separately authorized diagnostic Save As path that creates an editor-openable V5 copy for any classified issue after independent write hard gates pass, without reporting normal success;
 - independent private Runtime Review Session persistence, one-writer-per-target-revision leases, Human Finding evidence, and external-revision baseline reconciliation;
 - a locked Playwright Runtime Driver with closed declarative scenarios, isolated V4/V5 contexts, private browser authentication state, redacted traces, reviewed normalization, side-effect gates, and report-only parity comparison;
 - Diagnosis v2 with evidence-backed Issue Clusters, policy-computed automatic-repair decisions, independent diagnostic-save eligibility, calibration fixtures, and redacted owner-specific maintainer reports;
 - bounded target repair with private authorization leases, per-cluster `3+2` attempts, per-review `10+5` confirmed revisions, V5-only Patch policy, static regression gates, Saveable Checkpoints, target CAS, unknown-write reconciliation, verified read-back, and affected-scenario retesting;
 - a complete local-file dry run and a mock-platform integration-tested online flow.
 
-Platform writes remain disabled by default. A verified save requires private config `platform.writeMode: "explicit"` and `--confirm-live-write SAVE_V5`. A Job with classified `CONVERTER`, `SOURCE`, or `UNKNOWN` issues may use the separate command and confirmation `SAVE_V5_WITH_KNOWN_ISSUES`; it finishes as `DIAGNOSTIC_COPY_CREATED`, never `SUCCEEDED`. `PLATFORM` and `AUTHORIZATION` issues remain ineligible. Non-owner group participants remain blocked as `UNKNOWN_SERVER_POLICY` until their deployment-specific server permission is verified.
+Platform writes remain disabled by default. A verified save requires private config `platform.writeMode: "explicit"` and `--confirm-live-write SAVE_V5`. A Job with any fully classified known issue may use the separate command and confirmation `SAVE_V5_WITH_KNOWN_ISSUES`; it finishes as `DIAGNOSTIC_COPY_CREATED`, never `SUCCEEDED`. Classification never bypasses authentication, actual server permission, current platform availability, source-revision safety, or user authorization. Non-owner group participants remain blocked as `UNKNOWN_SERVER_POLICY` until their deployment-specific server permission is verified.
 
 The source tree contains additive [Schema v2 development contracts](schemas/v2/README.md) for runtime review and repair. The closed environment field-policy registry, redacted Environment Manifest/Environment Gate evaluator, stable environment reader, narrow routing-binding adapter, independent Runtime Review Store, Human Finding continuation, revision-drift reconciliation, bounded target-update journal, and signed Knowledge Runtime consumer are implemented behind local APIs/tests. Read-only Review/Knowledge commands do not instantiate a write adapter; a repair update requires the explicit write mode and literal `UPDATE_V5_REPAIR` confirmation. Schema-v1 artifacts remain readable; any Job-state migration is an explicit, non-destructive copy rather than an in-place rewrite.
 
@@ -222,7 +222,7 @@ Restore `platform.writeMode` to `"disabled"` immediately after every save attemp
 
 The one-command form adds `--save --confirm-live-write SAVE_V5` to `migrate`. Token resolution order is an explicit `--token-file`, configured `platform.tokenFile`, then `platform.tokenEnv`. An invalid selected file fails instead of silently falling back. The Token is never written to config, a Job, diagnostics, or Agent analysis.
 
-When a Job is `BLOCKED_CONVERTER_DEFECT`, `AI_REPAIR_REQUIRED`, or eligible `NEEDS_REVIEW`, the user may explicitly request an editor-openable copy before the known issues are fixed. Eligible owners are `CONVERTER`, `SOURCE`, and `UNKNOWN`; any `PLATFORM` or `AUTHORIZATION` issue refuses the operation. Use the dedicated gate:
+When a Job is `BLOCKED_CONVERTER_DEFECT`, `AI_REPAIR_REQUIRED`, or eligible `NEEDS_REVIEW`, the user may explicitly request an editor-openable copy before the known issues are fixed. All supported cause categories are eligible for independent evaluation; a platform or authorization diagnosis can proceed only after the actual platform/authentication/permission condition needed for the current write has recovered. Use the dedicated gate:
 
 ```bash
 ivx-migrate job resume-diagnostic-save \

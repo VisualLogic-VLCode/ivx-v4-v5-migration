@@ -33,7 +33,7 @@ test('JobStore never accepts an invalid source nid', () => {
   }
 });
 
-test('classified Converter, Source, and Unknown issue states can enter only the dedicated diagnostic-save state', () => {
+test('classified issue states can enter only the dedicated diagnostic-save state', () => {
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'ivx-job-diagnostic-save-'));
   try {
     const store = new JobStore(createAppPaths(temporary));

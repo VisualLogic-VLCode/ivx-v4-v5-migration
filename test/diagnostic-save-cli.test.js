@@ -96,7 +96,7 @@ function createIssueJob(home, converted, issues) {
   return { jobs, job: jobs.transition(job.jobId, status) };
 }
 
-test('CLI permits Converter, Source, and Unknown diagnostic copies but refuses Platform and Authorization issues', async () => {
+test('CLI permits every classified cause after independent diagnostic-save hard gates pass', async () => {
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'ivx-diagnostic-save-cli-'));
   const home = path.join(temporary, 'home');
   const token = 'diagnostic-save-token-never-persist';
@@ -192,17 +192,6 @@ test('CLI permits Converter, Source, and Unknown diagnostic copies but refuses P
     assert.equal(JSON.parse(weakConfirmation.stderr).code, 'LIVE_WRITE_CONFIRMATION_REQUIRED');
     assert.deepEqual(calls, { create: 0, config: 0, save: 0 });
 
-    for (const owner of ['PLATFORM', 'AUTHORIZATION']) {
-      const forbiddenIssue = createIssueJob(home, converted, [{ owner }]);
-      const forbiddenSave = await runCli(home, token, [
-        'job', 'resume-diagnostic-save', '--job', forbiddenIssue.job.jobId,
-        '--confirm-live-write', 'SAVE_V5_WITH_KNOWN_ISSUES',
-      ]);
-      assert.equal(forbiddenSave.code, 1);
-      assert.equal(JSON.parse(forbiddenSave.stderr).code, 'DIAGNOSTIC_SAVE_OWNERS_FORBIDDEN');
-      assert.deepEqual(calls, { create: 0, config: 0, save: 0 });
-    }
-
     const diagnosticSave = await runCli(home, token, [
       'job', 'resume-diagnostic-save', '--job', job.jobId,
       '--confirm-live-write', 'SAVE_V5_WITH_KNOWN_ISSUES',
@@ -215,7 +204,16 @@ test('CLI permits Converter, Source, and Unknown diagnostic copies but refuses P
 
     const authorization = JSON.parse(fs.readFileSync(path.join(jobs.jobDir(job.jobId), 'reports', 'diagnostic-save-authorization.json'), 'utf8'));
     assert.equal(authorization.evidence.issueCount, 3);
-    assert.deepEqual(authorization.evidence.issueCountsByOwner, { CONVERTER: 1, SOURCE: 1, UNKNOWN: 1 });
+    assert.deepEqual(authorization.evidence.issueCountsByOwner, {
+      CONVERTER: 1,
+      SOURCE: 1,
+      TEST_HARNESS: 0,
+      ENVIRONMENT: 0,
+      PLATFORM: 0,
+      KNOWLEDGE: 0,
+      AUTHORIZATION: 0,
+      UNKNOWN: 1,
+    });
     assert.equal(authorization.output.terminalStatus, 'DIAGNOSTIC_COPY_CREATED');
     const journal = JSON.parse(fs.readFileSync(path.join(jobs.jobDir(job.jobId), 'reports', 'platform-save-journal.json'), 'utf8'));
     assert.equal(journal.intent.kind, 'known-issues-diagnostic');
@@ -224,6 +222,8 @@ test('CLI permits Converter, Source, and Unknown diagnostic copies but refuses P
     for (const [owner, repairAllowed, sourceStatus, expectedCalls] of [
       ['SOURCE', true, 'AI_REPAIR_REQUIRED', { create: 2, config: 1, save: 2 }],
       ['UNKNOWN', false, 'NEEDS_REVIEW', { create: 3, config: 1, save: 3 }],
+      ['PLATFORM', false, 'NEEDS_REVIEW', { create: 4, config: 1, save: 4 }],
+      ['AUTHORIZATION', false, 'NEEDS_REVIEW', { create: 5, config: 1, save: 5 }],
     ]) {
       const issueJob = createIssueJob(home, converted, [{ owner, repairAllowed }]);
       assert.equal(issueJob.job.status, sourceStatus);

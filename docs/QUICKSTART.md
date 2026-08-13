@@ -159,7 +159,7 @@ ivx-migrate migrate --nid <targetNid>
 - `CONVERTER`：通常停在 `BLOCKED_CONVERTER_DEFECT`；转换器不会在工作流中修复；
 - `SOURCE`：通常停在 `AI_REPAIR_REQUIRED`，用户可选择先由 AI 修复，也可先创建诊断副本；
 - `UNKNOWN`：通常停在 `NEEDS_REVIEW`，可以保留未知风险创建诊断副本；
-- `PLATFORM`、`AUTHORIZATION`：不允许通过诊断另存绕过，必须先解决。
+- `PLATFORM`、`AUTHORIZATION`：分类本身不禁止诊断副本，但当前另存所需的平台、认证和真实服务器权限必须已经恢复，不能靠确认文字绕过。
 
 对这个具体 Job 再次明确授权：
 
@@ -169,7 +169,7 @@ ivx-migrate job resume-diagnostic-save \
   --confirm-live-write SAVE_V5_WITH_KNOWN_ISSUES
 ```
 
-该命令仍要求 `platform.writeMode` 为 `explicit`，仍会重新检查当前用户的另存权限、源案例版本是否变化，并在保存后读回验证。分类可以包含 `CONVERTER`、`SOURCE`、`UNKNOWN` 的任意组合，但不能包含 `PLATFORM` 或 `AUTHORIZATION`。
+该命令仍要求 `platform.writeMode` 为 `explicit`，仍会重新检查当前用户的另存权限、源案例版本是否变化，并在保存后读回验证。所有受支持的问题分类都可独立评估；若问题涉及平台或授权，只有当前写入硬前提实际恢复后才能继续。
 
 完成时状态是 `DIAGNOSTIC_COPY_CREATED`，返回的 `target.nid` 可用于打开新案例。这个状态只证明“平台上的诊断副本与本地转换产物一致”，不证明转换语义正确，也不能汇报为转换成功。Job 中会保留各问题归属数量、`reports/diagnostic-save-authorization.json` 和带诊断意图的保存日志。问题修复后，应重新转换源案例获得正式结果。
 
