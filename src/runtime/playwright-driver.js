@@ -31,7 +31,8 @@ function validateBaseUrl(value, allowInsecureLocalhost) {
   return url;
 }
 
-function resolveScenarioUrl(baseUrl, route) {
+export function resolveScenarioUrl(baseUrl, route) {
+  if (route === '$SUBJECT_URL') return baseUrl.toString();
   const resolved = new URL(route, baseUrl);
   invariant(resolved.origin === baseUrl.origin, 'RUNTIME_CROSS_ORIGIN_NAVIGATION_FORBIDDEN', 'Runtime Scenario cannot navigate to another origin');
   return resolved.toString();

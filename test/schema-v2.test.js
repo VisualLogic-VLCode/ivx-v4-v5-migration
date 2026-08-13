@@ -335,6 +335,14 @@ test('schema-v2 classification separates cause, responsibility, target, and repa
 });
 
 test('runtime scenario side-effect policy is cross-field validated', () => {
+  const platformPreview = runtimeScenario();
+  platformPreview.actions[0].input = '$SUBJECT_URL';
+  assert.equal(validateRuntimeScenario(platformPreview), platformPreview);
+
+  const unsafeRelativeRoute = runtimeScenario();
+  unsafeRelativeRoute.actions[0].input = 'play/case';
+  assert.throws(() => validateRuntimeScenario(unsafeRelativeRoute), /\$SUBJECT_URL or a same-origin absolute path/);
+
   const reversible = runtimeScenario();
   reversible.sideEffect = 'REVERSIBLE';
   assert.throws(() => validateRuntimeScenario(reversible), /cleanup plan/);

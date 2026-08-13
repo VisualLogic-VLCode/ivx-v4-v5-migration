@@ -78,7 +78,11 @@
         "stepId": { "$ref": "common.schema.json#/$defs/id" },
         "type": { "enum": ["OPEN_PAGE", "CLICK", "FILL", "SELECT_OPTION", "CHECK", "UNCHECK", "PRESS", "WAIT_FOR", "RELOAD", "GO_BACK"] },
         "target": { "$ref": "#/$defs/locator" },
-        "input": { "type": ["string", "number", "boolean", "null"], "maxLength": 4096 },
+        "input": {
+          "description": "For OPEN_PAGE, use $SUBJECT_URL for the current V4/V5 platform preview URL or a same-origin absolute path beginning with /.",
+          "type": ["string", "number", "boolean", "null"],
+          "maxLength": 4096
+        },
         "timeoutMs": { "type": "integer", "minimum": 1, "maximum": 300000 }
       },
       "additionalProperties": false

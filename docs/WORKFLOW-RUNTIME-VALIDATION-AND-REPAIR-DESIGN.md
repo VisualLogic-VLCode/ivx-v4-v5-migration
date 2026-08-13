@@ -293,6 +293,7 @@ Playwright 应成为首版正式 Runtime Driver，而不是以后才考虑的可
 - AI 生成受限的声明式 Runtime Scenario，由 Workflow 校验后映射为 Playwright 操作；不允许每轮生成任意 JavaScript 直接执行。
 - 无人值守至少覆盖页面加载、初始化、表单、跳转、条件显示、列表操作、组件方法和无真实副作用的服务调用。
 - V4/V5 使用隔离浏览器上下文、相同场景和确定性数据；浏览器认证状态保存在用户私有区域，不进入 Agent、Job Trace 或报告。
+- `OPEN_PAGE` 的 `$SUBJECT_URL` 是封闭的运行时占位符，分别解析为当前 V4/V5 revision-pinned 完整预览 URL；普通 `/path` 仍表示该预览 origin 下的固定绝对路径。这样同一场景不会误把两边都导航到平台首页。
 - `READ_ONLY` 可无人值守；`REVERSIBLE` 需要可验证清理和会话授权；`EXTERNAL_SIDE_EFFECT` 默认转为用户可见模式或 mock/测试环境。
 - Agent 探索可以发现问题，但没有稳定断言时不能独立证明运行时等价。
 - 第一阶段让 Playwright 只产出差异报告，不自动写目标；重复性、脱敏和误报率验收后再接入 AI 修复闭环。

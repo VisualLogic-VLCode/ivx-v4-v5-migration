@@ -190,6 +190,8 @@ ivx-migrate review runtime-run-platform \
 
 Workflow 会先对 V4/V5 的配置、设置、域名、路由和绑定做脱敏环境比较。只有 `ENVIRONMENT_EQUIVALENT` 或 `NORMALIZED_EQUIVALENT` 才开始浏览器对照；需用户绑定或环境阻塞时不会把差异归因给 Converter。预览 URL 来自平台当前元数据并与源/目标 `workId` 复核，不需要用户手填。
 
+平台场景的首个 `OPEN_PAGE` 使用 `"input": "$SUBJECT_URL"`，表示分别打开当前 V4 与 V5 的完整、revision-pinned 预览 URL。只有确实要访问同源固定路径时才填写 `/path`；不要用 `/` 代替案例预览地址。
+
 首次浏览器对照可能需要安装与 Workflow 锁定的 Chromium。登录必须由用户在可见浏览器完成，V4/V5 不同预览源使用彼此隔离的私有认证文件；Agent 不读取 Cookie 或 storage state。`READ_ONLY` 场景可无人值守，带副作用场景另行授权。
 
 出现差异后，Agent 只能依据本 Review 的脱敏证据和锁定 Knowledge 卡片提交完整分类。`CONVERTER`、平台运行时、知识缺口、认证和未知根因停止自动修改并生成报告；只有 CLI 判定为高置信 `SOURCE_DATA` / `TARGET_CASE` 且修复目标为 `V5_ARTIFACT` 的问题簇可以进入自动修复。

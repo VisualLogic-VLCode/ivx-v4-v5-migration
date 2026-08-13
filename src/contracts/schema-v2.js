@@ -386,7 +386,10 @@ function validateScenarioStep(step, index, collection) {
   if (!needsTarget && step.target !== undefined) fail(`${path}.target is not allowed for ${step.type}`);
   if (needsInput && step.input === undefined) fail(`${path}.input is required for ${step.type}`);
   if (!needsInput && step.input !== undefined) fail(`${path}.input is not allowed for ${step.type}`);
-  if (step.type === 'OPEN_PAGE' && (typeof step.input !== 'string' || !step.input.startsWith('/'))) fail(`${path}.input must be a same-origin absolute path for OPEN_PAGE`);
+  if (step.type === 'OPEN_PAGE' && (
+    typeof step.input !== 'string'
+    || (step.input !== '$SUBJECT_URL' && !step.input.startsWith('/'))
+  )) fail(`${path}.input must be $SUBJECT_URL or a same-origin absolute path for OPEN_PAGE`);
   if (step.type === 'PRESS' && !['Enter', 'Escape', 'Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(step.input)) {
     fail(`${path}.input is not an allowed key for PRESS`);
   }

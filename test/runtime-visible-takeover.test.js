@@ -5,7 +5,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import { createAppPaths } from '../src/paths.js';
-import { PlaywrightRuntimeDriver } from '../src/runtime/playwright-driver.js';
+import { PlaywrightRuntimeDriver, resolveScenarioUrl } from '../src/runtime/playwright-driver.js';
 import { MACOS_RUNTIME_TAKEOVER_SCRIPT, waitForVisibleRuntimeTakeover } from '../src/runtime/visible-takeover.js';
 
 test('native macOS runtime takeover dialog script compiles without opening the dialog', { skip: process.platform !== 'darwin' }, () => {
@@ -27,6 +27,14 @@ test('visible takeover is explicit and cancellation fails closed', () => {
     runProcess: () => ({ status: 1, stdout: '', stderr: 'execution error: User canceled. (-128)' }),
   }), { code: 'RUNTIME_VISIBLE_TAKEOVER_CANCELLED' });
   assert.throws(() => waitForVisibleRuntimeTakeover({ platform: 'linux', runProcess: () => { throw new Error('must not run'); } }), { code: 'RUNTIME_VISIBLE_TAKEOVER_UNAVAILABLE' });
+});
+
+test('subject URL placeholder opens each revision-pinned platform preview without losing its path', () => {
+  const source = new URL('https://preview.example.test/play/source-link?mode=preview');
+  const target = new URL('https://preview.example.test/play/target-link');
+  assert.equal(resolveScenarioUrl(source, '$SUBJECT_URL'), source.toString());
+  assert.equal(resolveScenarioUrl(target, '$SUBJECT_URL'), target.toString());
+  assert.equal(resolveScenarioUrl(source, '/health'), 'https://preview.example.test/health');
 });
 
 test('browser installer invokes the locked package CLI without relying on an unexported subpath', () => {
