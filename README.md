@@ -79,7 +79,7 @@ Ordinary users should start in Codex or Claude Code, not in a terminal. Give the
 
 The user intervenes only to type their own Token into a visible native macOS hidden-answer dialog owned by the Launcher. The Token is never pasted into Agent chat or command arguments, and the Agent never opens the Token file. Background PTYs and Agent-generated input scripts are forbidden. A healthy existing Token is preserved without asking the user to enter it again.
 
-After initialization, a user can simply ask the Agent `请使用 v4-to-v5-workflow，把 nid <NID> 转成 V5。` That phrase authorizes one ordinary validated Save As. Inspect-only, runtime comparison/repair, Group, resume, and Human Finding examples are in the [AI user guide](docs/AI-USER-GUIDE.md). The managed Skill applies the Workflow's version, permission, diagnosis, repair, and write gates; known-issues copies, side-effect scenarios, repair-budget extensions, and manual-baseline acceptance remain separately authorized.
+After initialization, a user can simply ask the Agent `请使用 v4-to-v5-workflow，把 nid <NID> 转成 V5。` That phrase authorizes one ordinary validated Save As. Personal and Group cases use the same migration flow; an explicit `gid` is only optional platform context and is never guessed. Inspect-only, runtime comparison/repair, resume, and Human Finding examples are in the [AI user guide](docs/AI-USER-GUIDE.md). The managed Skill applies the Workflow's version, permission, diagnosis, repair, and write gates; known-issues copies, side-effect scenarios, repair-budget extensions, and manual-baseline acceptance remain separately authorized.
 
 ## CLI reference
 

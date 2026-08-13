@@ -81,14 +81,14 @@ ivx-migrate doctor
 
 ## 5. 转换但不保存
 
-个人案例只传 `nid`：
+个人案例与 Group 案例使用相同转换流程，通常只传 `nid`：
 
 ```bash
 ivx-migrate platform preflight --nid 11064050
 ivx-migrate migrate --nid 11064050
 ```
 
-明确属于某个 Group 时可同时传 `gid`：
+只有用户明确知道且平台上下文确实需要时，才同时传入可选的 `gid`；Agent 不得猜测：
 
 ```bash
 ivx-migrate platform preflight --nid 12226286 --gid 25391

@@ -30,6 +30,8 @@
 
 如果源案例已经是 V5、版本不明确、当前用户无权限或当前平台条件不满足，工作流会安全停止，而不是强行调用 Converter 或另存。
 
+个人案例与 Group 案例使用完全相同的判版、转换、诊断、验证、另存和运行时测试流程，用户通常只需提供 `nid`。只有用户明确知道且平台上下文确实需要时才同时提供 `gid`；Agent 不得猜测。Group 的实际读取和另存能力以平台权限预检结果为准。
+
 ### 转换后自动进行运行时测试和受限修复
 
 ```text
@@ -39,14 +41,6 @@
 这同时授权一个 WRITE Runtime Review 和初始修复预算。默认优先使用无人值守的 `READ_ONLY` Playwright 场景；需要登录时，Agent 会打开可见浏览器让用户完成登录，并且不会读取 Cookie 或浏览器认证文件。
 
 只有工作流判定为高置信、修复目标为 V5 产物的 `SOURCE_DATA` / `TARGET_CASE` 问题才允许自动修复。`CONVERTER`、`PLATFORM_RUNTIME`、`KNOWLEDGE_GAP`、`AUTHORIZATION` 和 `UNKNOWN` 只报告，不自动修改。只有 `RUNTIME_PARITY_PASSED` 才表示运行时一致。
-
-### Group 案例
-
-```text
-请使用 v4-to-v5-workflow，把 Group 案例 nid <NID> 转成 V5。
-```
-
-如果用户明确知道 `gid`，可以同时提供；未提供时 Agent 不得猜测。当前 Token 必须实际拥有读取和另存权限，Group 身份或用户文字不能绕过服务器权限结果。
 
 ## 3. 需要单独确认的操作
 
