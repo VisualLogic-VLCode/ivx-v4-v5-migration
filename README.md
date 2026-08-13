@@ -4,7 +4,7 @@ This project is the distributable local workflow used by Codex or Claude Code. I
 
 ## Current status
 
-The stable `0.4.2` release uses Agent protocol 5 with Converter `1.2.1` and the signed Knowledge Runtime. It provides:
+The stable `0.4.3` release uses Agent protocol 5 with Converter `1.2.1` and the signed Knowledge Runtime. It provides:
 
 - private global Job storage with atomic state writes and per-Job locks;
 - metadata + physical work version classification;
@@ -87,7 +87,7 @@ The commands below document what the Agent executes and remain available as a ma
 
 ```bash
 npm install --global \
-  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.4.2/ivx-v4-v5-migration-0.4.2.tgz
+  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.4.3/ivx-v4-v5-migration-0.4.3.tgz
 ```
 
 ```bash
@@ -118,7 +118,7 @@ ivx-migrate job classify --job <jobId> --file ./classification.json
 ivx-migrate job apply-patch --job <jobId> --file ./repair.patch.json
 ```
 
-After a completed Job has an existing V5 target, Workflow `0.4.2` can create and recover an independent Runtime Review Session from the Job's runtime pins and a revision-checked platform read-back:
+After a completed Job has an existing V5 target, Workflow `0.4.3` can create and recover an independent Runtime Review Session from the Job's runtime pins and a revision-checked platform read-back:
 
 ```bash
 ivx-migrate review create-platform \
