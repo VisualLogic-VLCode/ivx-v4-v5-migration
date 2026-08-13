@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.ivx.local/migration/v2/diagnosis-report.schema.json",
+  "title": "iVX Diagnosis Maintainer Report v2",
+  "type": "object",
+  "required": ["schemaVersion", "kind", "reportId", "reportType", "diagnosisId", "jobId", "reviewId", "clusterId", "cause", "responsibleParty", "repairTarget", "runtime", "subjects", "confidence", "reproducibility", "issueIds", "evidence", "evidenceRefs", "knowledgeRuleIds", "summary", "recommendedActions", "automaticRepairDecisionId", "diagnosticSaveEligibilityId", "createdAt", "createdBy", "sensitivity"],
+  "properties": {
+    "schemaVersion": { "const": 2 },
+    "kind": { "const": "diagnosis-report" },
+    "reportId": { "$ref": "common.schema.json#/$defs/id" },
+    "reportType": { "enum": ["CONVERTER_DEFECT", "SOURCE_DATA", "TARGET_CASE", "TEST_HARNESS", "ENVIRONMENT", "PLATFORM_RUNTIME", "KNOWLEDGE_GAP", "AUTHORIZATION", "UNKNOWN"] },
+    "diagnosisId": { "$ref": "common.schema.json#/$defs/id" },
+    "jobId": { "$ref": "common.schema.json#/$defs/jobId" },
+    "reviewId": { "$ref": "common.schema.json#/$defs/reviewId" },
+    "clusterId": { "$ref": "common.schema.json#/$defs/id" },
+    "cause": { "enum": ["CONVERTER", "SOURCE_DATA", "TARGET_CASE", "TEST_HARNESS", "ENVIRONMENT_CONFIGURATION", "PLATFORM_RUNTIME", "KNOWLEDGE_GAP", "AUTHORIZATION", "UNKNOWN"] },
+    "responsibleParty": { "enum": ["CONVERTER_MAINTAINER", "WORKFLOW_AI", "USER", "PLATFORM_MAINTAINER", "KNOWLEDGE_MAINTAINER", "UNKNOWN"] },
+    "repairTarget": { "enum": ["NONE", "V5_ARTIFACT", "RUNTIME_SCENARIO", "ENVIRONMENT_BINDING", "KNOWLEDGE_RULE", "AUTHORIZATION_PREREQUISITE"] },
+    "runtime": {
+      "type": "object",
+      "required": ["workflow", "converter", "knowledge"],
+      "properties": {
+        "workflow": { "$ref": "common.schema.json#/$defs/runtimePin" },
+        "converter": { "$ref": "common.schema.json#/$defs/runtimePin" },
+        "knowledge": {
+          "type": "object",
+          "required": ["version", "sha256", "contentSha256", "schemaVersion", "ruleIds"],
+          "properties": {
+            "version": { "type": "string", "minLength": 1, "maxLength": 128 },
+            "sha256": { "$ref": "common.schema.json#/$defs/sha256" },
+            "contentSha256": { "$ref": "common.schema.json#/$defs/sha256" },
+            "schemaVersion": { "type": "integer", "minimum": 1 },
+            "ruleIds": { "$ref": "common.schema.json#/$defs/stringArray" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "subjects": {
+      "type": "object",
+      "required": ["sourceNid", "sourceGid", "sourceWorkId", "targetNid", "targetWorkId"],
+      "properties": {
+        "sourceNid": { "type": "integer", "minimum": 1 },
+        "sourceGid": { "type": ["integer", "null"], "minimum": 1 },
+        "sourceWorkId": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "targetNid": { "type": "integer", "minimum": 1 },
+        "targetWorkId": { "type": "string", "minLength": 1, "maxLength": 256 }
+      },
+      "additionalProperties": false
+    },
+    "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+    "reproducibility": { "enum": ["REPRODUCIBLE", "PARTIAL", "INSUFFICIENT_EVIDENCE"] },
+    "issueIds": { "$ref": "common.schema.json#/$defs/stringArray" },
+    "evidence": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 2000,
+      "items": {
+        "type": "object",
+        "required": ["issueId", "comparisonId", "assertionId", "status", "reasonCode", "evidenceRef"],
+        "properties": {
+          "issueId": { "$ref": "common.schema.json#/$defs/id" },
+          "comparisonId": { "$ref": "common.schema.json#/$defs/id" },
+          "assertionId": { "$ref": "common.schema.json#/$defs/id" },
+          "status": { "enum": ["FAILED", "INCONCLUSIVE"] },
+          "reasonCode": { "$ref": "common.schema.json#/$defs/id" },
+          "evidenceRef": { "type": "string", "minLength": 1, "maxLength": 512 }
+        },
+        "additionalProperties": false
+      }
+    },
+    "evidenceRefs": { "$ref": "common.schema.json#/$defs/stringArray" },
+    "knowledgeRuleIds": { "$ref": "common.schema.json#/$defs/stringArray" },
+    "summary": { "type": "string", "minLength": 1, "maxLength": 8192 },
+    "recommendedActions": { "$ref": "common.schema.json#/$defs/stringArray" },
+    "automaticRepairDecisionId": { "$ref": "common.schema.json#/$defs/id" },
+    "diagnosticSaveEligibilityId": { "$ref": "common.schema.json#/$defs/id" },
+    "createdAt": { "$ref": "common.schema.json#/$defs/dateTime" },
+    "createdBy": { "$ref": "common.schema.json#/$defs/createdBy" },
+    "sensitivity": { "$ref": "common.schema.json#/$defs/sensitivity" }
+  },
+  "additionalProperties": false
+}

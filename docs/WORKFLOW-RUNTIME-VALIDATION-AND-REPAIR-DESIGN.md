@@ -825,6 +825,8 @@ Converter 修复后由维护者发布新 Converter；用户更新后可以对原
 
 **验收门：**Converter 缺陷只报告不修复；UNKNOWN 不自动 Patch；分类可解释和复现。
 
+> 实现记录（2026-08-13）：已实现本阶段的本地持久化边界。运行时失败断言生成稳定候选 ID；Agent 分类必须引用实际比较产物，且只能引用本 Review 已使用的 Knowledge rule。Workflow 按固定置信度和根因矩阵计算自动修复决定，并与经过 checkpoint SHA-256 和六项写入前提校验的诊断另存资格分开持久化。九类根因均生成脱敏 JSON/Markdown 维护报告。本阶段不应用 Patch、不修改 Converter、不执行平台写入。
+
 ### 阶段 7：受限 AI 修复和目标更新
 
 - 实现 Issue Cluster、Repair Attempt/Batch、`3+2` 和 `10+5` 预算。

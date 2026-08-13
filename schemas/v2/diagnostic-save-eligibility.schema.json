@@ -3,13 +3,14 @@
   "$id": "https://schemas.ivx.local/migration/v2/diagnostic-save-eligibility.schema.json",
   "title": "iVX Diagnostic Save Eligibility v2",
   "type": "object",
-  "required": ["schemaVersion", "kind", "eligibilityId", "jobId", "reviewId", "status", "checkpoint", "prerequisites", "blockers", "evaluatedAt", "createdAt", "createdBy", "sensitivity"],
+  "required": ["schemaVersion", "kind", "eligibilityId", "jobId", "reviewId", "clusterId", "status", "checkpoint", "prerequisites", "blockers", "evaluatedAt", "createdAt", "createdBy", "sensitivity"],
   "properties": {
     "schemaVersion": { "const": 2 },
     "kind": { "const": "diagnostic-save-eligibility" },
     "eligibilityId": { "$ref": "common.schema.json#/$defs/id" },
     "jobId": { "$ref": "common.schema.json#/$defs/jobId" },
     "reviewId": { "oneOf": [{ "$ref": "common.schema.json#/$defs/reviewId" }, { "type": "null" }] },
+    "clusterId": { "oneOf": [{ "$ref": "common.schema.json#/$defs/id" }, { "type": "null" }] },
     "status": {
       "enum": ["DIAGNOSTIC_SAVE_ELIGIBLE", "DIAGNOSTIC_SAVE_WAITING_FOR_AUTH", "DIAGNOSTIC_SAVE_WAITING_FOR_PLATFORM", "DIAGNOSTIC_SAVE_RECONCILIATION_REQUIRED", "DIAGNOSTIC_SAVE_UNSAFE_ARTIFACT"]
     },

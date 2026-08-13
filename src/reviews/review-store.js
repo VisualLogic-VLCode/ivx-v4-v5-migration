@@ -3,17 +3,24 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {
   validateBehaviorTrace,
+  validateAutomaticRepairDecision,
+  validateDiagnosisReport,
+  validateDiagnosticSaveEligibility,
   validateEnvironmentComparison,
   validateHumanFinding,
+  validateIssueClassificationV2,
+  validateIssueCluster,
+  validateRepairBudget,
   validateRuntimeComparison,
   validateRuntimeReviewSession,
   validateRuntimeScenario,
 } from '../contracts/schema-v2.js';
 import { invariant, WorkflowError } from '../errors.js';
 import { withFileLock } from '../fs/file-lock.js';
-import { ensurePrivateDir, readJson, writePrivateJson } from '../fs/secure-json.js';
+import { ensurePrivateDir, readJson, sha256File, writePrivateFile, writePrivateJson } from '../fs/secure-json.js';
 import { JobStore } from '../jobs/job-store.js';
 import { createAppPaths } from '../paths.js';
+import { createRuntimeIssueCandidates, evaluateDiagnosis } from '../diagnosis/diagnosis-engine.js';
 import { createRedactedRevisionDiff, revisionValueDigest } from './revision-diff.js';
 import { redactRuntimeText } from '../runtime/trace-redaction.js';
 import { assertReviewTransition, TERMINAL_REVIEW_STATES } from './states.js';
@@ -109,7 +116,7 @@ export class RuntimeReviewStore {
       };
       validateRuntimeReviewSession(review);
       const directory = ensurePrivateDir(this.reviewDir(reviewId));
-      for (const child of ['baselines', 'findings', 'revision-observations', 'observed-targets', 'baseline-acceptances', 'knowledge', 'environment', 'scenarios', 'cycles', 'runtime-authorizations', 'reports']) {
+      for (const child of ['baselines', 'findings', 'revision-observations', 'observed-targets', 'baseline-acceptances', 'knowledge', 'environment', 'scenarios', 'cycles', 'runtime-authorizations', 'reports', 'issues', 'issues/diagnoses', 'issues/clusters', 'issues/budgets', 'issues/decisions', 'issues/eligibility']) {
         ensurePrivateDir(path.join(directory, child));
       }
       this.#writeBaselineSnapshot(reviewId, targetWorkId, targetSnapshot);
@@ -218,6 +225,127 @@ export class RuntimeReviewStore {
     return review.scenarioIds.map((scenarioId) => validateRuntimeScenario(readJson(
       this.#artifactPath(reviewId, relativeArtifactPath('scenarios', `${scenarioId}.json`)),
     )));
+  }
+
+  diagnosisCandidates(reviewId) {
+    this.load(reviewId);
+    const cyclesDir = this.#artifactPath(reviewId, 'cycles');
+    if (!fs.existsSync(cyclesDir)) return [];
+    const entries = [];
+    for (const cycleId of fs.readdirSync(cyclesDir).sort()) {
+      const cycleDir = path.join(cyclesDir, cycleId);
+      const cycleStat = fs.lstatSync(cycleDir, { throwIfNoEntry: false });
+      invariant(cycleStat?.isDirectory() && !cycleStat.isSymbolicLink(), 'DIAGNOSIS_EVIDENCE_INVALID', 'Runtime cycle evidence directory is unsafe');
+      const comparisonsDir = path.join(cyclesDir, cycleId, 'comparisons');
+      if (!fs.existsSync(comparisonsDir)) continue;
+      const comparisonsStat = fs.lstatSync(comparisonsDir);
+      invariant(comparisonsStat.isDirectory() && !comparisonsStat.isSymbolicLink(), 'DIAGNOSIS_EVIDENCE_INVALID', 'Runtime comparison evidence directory is unsafe');
+      for (const file of fs.readdirSync(comparisonsDir).filter((name) => name.endsWith('.json')).sort()) {
+        const fileStat = fs.lstatSync(path.join(comparisonsDir, file));
+        invariant(fileStat.isFile() && !fileStat.isSymbolicLink(), 'DIAGNOSIS_EVIDENCE_INVALID', 'Runtime comparison evidence file is unsafe');
+        const comparison = validateRuntimeComparison(readJson(path.join(comparisonsDir, file)));
+        entries.push({ comparison, artifact: relativeArtifactPath('cycles', cycleId, 'comparisons', file) });
+      }
+    }
+    return createRuntimeIssueCandidates(entries);
+  }
+
+  submitDiagnosis(reviewId, { classification, eligibilityContext } = {}) {
+    return this.#mutate(reviewId, (review) => {
+      invariant(['MISMATCH_DETECTED', 'DIAGNOSING', 'AWAITING_HUMAN_EVIDENCE', 'BLOCKED_PLATFORM_RUNTIME'].includes(review.status), 'REVIEW_STATE_MISMATCH', 'Review is not ready for Diagnosis v2', { status: review.status });
+      validateIssueClassificationV2(classification);
+      invariant(classification.createdBy === 'AGENT' && classification.sensitivity === 'REDACTED', 'DIAGNOSIS_PROVENANCE_INVALID', 'Root Cause Classification must be a redacted AGENT artifact');
+      for (const issue of classification.issues) {
+        for (const evidenceRef of issue.evidenceRefs) this.#assertDiagnosisEvidenceRef(reviewId, evidenceRef);
+        invariant(issue.knowledgeRuleIds.every((ruleId) => review.runtime.knowledge.ruleIds.includes(ruleId)), 'DIAGNOSIS_KNOWLEDGE_RULE_NOT_USED', 'Classification may cite only Knowledge rules retrieved by this review', { issueId: issue.issueId });
+      }
+      const candidates = this.diagnosisCandidates(reviewId);
+      invariant(candidates.length > 0, 'DIAGNOSIS_CANDIDATES_REQUIRED', 'Diagnosis requires at least one failed or inconclusive runtime assertion');
+      if (eligibilityContext?.checkpoint) this.#assertDiagnosticCheckpoint(review, eligibilityContext.checkpoint);
+      const existingBudgets = new Map();
+      for (const budgetId of review.repairBudgetIds) {
+        const budget = validateRepairBudget(readJson(this.#artifactPath(reviewId, relativeArtifactPath('issues', 'budgets', `${budgetId}.json`))));
+        if (budget.scope === 'ISSUE_CLUSTER') existingBudgets.set(budget.clusterId, budget);
+      }
+      const job = this.jobs.load(review.jobId);
+      const diagnosis = evaluateDiagnosis({
+        review,
+        job,
+        classification,
+        candidates,
+        eligibilityContext,
+        existingBudgets,
+        now: this.now,
+        randomBytes: this.randomBytes,
+      });
+      const diagnosisDir = ensurePrivateDir(this.#artifactPath(reviewId, relativeArtifactPath('issues', 'diagnoses', diagnosis.diagnosisId)));
+      writePrivateJson(path.join(diagnosisDir, 'classification.json'), diagnosis.classification);
+      const summary = {
+        schemaVersion: 1,
+        kind: 'diagnosis-summary',
+        diagnosisId: diagnosis.diagnosisId,
+        reviewId,
+        classificationSha256: diagnosis.classificationSha256,
+        clusterIds: diagnosis.results.map((entry) => entry.cluster.clusterId),
+        reportIds: diagnosis.results.map((entry) => entry.report.reportId),
+        createdAt: diagnosis.createdAt,
+        sensitivity: 'REDACTED',
+      };
+      for (const result of diagnosis.results) {
+        validateIssueCluster(result.cluster);
+        validateRepairBudget(result.budget);
+        validateAutomaticRepairDecision(result.decision);
+        validateDiagnosticSaveEligibility(result.eligibility);
+        validateDiagnosisReport(result.report);
+        writePrivateJson(path.join(diagnosisDir, `${result.cluster.clusterId}.json`), {
+          cluster: result.cluster,
+          budget: result.budget,
+          decision: result.decision,
+          eligibility: result.eligibility,
+          report: result.report,
+        });
+        writePrivateJson(this.#artifactPath(reviewId, relativeArtifactPath('issues', 'clusters', `${result.cluster.clusterId}.${diagnosis.diagnosisId}.json`)), result.cluster);
+        const budgetPath = this.#artifactPath(reviewId, relativeArtifactPath('issues', 'budgets', `${result.budget.budgetId}.json`));
+        if (!fs.existsSync(budgetPath)) writePrivateJson(budgetPath, result.budget);
+        writePrivateJson(this.#artifactPath(reviewId, relativeArtifactPath('issues', 'decisions', `${result.decision.decisionId}.json`)), result.decision);
+        writePrivateJson(this.#artifactPath(reviewId, relativeArtifactPath('issues', 'eligibility', `${result.eligibility.eligibilityId}.json`)), result.eligibility);
+        const reportBase = `${result.report.reportType.toLowerCase()}-${result.report.reportId}`;
+        writePrivateJson(this.#artifactPath(reviewId, relativeArtifactPath('reports', `${reportBase}.json`)), result.report);
+        writePrivateFile(this.#artifactPath(reviewId, relativeArtifactPath('reports', `${reportBase}.md`)), result.markdown);
+        if (!review.issueClusterIds.includes(result.cluster.clusterId)) review.issueClusterIds.push(result.cluster.clusterId);
+        if (!review.repairBudgetIds.includes(result.budget.budgetId)) review.repairBudgetIds.push(result.budget.budgetId);
+      }
+      writePrivateJson(path.join(diagnosisDir, 'summary.json'), summary);
+      review.issueClusterIds.sort();
+      review.repairBudgetIds.sort();
+      if (review.status === 'MISMATCH_DETECTED' || review.status === 'AWAITING_HUMAN_EVIDENCE' || review.status === 'BLOCKED_PLATFORM_RUNTIME') {
+        assertReviewTransition(review.status, 'DIAGNOSING');
+        this.#setStatus(review, 'DIAGNOSING', `diagnosis-submitted:${diagnosis.diagnosisId}`);
+      } else {
+        review.updatedAt = diagnosis.createdAt;
+        review.history.push({ status: review.status, at: diagnosis.createdAt, reason: `diagnosis-submitted:${diagnosis.diagnosisId}` });
+      }
+      return { review, summary, results: diagnosis.results.map(({ markdown, ...entry }) => entry) };
+    });
+  }
+
+  listDiagnoses(reviewId) {
+    this.load(reviewId);
+    const root = this.#artifactPath(reviewId, relativeArtifactPath('issues', 'diagnoses'));
+    if (!fs.existsSync(root)) return [];
+    return fs.readdirSync(root).sort().map((diagnosisId) => readJson(path.join(root, diagnosisId, 'summary.json')));
+  }
+
+  currentDiagnosticCheckpoint(reviewId) {
+    const review = this.load(reviewId);
+    const target = this.#baselineSnapshotPath(reviewId, review.baseline.targetWorkId);
+    return {
+      kind: 'CONFIRMED_TARGET_REVISION',
+      artifact: path.relative(this.reviewDir(reviewId), target).split(path.sep).join('/'),
+      sha256: sha256File(target),
+      targetNid: review.target.nid,
+      targetWorkId: review.baseline.targetWorkId,
+    };
   }
 
   runtimeCycleDir(reviewId, cycleId) {
@@ -524,6 +652,7 @@ export class RuntimeReviewStore {
       humanFindings: this.listHumanFindings(reviewId),
       latestObservation,
       activeCycle,
+      diagnoses: this.listDiagnoses(reviewId),
       resumable: !TERMINAL_REVIEW_STATES.has(review.status),
     };
   }
@@ -591,6 +720,36 @@ export class RuntimeReviewStore {
     const target = path.resolve(root, relativePath);
     invariant(target.startsWith(`${root}${path.sep}`), 'INVALID_ARTIFACT_PATH', 'Artifact path escapes review directory');
     return target;
+  }
+
+  #assertDiagnosisEvidenceRef(reviewId, evidenceRef) {
+    invariant(typeof evidenceRef === 'string' && evidenceRef.startsWith('artifact:'), 'DIAGNOSIS_EVIDENCE_INVALID', 'Diagnosis evidence must be an artifact:<relative-path> reference');
+    const relativePath = evidenceRef.slice('artifact:'.length);
+    invariant(relativePath && !path.isAbsolute(relativePath) && !relativePath.split('/').includes('..'), 'DIAGNOSIS_EVIDENCE_INVALID', 'Diagnosis evidence path is unsafe');
+    const allowedRoots = new Set(['cycles', 'environment', 'findings', 'knowledge', 'revision-observations', 'reports']);
+    invariant(allowedRoots.has(relativePath.split('/')[0]), 'DIAGNOSIS_EVIDENCE_INVALID', 'Diagnosis evidence root is not allowed');
+    this.#assertPrivateRegularArtifact(reviewId, relativePath, 'DIAGNOSIS_EVIDENCE_MISSING', 'Diagnosis evidence must reference an existing regular review artifact', { evidenceRef });
+  }
+
+  #assertDiagnosticCheckpoint(review, checkpoint) {
+    invariant(typeof checkpoint.artifact === 'string' && !path.isAbsolute(checkpoint.artifact) && !checkpoint.artifact.split('/').includes('..'), 'DIAGNOSTIC_CHECKPOINT_INVALID', 'Diagnostic checkpoint path is unsafe');
+    invariant(['baselines', 'observed-targets'].includes(checkpoint.artifact.split('/')[0]), 'DIAGNOSTIC_CHECKPOINT_INVALID', 'Runtime Review diagnostic checkpoints must be confirmed target snapshots');
+    const target = this.#assertPrivateRegularArtifact(review.reviewId, checkpoint.artifact, 'DIAGNOSTIC_CHECKPOINT_INVALID', 'Diagnostic checkpoint file is missing or unsafe');
+    invariant(sha256File(target) === checkpoint.sha256, 'DIAGNOSTIC_CHECKPOINT_INVALID', 'Diagnostic checkpoint file does not match its SHA-256');
+    invariant(checkpoint.kind === 'CONFIRMED_TARGET_REVISION' && checkpoint.targetNid === review.target.nid && checkpoint.targetWorkId === review.baseline.targetWorkId, 'DIAGNOSTIC_CHECKPOINT_INVALID', 'Diagnostic checkpoint does not match the confirmed target revision');
+  }
+
+  #assertPrivateRegularArtifact(reviewId, relativePath, code, message, details = undefined) {
+    const root = this.reviewDir(reviewId);
+    let current = root;
+    for (const segment of relativePath.split('/')) {
+      current = path.join(current, segment);
+      const stat = fs.lstatSync(current, { throwIfNoEntry: false });
+      invariant(stat && !stat.isSymbolicLink(), code, message, details);
+    }
+    const stat = fs.lstatSync(current);
+    invariant(stat.isFile() && !stat.isSymbolicLink(), code, message, details);
+    return current;
   }
 
   #baselineSnapshotPath(reviewId, workId) {

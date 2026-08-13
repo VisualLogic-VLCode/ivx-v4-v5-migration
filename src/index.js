@@ -33,17 +33,26 @@ export {
   SCHEMA_V2_VALIDATORS,
   validateAutomaticRepairDecision,
   validateBehaviorTrace,
+  validateDiagnosisReport,
   validateRuntimeComparison,
   validateDiagnosticSaveEligibility,
   validateEnvironmentComparison,
   validateEnvironmentManifest,
   validateHumanFinding,
+  validateIssueCluster,
   validateIssueClassificationV2,
   validateRepairBudget,
   validateRuntimeReviewSession,
   validateRuntimeScenario,
   validateSchemaV2Artifact,
 } from './contracts/schema-v2.js';
+export {
+  AUTO_REPAIR_CONFIDENCE_THRESHOLD,
+  createRuntimeIssueCandidates,
+  evaluateDiagnosis,
+  renderDiagnosisReportMarkdown,
+  runtimeIssueId,
+} from './diagnosis/diagnosis-engine.js';
 export {
   ENVIRONMENT_FIELD_POLICY_REGISTRY,
   environmentWorkInfoExtraKeys,

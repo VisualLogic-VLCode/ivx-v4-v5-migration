@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.ivx.local/migration/v2/issue-cluster.schema.json",
+  "title": "iVX Issue Cluster v2",
+  "type": "object",
+  "required": ["schemaVersion", "kind", "clusterId", "diagnosisId", "jobId", "reviewId", "issueIds", "cause", "responsibleParty", "repairTarget", "confidence", "evidenceRefs", "knowledgeRuleIds", "classificationSha256", "createdAt", "createdBy", "sensitivity"],
+  "properties": {
+    "schemaVersion": { "const": 2 },
+    "kind": { "const": "issue-cluster" },
+    "clusterId": { "$ref": "common.schema.json#/$defs/id" },
+    "diagnosisId": { "$ref": "common.schema.json#/$defs/id" },
+    "jobId": { "$ref": "common.schema.json#/$defs/jobId" },
+    "reviewId": { "$ref": "common.schema.json#/$defs/reviewId" },
+    "issueIds": { "$ref": "common.schema.json#/$defs/stringArray" },
+    "cause": { "enum": ["CONVERTER", "SOURCE_DATA", "TARGET_CASE", "TEST_HARNESS", "ENVIRONMENT_CONFIGURATION", "PLATFORM_RUNTIME", "KNOWLEDGE_GAP", "AUTHORIZATION", "UNKNOWN"] },
+    "responsibleParty": { "enum": ["CONVERTER_MAINTAINER", "WORKFLOW_AI", "USER", "PLATFORM_MAINTAINER", "KNOWLEDGE_MAINTAINER", "UNKNOWN"] },
+    "repairTarget": { "enum": ["NONE", "V5_ARTIFACT", "RUNTIME_SCENARIO", "ENVIRONMENT_BINDING", "KNOWLEDGE_RULE", "AUTHORIZATION_PREREQUISITE"] },
+    "confidence": {
+      "type": "object",
+      "required": ["minimum", "average"],
+      "properties": {
+        "minimum": { "type": "number", "minimum": 0, "maximum": 1 },
+        "average": { "type": "number", "minimum": 0, "maximum": 1 }
+      },
+      "additionalProperties": false
+    },
+    "evidenceRefs": { "$ref": "common.schema.json#/$defs/stringArray" },
+    "knowledgeRuleIds": { "$ref": "common.schema.json#/$defs/stringArray" },
+    "classificationSha256": { "$ref": "common.schema.json#/$defs/sha256" },
+    "createdAt": { "$ref": "common.schema.json#/$defs/dateTime" },
+    "createdBy": { "$ref": "common.schema.json#/$defs/createdBy" },
+    "sensitivity": { "$ref": "common.schema.json#/$defs/sensitivity" }
+  },
+  "additionalProperties": false
+}

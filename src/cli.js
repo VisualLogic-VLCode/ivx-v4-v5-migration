@@ -608,6 +608,25 @@ async function handleReview(positionals, options, context) {
     invariant(options.review, 'CLI_ARGUMENT_REQUIRED', '--review is required');
     return { scenarios: context.reviews.listRuntimeScenarios(options.review) };
   }
+  if (action === 'diagnosis-candidates') {
+    invariant(options.review, 'CLI_ARGUMENT_REQUIRED', '--review is required');
+    return { candidates: context.reviews.diagnosisCandidates(options.review) };
+  }
+  if (action === 'diagnostic-checkpoint') {
+    invariant(options.review, 'CLI_ARGUMENT_REQUIRED', '--review is required');
+    return context.reviews.currentDiagnosticCheckpoint(options.review);
+  }
+  if (action === 'diagnose') {
+    invariant(options.review, 'CLI_ARGUMENT_REQUIRED', '--review is required');
+    return context.reviews.submitDiagnosis(options.review, {
+      classification: readRequiredJson(options.file, 'classification'),
+      eligibilityContext: options['eligibility-file'] ? readRequiredJson(options['eligibility-file'], 'diagnostic-save eligibility context') : undefined,
+    });
+  }
+  if (action === 'diagnosis-list') {
+    invariant(options.review, 'CLI_ARGUMENT_REQUIRED', '--review is required');
+    return { diagnoses: context.reviews.listDiagnoses(options.review) };
+  }
   if (action === 'runtime-run') {
     invariant(options.review, 'CLI_ARGUMENT_REQUIRED', '--review is required');
     invariant(options.scenario, 'CLI_ARGUMENT_REQUIRED', '--scenario is required');
@@ -1015,6 +1034,10 @@ export async function runCli(argv, dependencies = {}) {
         'ivx-migrate review accept-baseline --review <reviewId> --observation <observationId> --finding <findingId>',
         'ivx-migrate review scenario-add --review <reviewId> --file <runtime-scenario.json>',
         'ivx-migrate review scenario-list --review <reviewId>',
+        'ivx-migrate review diagnosis-candidates --review <reviewId>',
+        'ivx-migrate review diagnostic-checkpoint --review <reviewId>',
+        'ivx-migrate review diagnose --review <reviewId> --file <classification-v2.json> [--eligibility-file <save-prerequisites.json>]',
+        'ivx-migrate review diagnosis-list --review <reviewId>',
         'ivx-migrate review runtime-run --review <reviewId> --scenario <id[,id]> --source-url <url> --target-url <url> --environment-file <comparison.json> [--authorization-file <authorization.json>]',
         'ivx-migrate review runtime-resume --review <reviewId> --source-url <url> --target-url <url>',
         'ivx-migrate runtime status',

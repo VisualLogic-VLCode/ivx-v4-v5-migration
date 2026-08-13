@@ -317,6 +317,35 @@ export function validateIssueClassificationV2(document, validationReport) {
   return document;
 }
 
+export function validateIssueCluster(document) {
+  schemaHeader(document, 'issue-cluster');
+  exactKeys(document,
+    ['schemaVersion', 'kind', 'clusterId', 'diagnosisId', 'jobId', 'reviewId', 'issueIds', 'cause', 'responsibleParty', 'repairTarget', 'confidence', 'evidenceRefs', 'knowledgeRuleIds', 'classificationSha256', 'createdAt', 'createdBy', 'sensitivity'],
+    ['schemaVersion', 'kind', 'clusterId', 'diagnosisId', 'jobId', 'reviewId', 'issueIds', 'cause', 'responsibleParty', 'repairTarget', 'confidence', 'evidenceRefs', 'knowledgeRuleIds', 'classificationSha256', 'createdAt', 'createdBy', 'sensitivity'],
+    '$');
+  id(document.clusterId, '$.clusterId');
+  id(document.diagnosisId, '$.diagnosisId');
+  jobId(document.jobId);
+  reviewId(document.reviewId);
+  uniqueStrings(document.issueIds, '$.issueIds', { max: 2000 });
+  if (document.issueIds.length === 0) fail('$.issueIds must contain at least one issue');
+  enumValue(document.cause, ISSUE_CAUSES, '$.cause');
+  enumValue(document.responsibleParty, RESPONSIBLE_PARTIES, '$.responsibleParty');
+  enumValue(document.repairTarget, REPAIR_TARGETS, '$.repairTarget');
+  exactKeys(document.confidence, ['minimum', 'average'], ['minimum', 'average'], '$.confidence');
+  number(document.confidence.minimum, '$.confidence.minimum');
+  number(document.confidence.average, '$.confidence.average');
+  if (document.confidence.average < document.confidence.minimum) fail('$.confidence.average cannot be less than minimum');
+  validateEvidenceRefs(document, '$');
+  sha256(document.classificationSha256, '$.classificationSha256');
+  validateArtifactMetadata(document);
+  const [expectedParty, expectedTarget] = CAUSE_DEFAULTS[document.cause];
+  if (document.responsibleParty !== expectedParty || document.repairTarget !== expectedTarget) {
+    fail('Issue Cluster responsibility and repair target must match its cause');
+  }
+  return document;
+}
+
 function validateScenarioLocator(target, path) {
   exactKeys(target, ['strategy', 'value'], ['strategy', 'value', 'role', 'exact'], path);
   enumValue(target.strategy, RUNTIME_LOCATOR_STRATEGIES, `${path}.strategy`);
@@ -799,12 +828,13 @@ function validateCheckpoint(checkpoint) {
 export function validateDiagnosticSaveEligibility(document) {
   schemaHeader(document, 'diagnostic-save-eligibility');
   exactKeys(document,
-    ['schemaVersion', 'kind', 'eligibilityId', 'jobId', 'reviewId', 'status', 'checkpoint', 'prerequisites', 'blockers', 'evaluatedAt', 'createdAt', 'createdBy', 'sensitivity'],
-    ['schemaVersion', 'kind', 'eligibilityId', 'jobId', 'reviewId', 'status', 'checkpoint', 'prerequisites', 'blockers', 'evaluatedAt', 'createdAt', 'createdBy', 'sensitivity'],
+    ['schemaVersion', 'kind', 'eligibilityId', 'jobId', 'reviewId', 'clusterId', 'status', 'checkpoint', 'prerequisites', 'blockers', 'evaluatedAt', 'createdAt', 'createdBy', 'sensitivity'],
+    ['schemaVersion', 'kind', 'eligibilityId', 'jobId', 'reviewId', 'clusterId', 'status', 'checkpoint', 'prerequisites', 'blockers', 'evaluatedAt', 'createdAt', 'createdBy', 'sensitivity'],
     '$');
   id(document.eligibilityId, '$.eligibilityId');
   jobId(document.jobId);
   if (document.reviewId !== null) reviewId(document.reviewId);
+  if (document.clusterId !== null) id(document.clusterId, '$.clusterId');
   enumValue(document.status, DIAGNOSTIC_SAVE_STATUSES, '$.status');
   if (document.checkpoint !== null) validateCheckpoint(document.checkpoint);
   const prerequisiteKeys = ['authentication', 'serverPermission', 'userAuthorization', 'platformWritePath', 'revisionSafety', 'writeOutcomeKnown'];
@@ -842,6 +872,67 @@ function validateKnowledgeRuntimePin(pin, path) {
   sha256(pin.contentSha256, `${path}.contentSha256`);
   integer(pin.schemaVersion, `${path}.schemaVersion`, { min: 1, max: 1000 });
   uniqueStrings(pin.ruleIds, `${path}.ruleIds`, { max: 2000 });
+}
+
+const REPORT_TYPE_BY_CAUSE = Object.freeze({
+  CONVERTER: 'CONVERTER_DEFECT',
+  SOURCE_DATA: 'SOURCE_DATA',
+  TARGET_CASE: 'TARGET_CASE',
+  TEST_HARNESS: 'TEST_HARNESS',
+  ENVIRONMENT_CONFIGURATION: 'ENVIRONMENT',
+  PLATFORM_RUNTIME: 'PLATFORM_RUNTIME',
+  KNOWLEDGE_GAP: 'KNOWLEDGE_GAP',
+  AUTHORIZATION: 'AUTHORIZATION',
+  UNKNOWN: 'UNKNOWN',
+});
+
+export function validateDiagnosisReport(document) {
+  schemaHeader(document, 'diagnosis-report');
+  exactKeys(document,
+    ['schemaVersion', 'kind', 'reportId', 'reportType', 'diagnosisId', 'jobId', 'reviewId', 'clusterId', 'cause', 'responsibleParty', 'repairTarget', 'runtime', 'subjects', 'confidence', 'reproducibility', 'issueIds', 'evidence', 'evidenceRefs', 'knowledgeRuleIds', 'summary', 'recommendedActions', 'automaticRepairDecisionId', 'diagnosticSaveEligibilityId', 'createdAt', 'createdBy', 'sensitivity'],
+    ['schemaVersion', 'kind', 'reportId', 'reportType', 'diagnosisId', 'jobId', 'reviewId', 'clusterId', 'cause', 'responsibleParty', 'repairTarget', 'runtime', 'subjects', 'confidence', 'reproducibility', 'issueIds', 'evidence', 'evidenceRefs', 'knowledgeRuleIds', 'summary', 'recommendedActions', 'automaticRepairDecisionId', 'diagnosticSaveEligibilityId', 'createdAt', 'createdBy', 'sensitivity'],
+    '$');
+  id(document.reportId, '$.reportId');
+  id(document.diagnosisId, '$.diagnosisId');
+  jobId(document.jobId);
+  reviewId(document.reviewId);
+  id(document.clusterId, '$.clusterId');
+  enumValue(document.cause, ISSUE_CAUSES, '$.cause');
+  if (document.reportType !== REPORT_TYPE_BY_CAUSE[document.cause]) fail('reportType is inconsistent with cause');
+  enumValue(document.responsibleParty, RESPONSIBLE_PARTIES, '$.responsibleParty');
+  enumValue(document.repairTarget, REPAIR_TARGETS, '$.repairTarget');
+  exactKeys(document.runtime, ['workflow', 'converter', 'knowledge'], ['workflow', 'converter', 'knowledge'], '$.runtime');
+  validateRuntimePin(document.runtime.workflow, '$.runtime.workflow');
+  validateRuntimePin(document.runtime.converter, '$.runtime.converter');
+  validateKnowledgeRuntimePin(document.runtime.knowledge, '$.runtime.knowledge');
+  exactKeys(document.subjects, ['sourceNid', 'sourceGid', 'sourceWorkId', 'targetNid', 'targetWorkId'], ['sourceNid', 'sourceGid', 'sourceWorkId', 'targetNid', 'targetWorkId'], '$.subjects');
+  integer(document.subjects.sourceNid, '$.subjects.sourceNid', { min: 1 });
+  if (document.subjects.sourceGid !== null) integer(document.subjects.sourceGid, '$.subjects.sourceGid', { min: 1 });
+  string(document.subjects.sourceWorkId, '$.subjects.sourceWorkId', { max: 256 });
+  integer(document.subjects.targetNid, '$.subjects.targetNid', { min: 1 });
+  string(document.subjects.targetWorkId, '$.subjects.targetWorkId', { max: 256 });
+  number(document.confidence, '$.confidence');
+  enumValue(document.reproducibility, ['REPRODUCIBLE', 'PARTIAL', 'INSUFFICIENT_EVIDENCE'], '$.reproducibility');
+  uniqueStrings(document.issueIds, '$.issueIds', { max: 2000 });
+  if (document.issueIds.length === 0) fail('$.issueIds must contain at least one issue');
+  array(document.evidence, '$.evidence', { max: 2000 }).forEach((entry, index) => {
+    const path = `$.evidence[${index}]`;
+    exactKeys(entry, ['issueId', 'comparisonId', 'assertionId', 'status', 'reasonCode', 'evidenceRef'], ['issueId', 'comparisonId', 'assertionId', 'status', 'reasonCode', 'evidenceRef'], path);
+    id(entry.issueId, `${path}.issueId`);
+    id(entry.comparisonId, `${path}.comparisonId`);
+    id(entry.assertionId, `${path}.assertionId`);
+    enumValue(entry.status, ['FAILED', 'INCONCLUSIVE'], `${path}.status`);
+    id(entry.reasonCode, `${path}.reasonCode`);
+    string(entry.evidenceRef, `${path}.evidenceRef`, { max: 512 });
+  });
+  if (document.evidence.length === 0 || document.evidence.some((entry) => !document.issueIds.includes(entry.issueId))) fail('$.evidence must describe this report issue set');
+  validateEvidenceRefs(document, '$');
+  string(document.summary, '$.summary', { max: 8192 });
+  uniqueStrings(document.recommendedActions, '$.recommendedActions', { max: 100 });
+  id(document.automaticRepairDecisionId, '$.automaticRepairDecisionId');
+  id(document.diagnosticSaveEligibilityId, '$.diagnosticSaveEligibilityId');
+  validateArtifactMetadata(document);
+  return document;
 }
 
 export function validateRuntimeReviewSession(document) {
@@ -886,6 +977,8 @@ export function validateRuntimeReviewSession(document) {
 
 export const SCHEMA_V2_VALIDATORS = Object.freeze({
   'issue-classification': validateIssueClassificationV2,
+  'issue-cluster': validateIssueCluster,
+  'diagnosis-report': validateDiagnosisReport,
   'runtime-scenario': validateRuntimeScenario,
   'behavior-trace': validateBehaviorTrace,
   'runtime-comparison': validateRuntimeComparison,

@@ -21,6 +21,7 @@ Public stable Workflow is `0.3.8`, with Agent protocol 4 and Converter `1.2.1`. 
 - a separately authorized diagnostic Save As path that creates an editor-openable V5 copy for classified Converter, source, or unknown issues without reporting normal success;
 - independent private Runtime Review Session persistence, one-writer-per-target-revision leases, Human Finding evidence, and external-revision baseline reconciliation;
 - a locked Playwright Runtime Driver with closed declarative scenarios, isolated V4/V5 contexts, private browser authentication state, redacted traces, reviewed normalization, side-effect gates, and report-only parity comparison;
+- Diagnosis v2 with evidence-backed Issue Clusters, policy-computed automatic-repair decisions, independent diagnostic-save eligibility, calibration fixtures, and redacted owner-specific maintainer reports;
 - a complete local-file dry run and a mock-platform integration-tested online flow.
 
 Platform writes remain disabled by default. A verified save requires private config `platform.writeMode: "explicit"` and `--confirm-live-write SAVE_V5`. A Job with classified `CONVERTER`, `SOURCE`, or `UNKNOWN` issues may use the separate command and confirmation `SAVE_V5_WITH_KNOWN_ISSUES`; it finishes as `DIAGNOSTIC_COPY_CREATED`, never `SUCCEEDED`. `PLATFORM` and `AUTHORIZATION` issues remain ineligible. Non-owner group participants remain blocked as `UNKNOWN_SERVER_POLICY` until their deployment-specific server permission is verified.
@@ -165,7 +166,21 @@ ivx-migrate review runtime-resume \
   --target-url <v5-preview-url>
 ```
 
-Runtime Scenario actions use only the published action/semantic-locator vocabulary; arbitrary JavaScript, CSS/XPath, credential entry, and native Playwright traces are rejected. `READ_ONLY` blocks non-idempotent requests. `REVERSIBLE` requires cleanup and a single-use USER authorization; `EXTERNAL_SIDE_EFFECT` additionally requires a visible takeover. Browser storage state is a private `0600` file and is never returned. A Runtime Cycle sets `targetRepairAttempted:false` and `platformWriteAttempted:false`; mismatch reports do not modify or save the target. Automatic target read-back, diagnosis, and update orchestration are later phases.
+Runtime Scenario actions use only the published action/semantic-locator vocabulary; arbitrary JavaScript, CSS/XPath, credential entry, and native Playwright traces are rejected. `READ_ONLY` blocks non-idempotent requests. `REVERSIBLE` requires cleanup and a single-use USER authorization; `EXTERNAL_SIDE_EFFECT` additionally requires a visible takeover. Browser storage state is a private `0600` file and is never returned. A Runtime Cycle sets `targetRepairAttempted:false` and `platformWriteAttempted:false`; mismatch reports do not modify or save the target. Automatic target Patch/update orchestration remains a later phase.
+
+When a Runtime Cycle reports a mismatch, Diagnosis v2 exposes stable candidates and accepts only a complete Schema-v2 Root Cause Classification. Every issue must cite its actual local comparison artifact; Knowledge rule IDs must have been retrieved by this review. The Workflow independently computes repair and diagnostic-save decisions and produces a redacted JSON/Markdown owner report:
+
+```bash
+ivx-migrate review diagnosis-candidates --review <reviewId>
+ivx-migrate review diagnostic-checkpoint --review <reviewId>
+ivx-migrate review diagnose \
+  --review <reviewId> \
+  --file ./classification-v2.json \
+  --eligibility-file ./diagnostic-save-prerequisites.json
+ivx-migrate review diagnosis-list --review <reviewId>
+```
+
+Only high-confidence `SOURCE_DATA` and `TARGET_CASE` clusters with one V5 artifact target can receive `AUTO_REPAIR_ALLOWED`; this phase still does not apply a Patch. Converter, platform, Knowledge, authorization, and unknown causes stop target repair and produce the corresponding maintainer report. Diagnostic Save Eligibility is evaluated separately from cause and cannot bypass authentication, server permission, explicit user authorization, platform availability, revision safety, reconciliation, or checkpoint integrity.
 
 Load the current work with the caller's token, classify it, convert only supported V4, and stop at the save gate:
 

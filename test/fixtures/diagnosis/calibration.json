@@ -1,0 +1,12 @@
+[
+  { "name": "converter defect", "cause": "CONVERTER", "confidence": 0.98, "autoRepairAllowed": false, "decision": "AUTO_REPAIR_STOPPED" },
+  { "name": "high-confidence source mapping", "cause": "SOURCE_DATA", "confidence": 0.91, "autoRepairAllowed": true, "decision": "AUTO_REPAIR_ALLOWED" },
+  { "name": "high-confidence target defect", "cause": "TARGET_CASE", "confidence": 0.93, "autoRepairAllowed": true, "decision": "AUTO_REPAIR_ALLOWED" },
+  { "name": "low-confidence target hypothesis", "cause": "TARGET_CASE", "confidence": 0.7, "autoRepairAllowed": false, "decision": "AUTO_REPAIR_PAUSED" },
+  { "name": "test harness fault", "cause": "TEST_HARNESS", "confidence": 0.97, "autoRepairAllowed": false, "decision": "AUTO_REPAIR_PAUSED" },
+  { "name": "environment mismatch", "cause": "ENVIRONMENT_CONFIGURATION", "confidence": 0.96, "autoRepairAllowed": false, "decision": "AUTO_REPAIR_PAUSED" },
+  { "name": "platform runtime fault", "cause": "PLATFORM_RUNTIME", "confidence": 0.9, "autoRepairAllowed": false, "decision": "AUTO_REPAIR_STOPPED" },
+  { "name": "knowledge gap", "cause": "KNOWLEDGE_GAP", "confidence": 0.8, "autoRepairAllowed": false, "decision": "AUTO_REPAIR_STOPPED" },
+  { "name": "authorization prerequisite", "cause": "AUTHORIZATION", "confidence": 1, "autoRepairAllowed": false, "decision": "AUTO_REPAIR_STOPPED" },
+  { "name": "unknown cause", "cause": "UNKNOWN", "confidence": 0.3, "autoRepairAllowed": false, "decision": "AUTO_REPAIR_STOPPED" }
+]

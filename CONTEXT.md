@@ -68,6 +68,14 @@ _Avoid_: Converter defect
 A set of Issues that share one root cause and one Repair Target, and therefore one repair-attempt budget.
 _Avoid_: Whole case, test cycle
 
+**Root Cause Classification**:
+The evidence-backed cause, responsible party, and Repair Target assigned to every Issue in one Issue Cluster.
+_Avoid_: Runtime Mismatch, Automatic Repair Decision
+
+**Diagnosis Maintainer Report**:
+A minimal redacted handoff for the owner of one classified Issue Cluster, containing pinned runtime identities and reproducible evidence references rather than complete case data.
+_Avoid_: Raw trace export, repair Patch
+
 **Repair Attempt**:
 A policy-valid repair candidate applied to a working copy for one Issue Cluster.
 _Avoid_: Test run, platform write
