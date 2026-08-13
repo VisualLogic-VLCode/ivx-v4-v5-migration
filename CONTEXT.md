@@ -60,6 +60,18 @@ _Avoid_: Environment Manifest, runtime verdict
 A user-originated, auditable statement that one target-side binding is semantically acceptable for a source environment field, without disclosing either binding value.
 _Avoid_: Boolean override, secret copy
 
+**Environment Execution Assurance**:
+The declared basis for interpreting a Runtime Cycle: strict equivalence, user-declared semantic equivalence, or accepted unresolved risk.
+_Avoid_: Environment Gate, runtime result
+
+**Environment Risk Acceptance**:
+Private, time-bounded user evidence consenting to diagnostic execution for exact revisions, unresolved environment paths, and Runtime Scenarios without asserting that the environments are equivalent.
+_Avoid_: Environment Binding Assertion, parity waiver, side-effect authorization
+
+**Diagnostic Runtime Observation**:
+A risk-qualified runtime result produced while the Environment Gate remains unresolved; it is neither Runtime Parity nor root-cause evidence.
+_Avoid_: Runtime parity passed, Runtime Mismatch diagnosis
+
 **Runtime Mismatch**:
 An observed V4/V5 difference for a Parity Assertion; it is a symptom, not a root cause.
 _Avoid_: Converter defect

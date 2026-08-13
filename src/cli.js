@@ -754,6 +754,7 @@ async function handleReview(positionals, options, context) {
       source: { generation: 'V4', nid: job.input.sourceNid, workId: review.baseline.sourceWorkId, baseUrl: options['source-url'] },
       target: { generation: 'V5', nid: review.target.nid, workId: review.baseline.targetWorkId, baseUrl: options['target-url'] },
       environmentComparison,
+      riskAcceptance: options['environment-risk-acceptance-file'] ? readRequiredJson(options['environment-risk-acceptance-file'], 'environment risk acceptance') : null,
       authorization: options['authorization-file'] ? readRequiredJson(options['authorization-file'], 'runtime authorization') : null,
     });
   }
@@ -775,6 +776,7 @@ async function handleReview(positionals, options, context) {
       source: { generation: 'V4', nid: job.input.sourceNid, workId: review.baseline.sourceWorkId, baseUrl: resolvePlatformPreviewUrl(sourceInfo) },
       target: { generation: 'V5', nid: review.target.nid, workId: review.baseline.targetWorkId, baseUrl: resolvePlatformPreviewUrl(targetInfo) },
       environmentComparison: context.reviews.loadEnvironmentComparison(options.review, options['environment-id']),
+      riskAcceptance: options['environment-risk-acceptance-file'] ? readRequiredJson(options['environment-risk-acceptance-file'], 'environment risk acceptance') : null,
       authorization: options['authorization-file'] ? readRequiredJson(options['authorization-file'], 'runtime authorization') : null,
     });
   }
@@ -1216,8 +1218,8 @@ export async function runCli(argv, dependencies = {}) {
         'ivx-migrate review repair-list --review <reviewId>',
         'ivx-migrate review repair-update-target --review <reviewId> --batch <batchId> --confirm-live-write UPDATE_V5_REPAIR',
         'ivx-migrate review repair-reconcile --review <reviewId> --batch <batchId>',
-        'ivx-migrate review runtime-run --review <reviewId> --scenario <id[,id]> --source-url <url> --target-url <url> (--environment-id <id> | --environment-file <comparison.json>) [--authorization-file <authorization.json>]',
-        'ivx-migrate review runtime-run-platform --review <reviewId> --scenario <id[,id]> --environment-id <id> [--authorization-file <authorization.json>]',
+        'ivx-migrate review runtime-run --review <reviewId> --scenario <id[,id]> --source-url <url> --target-url <url> (--environment-id <id> | --environment-file <comparison.json>) [--environment-risk-acceptance-file <USER-acceptance.json>] [--authorization-file <authorization.json>]',
+        'ivx-migrate review runtime-run-platform --review <reviewId> --scenario <id[,id]> --environment-id <id> [--environment-risk-acceptance-file <USER-acceptance.json>] [--authorization-file <authorization.json>]',
         'ivx-migrate review runtime-resume --review <reviewId> --source-url <url> --target-url <url>',
         'ivx-migrate review runtime-resume-platform --review <reviewId>',
         'ivx-migrate runtime status',

@@ -40,13 +40,16 @@
 
 这同时授权一个 WRITE Runtime Review 和初始修复预算。默认优先使用无人值守的 `READ_ONLY` Playwright 场景；需要登录时，Agent 会打开可见浏览器让用户完成登录，并且不会读取 Cookie 或浏览器认证文件。
 
-只有工作流判定为高置信、修复目标为 V5 产物的 `SOURCE_DATA` / `TARGET_CASE` 问题才允许自动修复。`CONVERTER`、`PLATFORM_RUNTIME`、`KNOWLEDGE_GAP`、`AUTHORIZATION` 和 `UNKNOWN` 只报告，不自动修改。只有 `RUNTIME_PARITY_PASSED` 才表示运行时一致。
+只有工作流判定为高置信、修复目标为 V5 产物的 `SOURCE_DATA` / `TARGET_CASE` 问题才允许自动修复。`CONVERTER`、`PLATFORM_RUNTIME`、`KNOWLEDGE_GAP`、`AUTHORIZATION` 和 `UNKNOWN` 只报告，不自动修改。环境严格或经用户声明语义等价时，运行结果才能作为归因和修复证据。
+
+如果环境检查仍有差异，默认会停止浏览器。用户可以先解决绑定并声明其业务语义等价；也可以在 Agent 列出全部未解决路径和将要执行的场景后，明确接受这些差异带来的风险，仅继续一次有时限、精确范围的诊断运行。后者不会把环境改写为“等价”，不会归因 Converter，也不会自动修复目标；它只是帮助用户打开运行态继续观察。
 
 ## 3. 需要单独确认的操作
 
 下面这些操作不会从“转成 V5”或“自动测试并修复”中自动推导：
 
 - 为带已知问题的指定 Job 创建诊断副本；
+- 在仍有环境差异时，仅为已列出的 revision、字段路径和运行场景接受诊断运行风险；
 - 执行会造成业务副作用的运行时场景；
 - 在初始预算之外增加每问题簇 `+2` 次尝试或整个 Review `+5` 个目标 revision；
 - 接受用户手工修改后的目标 revision 作为新基线。
@@ -76,6 +79,10 @@ Agent 返回 `jobId` 或 `reviewId` 后应保留它。以后可以在同一任�
 | `SKIPPED_ALREADY_V5` | 源案例已经是 V5，没有调用 Converter |
 | `DIAGNOSTIC_COPY_CREATED` | 创建了带已知问题的诊断副本，不代表转换正确 |
 | `RUNTIME_PARITY_PASSED` | 声明式运行时对照已通过 |
+| `RUNTIME_PARITY_PASSED_WITH_USER_DECLARED_ENVIRONMENT` | 用户已声明列出的目标绑定在业务语义上等价，运行时对照通过 |
+| `DIAGNOSTIC_RUNTIME_PASSED_WITH_ENVIRONMENT_RISK` | 在用户接受的未解决环境风险下，所选断言通过；不代表严格运行时等价 |
+| `MISMATCH_UNDER_ENVIRONMENT_RISK` | 在未解决环境风险下观察到差异；不能据此归因 Converter 或自动修复 |
+| `DIAGNOSTIC_RUNTIME_INCONCLUSIVE_WITH_ENVIRONMENT_RISK` | 风险诊断运行未得到确定结果 |
 | `RUNTIME_NOT_TESTED` | 没有稳定断言或运行条件，不能声称运行时一致 |
 | 安全停止状态 | Agent 应说明权限、平台、版本、Converter 或未知问题以及下一步 |
 

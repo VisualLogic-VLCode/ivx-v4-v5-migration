@@ -54,7 +54,7 @@ function compareAssertion(assertion, sourceTrace, targetTrace, sourceByName, tar
   return result(assertion, target[0].comparisonDigest === expectedDigest ? 'PASSED' : 'FAILED', target[0].comparisonDigest === expectedDigest ? 'EXPECTED_VALUE_MATCHED' : 'TARGET_EXPECTATION_NOT_MET', source, target);
 }
 
-export function compareRuntimeScenario({ scenario, source, target, sourceNormalized, targetNormalized, environment, subjects, now = () => new Date(), randomBytes = crypto.randomBytes } = {}) {
+export function compareRuntimeScenario({ scenario, source, target, sourceNormalized, targetNormalized, environment, environmentAssurance = 'STRICT_EQUIVALENT', riskAcceptanceId = null, subjects, now = () => new Date(), randomBytes = crypto.randomBytes } = {}) {
   validateRuntimeScenario(scenario);
   validateBehaviorTrace(source);
   validateBehaviorTrace(target);
@@ -78,7 +78,12 @@ export function compareRuntimeScenario({ scenario, source, target, sourceNormali
     scenarioId: scenario.scenarioId,
     sourceTraceId: source.traceId,
     targetTraceId: target.traceId,
-    environment: { comparisonId: environment.comparisonId, status: environment.status },
+    environment: {
+      comparisonId: environment.comparisonId,
+      status: environment.status,
+      assurance: environmentAssurance,
+      riskAcceptanceId,
+    },
     status,
     assertions,
     coverage,

@@ -46,6 +46,12 @@ export const ENVIRONMENT_GATE_STATUSES = Object.freeze([
   'BLOCKED_ENVIRONMENT',
 ]);
 
+export const ENVIRONMENT_EXECUTION_ASSURANCES = Object.freeze([
+  'STRICT_EQUIVALENT',
+  'USER_DECLARED_EQUIVALENT',
+  'USER_ACCEPTED_RISK',
+]);
+
 export const AUTOMATIC_REPAIR_DECISIONS = Object.freeze([
   'AUTO_REPAIR_ALLOWED',
   'AUTO_REPAIR_PAUSED',
@@ -85,7 +91,9 @@ export const REVIEW_STATUSES = Object.freeze([
   'AWAITING_USER_BINDING',
   'BLOCKED_ENVIRONMENT',
   'RUNTIME_TESTING',
+  'RUNTIME_DIAGNOSTIC_TESTING',
   'MISMATCH_DETECTED',
+  'MISMATCH_UNDER_ENVIRONMENT_RISK',
   'DIAGNOSING',
   'CONVERTER_REPORT_READY',
   'REPAIR_PROPOSED',
@@ -98,6 +106,9 @@ export const REVIEW_STATUSES = Object.freeze([
   'TARGET_EXTERNALLY_MODIFIED',
   'RUNTIME_RETESTING',
   'RUNTIME_PARITY_PASSED',
+  'RUNTIME_PARITY_PASSED_WITH_USER_DECLARED_ENVIRONMENT',
+  'DIAGNOSTIC_RUNTIME_PASSED_WITH_ENVIRONMENT_RISK',
+  'DIAGNOSTIC_RUNTIME_INCONCLUSIVE_WITH_ENVIRONMENT_RISK',
   'RUNTIME_REPAIR_EXHAUSTED',
   'BLOCKED_PLATFORM_RUNTIME',
   'RUNTIME_NOT_TESTED',
@@ -572,9 +583,22 @@ export function validateRuntimeComparison(document) {
   id(document.scenarioId, '$.scenarioId');
   id(document.sourceTraceId, '$.sourceTraceId');
   id(document.targetTraceId, '$.targetTraceId');
-  exactKeys(document.environment, ['comparisonId', 'status'], ['comparisonId', 'status'], '$.environment');
+  exactKeys(document.environment, ['comparisonId', 'status'], ['comparisonId', 'status', 'assurance', 'riskAcceptanceId'], '$.environment');
   id(document.environment.comparisonId, '$.environment.comparisonId');
   enumValue(document.environment.status, ENVIRONMENT_GATE_STATUSES, '$.environment.status');
+  if (document.environment.assurance !== undefined) {
+    enumValue(document.environment.assurance, ENVIRONMENT_EXECUTION_ASSURANCES, '$.environment.assurance');
+    if (document.environment.riskAcceptanceId !== null) id(document.environment.riskAcceptanceId, '$.environment.riskAcceptanceId');
+    if (document.environment.assurance === 'USER_ACCEPTED_RISK') {
+      if (!['REQUIRES_USER_BINDING', 'BLOCKED_ENVIRONMENT'].includes(document.environment.status) || document.environment.riskAcceptanceId === null) {
+        fail('USER_ACCEPTED_RISK requires an unresolved Environment Gate and a riskAcceptanceId');
+      }
+    } else if (!['ENVIRONMENT_EQUIVALENT', 'NORMALIZED_EQUIVALENT'].includes(document.environment.status) || document.environment.riskAcceptanceId !== null) {
+      fail('Equivalent environment assurance requires an equivalent Environment Gate and no riskAcceptanceId');
+    }
+  } else if (document.environment.riskAcceptanceId !== undefined) {
+    fail('$.environment.riskAcceptanceId requires $.environment.assurance');
+  }
   enumValue(document.status, ['PARITY_PASSED', 'MISMATCH_DETECTED', 'INCONCLUSIVE'], '$.status');
   const assertions = array(document.assertions, '$.assertions', { max: 200 });
   const assertionIds = new Set();
@@ -717,6 +741,36 @@ export function validateEnvironmentComparison(document) {
   if (document.status === 'BLOCKED_ENVIRONMENT' && !blockedPaths.length) {
     fail('BLOCKED_ENVIRONMENT requires at least one blocked path');
   }
+  return document;
+}
+
+function validateEnvironmentRiskRevision(revision, path) {
+  exactKeys(revision, ['nid', 'workId'], ['nid', 'workId'], path);
+  integer(revision.nid, `${path}.nid`, { min: 1 });
+  string(revision.workId, `${path}.workId`, { max: 256 });
+}
+
+export function validateEnvironmentRiskAcceptance(document) {
+  schemaHeader(document, 'environment-risk-acceptance');
+  exactKeys(document,
+    ['schemaVersion', 'kind', 'acceptanceId', 'reviewId', 'sourceRevision', 'targetRevision', 'acceptedPaths', 'scenarioIds', 'purpose', 'confirmation', 'expiresAt', 'createdAt', 'createdBy', 'sensitivity'],
+    ['schemaVersion', 'kind', 'acceptanceId', 'reviewId', 'sourceRevision', 'targetRevision', 'acceptedPaths', 'scenarioIds', 'purpose', 'confirmation', 'expiresAt', 'createdAt', 'createdBy', 'sensitivity'],
+    '$');
+  id(document.acceptanceId, '$.acceptanceId');
+  reviewId(document.reviewId);
+  validateEnvironmentRiskRevision(document.sourceRevision, '$.sourceRevision');
+  validateEnvironmentRiskRevision(document.targetRevision, '$.targetRevision');
+  const acceptedPaths = uniqueStrings(document.acceptedPaths, '$.acceptedPaths', { max: 10000 });
+  if (acceptedPaths.length === 0 || acceptedPaths.some((value) => !value.startsWith('/'))) fail('$.acceptedPaths must contain JSON-pointer environment paths');
+  const scenarioIds = uniqueStrings(document.scenarioIds, '$.scenarioIds', { max: 100 });
+  if (scenarioIds.length === 0) fail('$.scenarioIds must contain at least one Runtime Scenario');
+  enumValue(document.purpose, ['DIAGNOSTIC_RUNTIME_ONLY'], '$.purpose');
+  if (document.confirmation !== 'ACCEPT_ENVIRONMENT_RISK') fail('$.confirmation must be ACCEPT_ENVIRONMENT_RISK');
+  isoDate(document.expiresAt, '$.expiresAt');
+  validateArtifactMetadata(document);
+  if (document.createdBy !== 'USER' || document.sensitivity !== 'PRIVATE') fail('Environment risk acceptance must be private USER evidence');
+  if (Date.parse(document.expiresAt) <= Date.parse(document.createdAt)) fail('Environment risk acceptance must expire after creation');
+  if (Date.parse(document.expiresAt) - Date.parse(document.createdAt) > 8 * 60 * 60 * 1000) fail('Environment risk acceptance cannot last longer than 8 hours');
   return document;
 }
 
@@ -1153,6 +1207,7 @@ export const SCHEMA_V2_VALIDATORS = Object.freeze({
   'runtime-comparison': validateRuntimeComparison,
   'environment-manifest': validateEnvironmentManifest,
   'environment-comparison': validateEnvironmentComparison,
+  'environment-risk-acceptance': validateEnvironmentRiskAcceptance,
   'human-finding': validateHumanFinding,
   'repair-budget': validateRepairBudget,
   'target-repair-authorization': validateTargetRepairAuthorization,

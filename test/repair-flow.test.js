@@ -332,6 +332,41 @@ test('bounded target repair writes with CAS/read-back and closes only after affe
     assert.equal(updated.review.baseline.targetWorkId, 'target-work-2');
     assert.equal(adapter.saveCalls, 1);
     assert.equal(updated.sessionBudget.targetRevisions.used, 1);
+    const blockedRetestEnvironment = environmentComparison(value.review.reviewId, 'target-work-2');
+    blockedRetestEnvironment.comparisonId = 'environment-target-work-2-risk-retest';
+    blockedRetestEnvironment.status = 'BLOCKED_ENVIRONMENT';
+    blockedRetestEnvironment.fields = [{
+      path: '/settings/unknownRuntimeFlag',
+      policy: null,
+      sourcePresence: 'PRESENT',
+      targetPresence: 'PRESENT',
+      equivalent: null,
+      disposition: 'BLOCKED',
+      bindingAssertionId: null,
+    }];
+    blockedRetestEnvironment.blockedPaths = ['/settings/unknownRuntimeFlag'];
+    assert.throws(() => value.reviews.prepareRuntimeCycle(value.review.reviewId, {
+      scenarioIds: ['scenario-repair'],
+      source: { generation: 'V4', nid: 100, workId: 'source-work-1' },
+      target: { generation: 'V5', nid: 200, workId: 'target-work-2' },
+      environmentComparison: blockedRetestEnvironment,
+      riskAcceptance: {
+        schemaVersion: 2,
+        kind: 'environment-risk-acceptance',
+        acceptanceId: 'risk-repair-retest-forbidden',
+        reviewId: value.review.reviewId,
+        sourceRevision: { nid: 100, workId: 'source-work-1' },
+        targetRevision: { nid: 200, workId: 'target-work-2' },
+        acceptedPaths: ['/settings/unknownRuntimeFlag'],
+        scenarioIds: ['scenario-repair'],
+        purpose: 'DIAGNOSTIC_RUNTIME_ONLY',
+        confirmation: 'ACCEPT_ENVIRONMENT_RISK',
+        expiresAt: '2030-01-01T01:00:00.000Z',
+        createdAt: NOW,
+        createdBy: 'USER',
+        sensitivity: 'PRIVATE',
+      },
+    }), { code: 'REPAIR_ENVIRONMENT_NOT_EQUIVALENT' });
     assert.throws(() => value.reviews.prepareRuntimeCycle(value.review.reviewId, {
       scenarioIds: [],
       source: { generation: 'V4', nid: 100, workId: 'source-work-1' },

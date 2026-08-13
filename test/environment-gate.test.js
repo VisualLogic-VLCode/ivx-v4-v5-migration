@@ -170,7 +170,25 @@ test('projection normalization still blocks missing authoritative settings and t
 test('field policy registry is closed and classifies dynamic custom variables without enumerating their values', () => {
   assert.equal(resolveEnvironmentFieldPolicy('/settings/loading'), 'COPY_EXACT');
   assert.equal(resolveEnvironmentFieldPolicy('/config/customVars/arbitrary-key'), 'REDACT_AND_COMPARE');
+  assert.equal(resolveEnvironmentFieldPolicy('/config/name'), 'IGNORE_FOR_PARITY');
   assert.equal(resolveEnvironmentFieldPolicy('/config/future-provider'), null);
+});
+
+test('saved configuration preset names are explicit parity-irrelevant metadata', () => {
+  const sourceOnly = environmentPair();
+  sourceOnly.source.config.name = 'V4 saved preset label';
+  const sourceOnlyResult = evaluate(sourceOnly, { bindingAssertions: { '/config/wechat': userBindingAssertion() } });
+  const sourceOnlyField = sourceOnlyResult.comparison.fields.find((field) => field.path === '/config/name');
+  assert.equal(sourceOnlyField.disposition, 'IGNORED');
+  assert.equal(sourceOnlyResult.comparison.blockedPaths.includes('/config/name'), false);
+  assert.equal(sourceOnlyResult.comparison.status, 'NORMALIZED_EQUIVALENT');
+
+  const different = environmentPair();
+  different.source.config.name = 'V4 label';
+  different.target.config.name = 'V5 label';
+  const differentResult = evaluate(different, { bindingAssertions: { '/config/wechat': userBindingAssertion() } });
+  assert.equal(differentResult.comparison.fields.find((field) => field.path === '/config/name').disposition, 'IGNORED');
+  assert.equal(differentResult.comparison.blockedPaths.includes('/config/name'), false);
 });
 
 test('binding normalization rejects unaudited boolean or agent-originated overrides', () => {

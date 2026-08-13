@@ -174,6 +174,33 @@ test('platform-backed review creation and Environment Gate never expose case sec
     assert.equal(blockedRun.stdout.includes('different-target-secret-never-output'), false);
     assert.equal(blockedRun.stdout.includes(token), false);
 
+    const riskAcceptanceFile = path.join(temporary, 'environment-risk-acceptance.json');
+    fs.writeFileSync(riskAcceptanceFile, JSON.stringify({
+      schemaVersion: 2,
+      kind: 'environment-risk-acceptance',
+      acceptanceId: 'environment-risk-cli-scope-test',
+      reviewId: review.reviewId,
+      sourceRevision: blockedEnvironment.sourceRevision,
+      targetRevision: blockedEnvironment.targetRevision,
+      acceptedPaths: ['/not-the-blocked-path'],
+      scenarioIds: ['scenario-platform-closed'],
+      purpose: 'DIAGNOSTIC_RUNTIME_ONLY',
+      confirmation: 'ACCEPT_ENVIRONMENT_RISK',
+      expiresAt: new Date(Date.now() + 60 * 60_000).toISOString(),
+      createdAt: new Date().toISOString(),
+      createdBy: 'USER',
+      sensitivity: 'PRIVATE',
+    }), { mode: 0o600 });
+    const rejectedRiskRun = await runCli(home, token, [
+      'review', 'runtime-run-platform', '--review', review.reviewId,
+      '--scenario', 'scenario-platform-closed', '--environment-id', blockedEnvironment.comparisonId,
+      '--environment-risk-acceptance-file', riskAcceptanceFile,
+    ]);
+    assert.equal(rejectedRiskRun.code, 1);
+    assert.equal(JSON.parse(rejectedRiskRun.stderr).code, 'ENVIRONMENT_RISK_ACCEPTANCE_PATHS_INCOMPLETE');
+    assert.equal(rejectedRiskRun.stderr.includes('different-target-secret-never-output'), false);
+    assert.equal(rejectedRiskRun.stderr.includes(token), false);
+
     targetWorkId = 'target-work-manual-2';
     targetSnapshot = structuredClone(target);
     targetSnapshot.case.manualEdit = true;

@@ -8,6 +8,7 @@ import {
   validateDiagnosticSaveEligibility,
   validateEnvironmentComparison,
   validateEnvironmentManifest,
+  validateEnvironmentRiskAcceptance,
   validateHumanFinding,
   validateIssueClassificationV2,
   validateIssueCluster,
@@ -61,6 +62,21 @@ function nonEmptyString(value, name, max = 256) {
 function assertSnapshot(value, name = 'targetSnapshot') {
   invariant(value !== undefined && value !== null && typeof value === 'object', 'INVALID_REVIEW_INPUT', `${name} must be a JSON object or array`);
   return value;
+}
+
+function sortedUnique(values) {
+  return [...new Set(values)].sort();
+}
+
+function sameStringSet(left, right) {
+  return JSON.stringify(sortedUnique(left)) === JSON.stringify(sortedUnique(right));
+}
+
+function environmentAssurance(environmentComparison, riskAcceptance) {
+  if (riskAcceptance) return 'USER_ACCEPTED_RISK';
+  return environmentComparison.fields.some((field) => field.bindingAssertionId !== null)
+    ? 'USER_DECLARED_EQUIVALENT'
+    : 'STRICT_EQUIVALENT';
 }
 
 function relativeArtifactPath(...segments) {
@@ -125,7 +141,7 @@ export class RuntimeReviewStore {
       };
       validateRuntimeReviewSession(review);
       const directory = ensurePrivateDir(this.reviewDir(reviewId));
-      for (const child of ['baselines', 'findings', 'revision-observations', 'observed-targets', 'baseline-acceptances', 'knowledge', 'environment', 'scenarios', 'cycles', 'runtime-authorizations', 'repair-authorizations', 'reports', 'issues', 'issues/diagnoses', 'issues/clusters', 'issues/budgets', 'issues/decisions', 'issues/eligibility', 'repairs', 'repairs/proposals', 'repairs/attempts', 'repairs/batches', 'repairs/candidates', 'checkpoints', 'checkpoints/artifacts']) {
+      for (const child of ['baselines', 'findings', 'revision-observations', 'observed-targets', 'baseline-acceptances', 'knowledge', 'environment', 'environment-risk-acceptances', 'scenarios', 'cycles', 'runtime-authorizations', 'repair-authorizations', 'reports', 'issues', 'issues/diagnoses', 'issues/clusters', 'issues/budgets', 'issues/decisions', 'issues/eligibility', 'repairs', 'repairs/proposals', 'repairs/attempts', 'repairs/batches', 'repairs/candidates', 'checkpoints', 'checkpoints/artifacts']) {
         ensurePrivateDir(path.join(directory, child));
       }
       const baselinePath = this.#writeBaselineSnapshot(reviewId, targetWorkId, targetSnapshot);
@@ -305,6 +321,7 @@ export class RuntimeReviewStore {
         const fileStat = fs.lstatSync(path.join(comparisonsDir, file));
         invariant(fileStat.isFile() && !fileStat.isSymbolicLink(), 'DIAGNOSIS_EVIDENCE_INVALID', 'Runtime comparison evidence file is unsafe');
         const comparison = validateRuntimeComparison(readJson(path.join(comparisonsDir, file)));
+        if (!['ENVIRONMENT_EQUIVALENT', 'NORMALIZED_EQUIVALENT'].includes(comparison.environment.status)) continue;
         entries.push({ comparison, artifact: relativeArtifactPath('cycles', cycleId, 'comparisons', file) });
       }
     }
@@ -451,8 +468,9 @@ export class RuntimeReviewStore {
     );
   }
 
-  prepareRuntimeCycle(reviewId, { scenarioIds, source, target, environmentComparison, authorization = null } = {}) {
+  prepareRuntimeCycle(reviewId, { scenarioIds, source, target, environmentComparison, riskAcceptance = null, authorization = null } = {}) {
     validateEnvironmentComparison(environmentComparison);
+    if (riskAcceptance !== null) validateEnvironmentRiskAcceptance(riskAcceptance);
     return this.#mutate(reviewId, (review) => {
       invariant(environmentComparison.reviewId === reviewId, 'ENVIRONMENT_REVIEW_MISMATCH', 'Environment comparison belongs to another review');
       invariant(Array.isArray(scenarioIds) && scenarioIds.length > 0 && scenarioIds.length <= 100, 'RUNTIME_SCENARIOS_REQUIRED', 'Runtime cycle requires 1-100 scenarios');
@@ -468,38 +486,66 @@ export class RuntimeReviewStore {
       invariant(target.nid === review.target.nid && target.workId === review.baseline.targetWorkId, 'RUNTIME_TARGET_REVISION_MISMATCH', 'Runtime target revision does not match the review baseline');
       invariant(environmentComparison.sourceRevision.nid === Number(source.nid) && environmentComparison.sourceRevision.workId === source.workId, 'RUNTIME_ENVIRONMENT_REVISION_MISMATCH', 'Environment comparison does not match the source runtime revision');
       invariant(environmentComparison.targetRevision.nid === Number(target.nid) && environmentComparison.targetRevision.workId === target.workId, 'RUNTIME_ENVIRONMENT_REVISION_MISMATCH', 'Environment comparison does not match the target runtime revision');
+      const unresolvedEnvironmentPaths = sortedUnique([...environmentComparison.requiredBindingPaths, ...environmentComparison.blockedPaths]);
+      const environmentEquivalent = ['ENVIRONMENT_EQUIVALENT', 'NORMALIZED_EQUIVALENT'].includes(environmentComparison.status);
+      if (environmentEquivalent) {
+        invariant(riskAcceptance === null, 'ENVIRONMENT_RISK_ACCEPTANCE_UNEXPECTED', 'Equivalent environments must not attach an environment risk acceptance');
+      } else if (riskAcceptance !== null) {
+        invariant(riskAcceptance.reviewId === reviewId, 'ENVIRONMENT_RISK_ACCEPTANCE_SCOPE_MISMATCH', 'Environment risk acceptance belongs to another Review');
+        invariant(
+          riskAcceptance.sourceRevision.nid === environmentComparison.sourceRevision.nid
+          && riskAcceptance.sourceRevision.workId === environmentComparison.sourceRevision.workId
+          && riskAcceptance.targetRevision.nid === environmentComparison.targetRevision.nid
+          && riskAcceptance.targetRevision.workId === environmentComparison.targetRevision.workId,
+          'ENVIRONMENT_RISK_ACCEPTANCE_REVISION_MISMATCH',
+          'Environment risk acceptance does not match the compared revisions',
+        );
+        invariant(sameStringSet(riskAcceptance.acceptedPaths, unresolvedEnvironmentPaths), 'ENVIRONMENT_RISK_ACCEPTANCE_PATHS_INCOMPLETE', 'Environment risk acceptance must cover exactly every unresolved environment path', {
+          requiredPaths: unresolvedEnvironmentPaths,
+        });
+        invariant(sameStringSet(riskAcceptance.scenarioIds, scenarioIds), 'ENVIRONMENT_RISK_ACCEPTANCE_SCENARIOS_MISMATCH', 'Environment risk acceptance must cover exactly the selected Runtime Scenarios');
+        invariant(Date.parse(riskAcceptance.createdAt) <= this.now().getTime(), 'ENVIRONMENT_RISK_ACCEPTANCE_NOT_YET_VALID', 'Environment risk acceptance creation time is in the future');
+        invariant(Date.parse(riskAcceptance.expiresAt) > this.now().getTime(), 'ENVIRONMENT_RISK_ACCEPTANCE_EXPIRED', 'Environment risk acceptance has expired');
+      }
       const requiresAuthorization = scenarios.some((scenario) => scenario.executionPolicy.authorizationRequired);
       if (requiresAuthorization) this.#validateRuntimeAuthorization(review, scenarios, authorization);
       else invariant(authorization === null, 'RUNTIME_AUTHORIZATION_UNEXPECTED', 'READ_ONLY runtime cycles must not attach a side-effect authorization');
 
-      invariant(['REVIEW_OPEN', 'RUNTIME_NOT_TESTED', 'AWAITING_USER_BINDING', 'BLOCKED_ENVIRONMENT', 'ENVIRONMENT_PREFLIGHT', 'TEST_OR_ENV_REPAIR', 'TARGET_UPDATED', 'BLOCKED_PLATFORM_RUNTIME'].includes(review.status), 'REVIEW_STATE_MISMATCH', 'Review is not ready to evaluate a runtime environment', { status: review.status });
+      invariant(['REVIEW_OPEN', 'RUNTIME_NOT_TESTED', 'AWAITING_USER_BINDING', 'BLOCKED_ENVIRONMENT', 'ENVIRONMENT_PREFLIGHT', 'TEST_OR_ENV_REPAIR', 'TARGET_UPDATED', 'BLOCKED_PLATFORM_RUNTIME', 'MISMATCH_UNDER_ENVIRONMENT_RISK', 'DIAGNOSTIC_RUNTIME_PASSED_WITH_ENVIRONMENT_RISK', 'DIAGNOSTIC_RUNTIME_INCONCLUSIVE_WITH_ENVIRONMENT_RISK'].includes(review.status), 'REVIEW_STATE_MISMATCH', 'Review is not ready to evaluate a runtime environment', { status: review.status });
+      const targetRetest = review.status === 'TARGET_UPDATED';
       this.#writeImmutableJson(this.#artifactPath(reviewId, relativeArtifactPath('environment', `${environmentComparison.comparisonId}.json`)), environmentComparison, 'ENVIRONMENT_COMPARISON_CONFLICT');
-      if (['REVIEW_OPEN', 'RUNTIME_NOT_TESTED', 'AWAITING_USER_BINDING', 'BLOCKED_ENVIRONMENT'].includes(review.status)) {
+      if (['REVIEW_OPEN', 'RUNTIME_NOT_TESTED', 'AWAITING_USER_BINDING', 'BLOCKED_ENVIRONMENT', 'MISMATCH_UNDER_ENVIRONMENT_RISK', 'DIAGNOSTIC_RUNTIME_PASSED_WITH_ENVIRONMENT_RISK', 'DIAGNOSTIC_RUNTIME_INCONCLUSIVE_WITH_ENVIRONMENT_RISK'].includes(review.status)) {
         assertReviewTransition(review.status, 'ENVIRONMENT_PREFLIGHT');
         this.#setStatus(review, 'ENVIRONMENT_PREFLIGHT', `environment-comparison:${environmentComparison.comparisonId}`);
       }
-      if (environmentComparison.status === 'REQUIRES_USER_BINDING') {
+      if (environmentComparison.status === 'REQUIRES_USER_BINDING' && riskAcceptance === null) {
         invariant(review.status === 'ENVIRONMENT_PREFLIGHT', 'REVIEW_STATE_MISMATCH', 'Environment binding decision requires environment preflight state');
         assertReviewTransition(review.status, 'AWAITING_USER_BINDING');
         this.#setStatus(review, 'AWAITING_USER_BINDING', `environment-comparison:${environmentComparison.comparisonId}`);
         return { review, blocked: true, environmentComparison, scenarios };
       }
-      if (environmentComparison.status === 'BLOCKED_ENVIRONMENT') {
+      if (environmentComparison.status === 'BLOCKED_ENVIRONMENT' && riskAcceptance === null) {
         invariant(review.status === 'ENVIRONMENT_PREFLIGHT', 'REVIEW_STATE_MISMATCH', 'Blocked environment decision requires environment preflight state');
         assertReviewTransition(review.status, 'BLOCKED_ENVIRONMENT');
         this.#setStatus(review, 'BLOCKED_ENVIRONMENT', `environment-comparison:${environmentComparison.comparisonId}`);
         return { review, blocked: true, environmentComparison, scenarios };
       }
-      invariant(['ENVIRONMENT_EQUIVALENT', 'NORMALIZED_EQUIVALENT'].includes(environmentComparison.status), 'RUNTIME_ENVIRONMENT_NOT_COMPARABLE', 'Runtime comparison requires an equivalent environment');
+      invariant(environmentEquivalent || riskAcceptance !== null, 'RUNTIME_ENVIRONMENT_NOT_COMPARABLE', 'Runtime comparison requires an equivalent environment or a scoped USER diagnostic risk acceptance');
+      invariant(!(targetRetest && riskAcceptance), 'REPAIR_ENVIRONMENT_NOT_EQUIVALENT', 'Target repair verification requires an equivalent environment and cannot use diagnostic risk acceptance');
       let repairBatch = null;
-      if (review.status === 'TARGET_UPDATED') {
+      if (targetRetest) {
         repairBatch = this.#latestRepairBatchByState(reviewId, ['READBACK_VERIFIED']);
         invariant(repairBatch, 'REPAIR_RUNTIME_RETEST_REQUIRED', 'Updated target revision has no verified Repair Batch');
         invariant(repairBatch.affectedScenarioIds.every((scenarioId) => scenarioIds.includes(scenarioId)), 'REPAIR_AFFECTED_SCENARIOS_INCOMPLETE', 'Runtime retest must include every scenario affected by the Repair Batch', {
           requiredScenarioIds: repairBatch.affectedScenarioIds,
         });
       }
-      const nextStatus = review.status === 'TARGET_UPDATED' ? 'RUNTIME_RETESTING' : 'RUNTIME_TESTING';
+      const assurance = environmentAssurance(environmentComparison, riskAcceptance);
+      const nextStatus = targetRetest
+        ? 'RUNTIME_RETESTING'
+        : assurance === 'USER_ACCEPTED_RISK'
+          ? 'RUNTIME_DIAGNOSTIC_TESTING'
+          : 'RUNTIME_TESTING';
       invariant(['ENVIRONMENT_PREFLIGHT', 'TEST_OR_ENV_REPAIR', 'TARGET_UPDATED', 'BLOCKED_PLATFORM_RUNTIME'].includes(review.status), 'REVIEW_STATE_MISMATCH', 'Review is not ready to begin a runtime cycle', { status: review.status });
       assertReviewTransition(review.status, nextStatus);
       this.#setStatus(review, nextStatus, `runtime-cycle-started:${environmentComparison.comparisonId}`);
@@ -517,6 +563,8 @@ export class RuntimeReviewStore {
         source: { generation: 'V4', nid: Number(source.nid), workId: source.workId },
         target: { generation: 'V5', nid: Number(target.nid), workId: target.workId },
         environmentComparisonId: environmentComparison.comparisonId,
+        environmentAssurance: assurance,
+        environmentRiskAcceptanceId: riskAcceptance?.acceptanceId || null,
         authorizationId: authorization?.authorizationId || null,
         startedAt,
         completedAt: null,
@@ -532,6 +580,7 @@ export class RuntimeReviewStore {
         writePrivateJson(this.#batchPath(reviewId, repairBatch.batchId), repairBatch);
       }
       if (authorization) writePrivateJson(this.#artifactPath(reviewId, relativeArtifactPath('runtime-authorizations', `${authorization.authorizationId}.json`)), { ...authorization, usedByCycleId: cycleId });
+      if (riskAcceptance) this.#writeImmutableJson(this.#artifactPath(reviewId, relativeArtifactPath('environment-risk-acceptances', `${riskAcceptance.acceptanceId}.json`)), riskAcceptance, 'ENVIRONMENT_RISK_ACCEPTANCE_CONFLICT');
       return { review, blocked: false, cycle, environmentComparison, scenarios };
     });
   }
@@ -589,20 +638,39 @@ export class RuntimeReviewStore {
         : comparisons.some((entry) => entry.status === 'INCONCLUSIVE')
           ? 'INCONCLUSIVE'
           : 'PARITY_PASSED';
+      const diagnosticRisk = cycle.environmentAssurance === 'USER_ACCEPTED_RISK';
+      const userDeclaredEquivalent = cycle.environmentAssurance === 'USER_DECLARED_EQUIVALENT';
+      const resultStatus = diagnosticRisk
+        ? status === 'MISMATCH_DETECTED'
+          ? 'MISMATCH_UNDER_ENVIRONMENT_RISK'
+          : status === 'PARITY_PASSED'
+            ? 'DIAGNOSTIC_RUNTIME_PASSED_WITH_ENVIRONMENT_RISK'
+            : 'DIAGNOSTIC_RUNTIME_INCONCLUSIVE_WITH_ENVIRONMENT_RISK'
+        : status === 'PARITY_PASSED' && userDeclaredEquivalent
+          ? 'RUNTIME_PARITY_PASSED_WITH_USER_DECLARED_ENVIRONMENT'
+          : status;
       cycle.status = 'COMPLETED';
       cycle.completedAt = this.now().toISOString();
-      cycle.result = status;
+      cycle.result = resultStatus;
       writePrivateJson(path.join(root, 'cycle.json'), cycle);
       const report = {
         schemaVersion: 1,
         kind: 'runtime-cycle-report',
         reviewId,
         cycleId,
-        status,
+        status: resultStatus,
         scenarioCount: comparisons.length,
         comparisonIds: comparisons.map((entry) => entry.comparisonId),
         completedAt: cycle.completedAt,
         phase: 'REPORT_ONLY',
+        environmentAssurance: cycle.environmentAssurance || 'STRICT_EQUIVALENT',
+        environmentComparisonId: cycle.environmentComparisonId,
+        environmentRiskAcceptanceId: cycle.environmentRiskAcceptanceId || null,
+        parityClaimed: !diagnosticRisk && status === 'PARITY_PASSED',
+        strictParityClaimed: !diagnosticRisk && !userDeclaredEquivalent && status === 'PARITY_PASSED',
+        userDeclaredEnvironment: userDeclaredEquivalent,
+        converterAttributionAllowed: !diagnosticRisk,
+        automaticRepairAllowed: !diagnosticRisk,
         targetRepairAttempted: false,
         platformWriteAttempted: false,
         sensitivity: 'REDACTED',
@@ -617,7 +685,15 @@ export class RuntimeReviewStore {
         writePrivateJson(this.#batchPath(reviewId, repairBatch.batchId), repairBatch);
       }
       review.activeCycleId = null;
-      const nextStatus = status === 'MISMATCH_DETECTED' ? 'MISMATCH_DETECTED' : status === 'PARITY_PASSED' ? 'RUNTIME_PARITY_PASSED' : 'RUNTIME_NOT_TESTED';
+      const nextStatus = diagnosticRisk
+        ? resultStatus
+        : status === 'MISMATCH_DETECTED'
+          ? 'MISMATCH_DETECTED'
+          : status === 'PARITY_PASSED'
+            ? userDeclaredEquivalent
+              ? 'RUNTIME_PARITY_PASSED_WITH_USER_DECLARED_ENVIRONMENT'
+              : 'RUNTIME_PARITY_PASSED'
+            : 'RUNTIME_NOT_TESTED';
       assertReviewTransition(review.status, nextStatus);
       this.#setStatus(review, nextStatus, `runtime-cycle-completed:${cycleId}:${status}`);
       return { review, cycle, report, comparisons };
@@ -631,7 +707,8 @@ export class RuntimeReviewStore {
       const cycle = readJson(path.join(root, 'cycle.json'));
       cycle.status = 'INTERRUPTED';
       cycle.completedAt = this.now().toISOString();
-      cycle.result = 'INCONCLUSIVE';
+      const diagnosticRisk = cycle.environmentAssurance === 'USER_ACCEPTED_RISK';
+      cycle.result = diagnosticRisk ? 'DIAGNOSTIC_RUNTIME_INCONCLUSIVE_WITH_ENVIRONMENT_RISK' : 'INCONCLUSIVE';
       writePrivateJson(path.join(root, 'cycle.json'), cycle);
       writePrivateJson(path.join(root, 'interruption.json'), {
         schemaVersion: 1,
@@ -652,7 +729,11 @@ export class RuntimeReviewStore {
         }
       }
       review.activeCycleId = null;
-      const interruptedStatus = review.status === 'RUNTIME_RETESTING' ? 'TARGET_UPDATED' : 'RUNTIME_NOT_TESTED';
+      const interruptedStatus = review.status === 'RUNTIME_RETESTING'
+        ? 'TARGET_UPDATED'
+        : diagnosticRisk
+          ? 'DIAGNOSTIC_RUNTIME_INCONCLUSIVE_WITH_ENVIRONMENT_RISK'
+          : 'RUNTIME_NOT_TESTED';
       assertReviewTransition(review.status, interruptedStatus);
       this.#setStatus(review, interruptedStatus, `runtime-cycle-interrupted:${cycleId}`);
       return { review, cycle };

@@ -15,6 +15,7 @@ import {
   validateDiagnosticSaveEligibility,
   validateEnvironmentComparison,
   validateEnvironmentManifest,
+  validateEnvironmentRiskAcceptance,
   validateHumanFinding,
   validateIssueClassificationV2,
   validateRepairBudget,
@@ -189,6 +190,20 @@ function environmentComparison() {
   });
 }
 
+function environmentRiskAcceptance() {
+  return artifact('environment-risk-acceptance', {
+    acceptanceId: 'environment-risk-1',
+    reviewId: 'rev_20260813040000_abcde',
+    sourceRevision: { nid: 100, workId: 'source-work-1' },
+    targetRevision: { nid: 123456, workId: 'target-work-1' },
+    acceptedPaths: ['/config/custom'],
+    scenarioIds: ['scenario-order-submit'],
+    purpose: 'DIAGNOSTIC_RUNTIME_ONLY',
+    confirmation: 'ACCEPT_ENVIRONMENT_RISK',
+    expiresAt: '2026-08-13T08:00:00.000Z',
+  }, { createdBy: 'USER', sensitivity: 'PRIVATE' });
+}
+
 function humanFinding() {
   return artifact('human-finding', {
     findingId: 'finding-1',
@@ -298,6 +313,7 @@ test('all schema-v2 artifact contracts accept a complete valid document', () => 
   assert.equal(validateRuntimeComparison(runtimeComparison()).kind, 'runtime-comparison');
   assert.equal(validateEnvironmentManifest(environmentManifest()).kind, 'environment-manifest');
   assert.equal(validateEnvironmentComparison(environmentComparison()).kind, 'environment-comparison');
+  assert.equal(validateEnvironmentRiskAcceptance(environmentRiskAcceptance()).kind, 'environment-risk-acceptance');
   assert.equal(validateHumanFinding(humanFinding()).kind, 'human-finding');
   assert.equal(validateRepairBudget(clusterBudget()).kind, 'repair-budget');
   assert.equal(validateAutomaticRepairDecision(automaticRepairDecision()).kind, 'automatic-repair-decision');
@@ -376,6 +392,14 @@ test('trace and environment contracts reject secret-bearing or unredacted struct
   const comparison = environmentComparison();
   comparison.normalizedPaths = [];
   assert.throws(() => validateEnvironmentComparison(comparison), /exactly match NORMALIZED/);
+
+  const agentAcceptance = environmentRiskAcceptance();
+  agentAcceptance.createdBy = 'AGENT';
+  assert.throws(() => validateEnvironmentRiskAcceptance(agentAcceptance), /private USER evidence/);
+
+  const longAcceptance = environmentRiskAcceptance();
+  longAcceptance.expiresAt = '2026-08-13T13:00:00.000Z';
+  assert.throws(() => validateEnvironmentRiskAcceptance(longAcceptance), /longer than 8 hours/);
 });
 
 test('repair and diagnostic-save decisions remain independent and enforce their own prerequisites', () => {
@@ -486,6 +510,7 @@ test('all distributable schema-v2 documents are valid JSON with stable identifie
     'diagnostic-save-eligibility.schema.json',
     'environment-comparison.schema.json',
     'environment-manifest.schema.json',
+    'environment-risk-acceptance.schema.json',
     'human-finding.schema.json',
     'issue-classification.schema.json',
     'issue-cluster.schema.json',

@@ -63,6 +63,8 @@ function scenario(overrides = {}) {
 }
 
 function environmentComparison(reviewId, status = 'ENVIRONMENT_EQUIVALENT') {
+  const blocked = status === 'BLOCKED_ENVIRONMENT';
+  const bindingRequired = status === 'REQUIRES_USER_BINDING';
   return {
     schemaVersion: 2,
     kind: 'environment-comparison',
@@ -73,17 +75,50 @@ function environmentComparison(reviewId, status = 'ENVIRONMENT_EQUIVALENT') {
     sourceRevision: { nid: 100, workId: 'source-work-1' },
     targetRevision: { nid: 200, workId: 'target-work-1' },
     status,
-    fields: status === 'BLOCKED_ENVIRONMENT' ? [{
+    fields: blocked ? [{
       path: '/unknown', policy: null, sourcePresence: 'PRESENT', targetPresence: 'PRESENT', equivalent: null, disposition: 'BLOCKED', bindingAssertionId: null,
+    }] : bindingRequired ? [{
+      path: '/config/wechat', policy: 'REQUIRE_USER_BINDING', sourcePresence: 'PRESENT', targetPresence: 'PRESENT', equivalent: false, disposition: 'REQUIRES_USER_BINDING', bindingAssertionId: null,
     }] : [],
     normalizedPaths: [],
-    requiredBindingPaths: [],
-    blockedPaths: status === 'BLOCKED_ENVIRONMENT' ? ['/unknown'] : [],
+    requiredBindingPaths: bindingRequired ? ['/config/wechat'] : [],
+    blockedPaths: blocked ? ['/unknown'] : [],
     evaluatedAt: '2026-08-13T06:00:00.000Z',
     createdAt: '2026-08-13T06:00:00.000Z',
     createdBy: 'CLI',
     sensitivity: 'REDACTED',
   };
+}
+
+function environmentRiskAcceptance(reviewId, overrides = {}) {
+  const createdAt = new Date(Date.now() - 60_000).toISOString();
+  return {
+    schemaVersion: 2,
+    kind: 'environment-risk-acceptance',
+    acceptanceId: 'environment-risk-parity',
+    reviewId,
+    sourceRevision: { nid: 100, workId: 'source-work-1' },
+    targetRevision: { nid: 200, workId: 'target-work-1' },
+    acceptedPaths: ['/unknown'],
+    scenarioIds: ['scenario-parity'],
+    purpose: 'DIAGNOSTIC_RUNTIME_ONLY',
+    confirmation: 'ACCEPT_ENVIRONMENT_RISK',
+    expiresAt: new Date(Date.now() + 60 * 60_000).toISOString(),
+    createdAt,
+    createdBy: 'USER',
+    sensitivity: 'PRIVATE',
+    ...overrides,
+  };
+}
+
+function userDeclaredEnvironmentComparison(reviewId) {
+  const comparison = environmentComparison(reviewId, 'NORMALIZED_EQUIVALENT');
+  comparison.comparisonId = 'env-user-declared-equivalent';
+  comparison.fields = [{
+    path: '/config/wechat', policy: 'REQUIRE_USER_BINDING', sourcePresence: 'PRESENT', targetPresence: 'PRESENT', equivalent: true, disposition: 'NORMALIZED', bindingAssertionId: 'binding-wechat-1',
+  }];
+  comparison.normalizedPaths = ['/config/wechat'];
+  return comparison;
 }
 
 function fakePlaywright({ mismatch = false, unsafeOnGoto = false } = {}) {
@@ -237,6 +272,142 @@ test('business mismatches are reported without target writes and blocked environ
   });
 });
 
+test('environment risk acceptance enables diagnostic execution without parity, diagnosis, or repair authority', async () => {
+  await withReview('ivx-runtime-env-risk-pass-', async ({ paths, reviews, review }) => {
+    const fixture = fakePlaywright();
+    const runner = new RuntimeReviewRunner({ reviews, driver: new PlaywrightRuntimeDriver({ playwright: fixture.module, appPaths: paths, allowInsecureLocalhost: true }) });
+    reviews.addRuntimeScenario(review.reviewId, scenario());
+    const comparison = environmentComparison(review.reviewId, 'BLOCKED_ENVIRONMENT');
+    const acceptance = environmentRiskAcceptance(review.reviewId);
+    const result = await runner.runCycle(review.reviewId, {
+      scenarioIds: ['scenario-parity'],
+      source: { generation: 'V4', nid: 100, workId: 'source-work-1', baseUrl: 'http://localhost:3100' },
+      target: { generation: 'V5', nid: 200, workId: 'target-work-1', baseUrl: 'http://localhost:3200' },
+      environmentComparison: comparison,
+      riskAcceptance: acceptance,
+    });
+    assert.equal(result.review.status, 'DIAGNOSTIC_RUNTIME_PASSED_WITH_ENVIRONMENT_RISK');
+    assert.equal(result.report.status, 'DIAGNOSTIC_RUNTIME_PASSED_WITH_ENVIRONMENT_RISK');
+    assert.equal(result.report.environmentAssurance, 'USER_ACCEPTED_RISK');
+    assert.equal(result.report.environmentRiskAcceptanceId, acceptance.acceptanceId);
+    assert.equal(result.report.parityClaimed, false);
+    assert.equal(result.report.strictParityClaimed, false);
+    assert.equal(result.report.userDeclaredEnvironment, false);
+    assert.equal(result.report.converterAttributionAllowed, false);
+    assert.equal(result.report.automaticRepairAllowed, false);
+    assert.equal(result.comparisons[0].environment.status, 'BLOCKED_ENVIRONMENT');
+    assert.equal(result.comparisons[0].environment.assurance, 'USER_ACCEPTED_RISK');
+    assert.deepEqual(reviews.diagnosisCandidates(review.reviewId), []);
+    const stored = path.join(reviews.reviewDir(review.reviewId), 'environment-risk-acceptances', `${acceptance.acceptanceId}.json`);
+    assert.equal(fs.statSync(stored).mode & 0o777, 0o600);
+    assert.deepEqual(JSON.parse(fs.readFileSync(stored, 'utf8')), acceptance);
+  });
+
+  await withReview('ivx-runtime-env-risk-mismatch-', async ({ paths, reviews, review }) => {
+    const fixture = fakePlaywright({ mismatch: true });
+    const runner = new RuntimeReviewRunner({ reviews, driver: new PlaywrightRuntimeDriver({ playwright: fixture.module, appPaths: paths, allowInsecureLocalhost: true }) });
+    reviews.addRuntimeScenario(review.reviewId, scenario());
+    const result = await runner.runCycle(review.reviewId, {
+      scenarioIds: ['scenario-parity'],
+      source: { generation: 'V4', nid: 100, workId: 'source-work-1', baseUrl: 'http://localhost:3100' },
+      target: { generation: 'V5', nid: 200, workId: 'target-work-1', baseUrl: 'http://localhost:3200' },
+      environmentComparison: environmentComparison(review.reviewId, 'BLOCKED_ENVIRONMENT'),
+      riskAcceptance: environmentRiskAcceptance(review.reviewId),
+    });
+    assert.equal(result.review.status, 'MISMATCH_UNDER_ENVIRONMENT_RISK');
+    assert.equal(result.report.status, 'MISMATCH_UNDER_ENVIRONMENT_RISK');
+    assert.deepEqual(reviews.diagnosisCandidates(review.reviewId), []);
+    assert.throws(() => reviews.submitDiagnosis(review.reviewId, {}), { code: 'REVIEW_STATE_MISMATCH' });
+  });
+
+  await withReview('ivx-runtime-env-risk-binding-', async ({ paths, reviews, review }) => {
+    const fixture = fakePlaywright();
+    const runner = new RuntimeReviewRunner({ reviews, driver: new PlaywrightRuntimeDriver({ playwright: fixture.module, appPaths: paths, allowInsecureLocalhost: true }) });
+    reviews.addRuntimeScenario(review.reviewId, scenario());
+    const result = await runner.runCycle(review.reviewId, {
+      scenarioIds: ['scenario-parity'],
+      source: { generation: 'V4', nid: 100, workId: 'source-work-1', baseUrl: 'http://localhost:3100' },
+      target: { generation: 'V5', nid: 200, workId: 'target-work-1', baseUrl: 'http://localhost:3200' },
+      environmentComparison: environmentComparison(review.reviewId, 'REQUIRES_USER_BINDING'),
+      riskAcceptance: environmentRiskAcceptance(review.reviewId, { acceptedPaths: ['/config/wechat'] }),
+    });
+    assert.equal(result.review.status, 'DIAGNOSTIC_RUNTIME_PASSED_WITH_ENVIRONMENT_RISK');
+    assert.equal(result.comparisons[0].environment.status, 'REQUIRES_USER_BINDING');
+    assert.deepEqual(reviews.diagnosisCandidates(review.reviewId), []);
+  });
+});
+
+test('environment risk acceptance is exact-scoped and cannot bypass revision, provenance, or side-effect gates', async () => {
+  await withReview('ivx-runtime-env-risk-scope-', async ({ paths, reviews, review }) => {
+    const fixture = fakePlaywright();
+    const runner = new RuntimeReviewRunner({ reviews, driver: new PlaywrightRuntimeDriver({ playwright: fixture.module, appPaths: paths, allowInsecureLocalhost: true }) });
+    reviews.addRuntimeScenario(review.reviewId, scenario());
+    const input = {
+      scenarioIds: ['scenario-parity'],
+      source: { generation: 'V4', nid: 100, workId: 'source-work-1', baseUrl: 'http://localhost:3100' },
+      target: { generation: 'V5', nid: 200, workId: 'target-work-1', baseUrl: 'http://localhost:3200' },
+      environmentComparison: environmentComparison(review.reviewId, 'BLOCKED_ENVIRONMENT'),
+    };
+    const invalid = [
+      [environmentRiskAcceptance(review.reviewId, { acceptedPaths: ['/different'] }), 'ENVIRONMENT_RISK_ACCEPTANCE_PATHS_INCOMPLETE'],
+      [environmentRiskAcceptance(review.reviewId, { scenarioIds: ['another-scenario'] }), 'ENVIRONMENT_RISK_ACCEPTANCE_SCENARIOS_MISMATCH'],
+      [environmentRiskAcceptance(review.reviewId, { targetRevision: { nid: 200, workId: 'other-work' } }), 'ENVIRONMENT_RISK_ACCEPTANCE_REVISION_MISMATCH'],
+      [environmentRiskAcceptance(review.reviewId, { expiresAt: new Date(Date.now() - 1_000).toISOString() }), 'ENVIRONMENT_RISK_ACCEPTANCE_EXPIRED'],
+      [environmentRiskAcceptance(review.reviewId, { createdAt: new Date(Date.now() + 10 * 60_000).toISOString() }), 'ENVIRONMENT_RISK_ACCEPTANCE_NOT_YET_VALID'],
+      [environmentRiskAcceptance(review.reviewId, { createdBy: 'AGENT' }), 'SCHEMA_V2_INVALID'],
+    ];
+    for (const [riskAcceptance, code] of invalid) {
+      await assert.rejects(runner.runCycle(review.reviewId, { ...input, riskAcceptance }), { code });
+    }
+    const stale = structuredClone(input.environmentComparison);
+    stale.targetRevision.workId = 'stale-work';
+    await assert.rejects(runner.runCycle(review.reviewId, { ...input, environmentComparison: stale, riskAcceptance: environmentRiskAcceptance(review.reviewId) }), { code: 'RUNTIME_ENVIRONMENT_REVISION_MISMATCH' });
+    assert.equal(fixture.state.contextCount, 0);
+    assert.equal(reviews.load(review.reviewId).status, 'REVIEW_OPEN');
+  });
+
+  await withReview('ivx-runtime-env-risk-side-effect-', async ({ reviews, review }) => {
+    const reversible = scenario({
+      scenarioId: 'scenario-reversible-risk',
+      sideEffect: 'REVERSIBLE',
+      executionPolicy: { mode: 'UNATTENDED', authorizationRequired: true, cleanupRequired: true },
+      networkPolicy: { unsafeRequests: 'ALLOW_WITH_AUTHORIZATION' },
+      cleanup: [{ stepId: 'cleanup', type: 'GO_BACK' }],
+    });
+    reviews.addRuntimeScenario(review.reviewId, reversible);
+    const comparison = environmentComparison(review.reviewId, 'BLOCKED_ENVIRONMENT');
+    assert.throws(() => reviews.prepareRuntimeCycle(review.reviewId, {
+      scenarioIds: ['scenario-reversible-risk'],
+      source: { generation: 'V4', nid: 100, workId: 'source-work-1' },
+      target: { generation: 'V5', nid: 200, workId: 'target-work-1' },
+      environmentComparison: comparison,
+      riskAcceptance: environmentRiskAcceptance(review.reviewId, { scenarioIds: ['scenario-reversible-risk'] }),
+    }), { code: 'RUNTIME_AUTHORIZATION_REQUIRED' });
+  });
+});
+
+test('user-declared semantic equivalence retains qualified parity and converter attribution', async () => {
+  await withReview('ivx-runtime-user-declared-env-', async ({ paths, reviews, review }) => {
+    const fixture = fakePlaywright();
+    const runner = new RuntimeReviewRunner({ reviews, driver: new PlaywrightRuntimeDriver({ playwright: fixture.module, appPaths: paths, allowInsecureLocalhost: true }) });
+    reviews.addRuntimeScenario(review.reviewId, scenario());
+    const result = await runner.runCycle(review.reviewId, {
+      scenarioIds: ['scenario-parity'],
+      source: { generation: 'V4', nid: 100, workId: 'source-work-1', baseUrl: 'http://localhost:3100' },
+      target: { generation: 'V5', nid: 200, workId: 'target-work-1', baseUrl: 'http://localhost:3200' },
+      environmentComparison: userDeclaredEnvironmentComparison(review.reviewId),
+    });
+    assert.equal(result.review.status, 'RUNTIME_PARITY_PASSED_WITH_USER_DECLARED_ENVIRONMENT');
+    assert.equal(result.report.status, 'RUNTIME_PARITY_PASSED_WITH_USER_DECLARED_ENVIRONMENT');
+    assert.equal(result.report.environmentAssurance, 'USER_DECLARED_EQUIVALENT');
+    assert.equal(result.report.parityClaimed, true);
+    assert.equal(result.report.strictParityClaimed, false);
+    assert.equal(result.report.userDeclaredEnvironment, true);
+    assert.equal(result.report.converterAttributionAllowed, true);
+    assert.equal(result.report.automaticRepairAllowed, true);
+  });
+});
+
 test('READ_ONLY network policy blocks unsafe requests and trace redaction removes credential values', async () => {
   await withReview('ivx-runtime-network-', async ({ paths, reviews, review }) => {
     const fixture = fakePlaywright({ unsafeOnGoto: true });
@@ -330,6 +501,32 @@ test('a fresh runner resumes a crashed READ_ONLY cycle but never replays a side-
       authorization,
     });
     assert.throws(() => reviews.resumeRuntimeCycle(review.reviewId, { sourceBaseUrl: 'http://localhost:3100', targetBaseUrl: 'http://localhost:3200' }), { code: 'RUNTIME_SIDE_EFFECT_RECONCILIATION_REQUIRED' });
+  });
+});
+
+test('a crashed READ_ONLY diagnostic-risk cycle resumes with its original assurance boundary', async () => {
+  await withReview('ivx-runtime-resume-risk-', async ({ paths, reviews, review }) => {
+    reviews.addRuntimeScenario(review.reviewId, scenario());
+    const acceptance = environmentRiskAcceptance(review.reviewId);
+    const prepared = reviews.prepareRuntimeCycle(review.reviewId, {
+      scenarioIds: ['scenario-parity'],
+      source: { generation: 'V4', nid: 100, workId: 'source-work-1' },
+      target: { generation: 'V5', nid: 200, workId: 'target-work-1' },
+      environmentComparison: environmentComparison(review.reviewId, 'BLOCKED_ENVIRONMENT'),
+      riskAcceptance: acceptance,
+    });
+    assert.equal(prepared.cycle.environmentAssurance, 'USER_ACCEPTED_RISK');
+    assert.equal(prepared.review.status, 'RUNTIME_DIAGNOSTIC_TESTING');
+
+    const recovered = new RuntimeReviewStore(paths, { jobs: reviews.jobs });
+    const recovery = recovered.recover(review.reviewId);
+    assert.equal(recovery.activeCycle.environmentRiskAcceptanceId, acceptance.acceptanceId);
+    const fixture = fakePlaywright();
+    const runner = new RuntimeReviewRunner({ reviews: recovered, driver: new PlaywrightRuntimeDriver({ playwright: fixture.module, appPaths: paths, allowInsecureLocalhost: true }) });
+    const result = await runner.resumeCycle(review.reviewId, { sourceBaseUrl: 'http://localhost:3100', targetBaseUrl: 'http://localhost:3200' });
+    assert.equal(result.review.status, 'DIAGNOSTIC_RUNTIME_PASSED_WITH_ENVIRONMENT_RISK');
+    assert.equal(result.report.strictParityClaimed, false);
+    assert.equal(result.comparisons[0].environment.riskAcceptanceId, acceptance.acceptanceId);
   });
 });
 

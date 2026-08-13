@@ -6,6 +6,8 @@ This project is the distributable local workflow used by Codex or Claude Code. I
 
 The current stable runtime set is Workflow `0.4.4` with Agent protocol 5, Converter `1.2.2`, and Knowledge Runtime `0.1.2`. It provides:
 
+The source tree is preparing Workflow `0.5.0` with Agent protocol 6 for user-authorized diagnostic runtime under unresolved environment risk. It is not the public stable runtime until a compatible Knowledge Runtime, signed Release, channel update, clean-install update/rollback test, and user approval are complete.
+
 - private global Job storage with atomic state writes and per-Job locks;
 - metadata + physical work version classification;
 - a version-pinned local converter provider;
@@ -21,6 +23,7 @@ The current stable runtime set is Workflow `0.4.4` with Agent protocol 5, Conver
 - a separately authorized diagnostic Save As path that creates an editor-openable V5 copy for any classified issue after independent write hard gates pass, without reporting normal success;
 - independent private Runtime Review Session persistence, one-writer-per-target-revision leases, Human Finding evidence, and external-revision baseline reconciliation;
 - a locked Playwright Runtime Driver with closed declarative scenarios, isolated V4/V5 contexts, private browser authentication state, redacted traces, reviewed normalization, side-effect gates, and report-only parity comparison;
+- an exact-scoped, short-lived USER environment-risk acceptance for diagnostic runtime observation without rewriting environment equivalence, Converter attribution, or target-repair authority;
 - Diagnosis v2 with evidence-backed Issue Clusters, policy-computed automatic-repair decisions, independent diagnostic-save eligibility, calibration fixtures, and redacted owner-specific maintainer reports;
 - bounded target repair with private authorization leases, per-cluster `3+2` attempts, per-review `10+5` confirmed revisions, V5-only Patch policy, static regression gates, Saveable Checkpoints, target CAS, unknown-write reconciliation, verified read-back, and affected-scenario retesting;
 - a complete local-file dry run, mock-platform fault coverage, and a controlled real-case Save As, environment-equivalence, and runtime-parity acceptance flow.
@@ -158,6 +161,14 @@ ivx-migrate review runtime-run-platform \
   --scenario <scenarioId> \
   --environment-id <comparisonId>
 
+# Optional diagnostic-only continuation when the user has explicitly accepted
+# every unresolved environment path for these exact revisions and scenarios.
+ivx-migrate review runtime-run-platform \
+  --review <reviewId> \
+  --scenario <scenarioId> \
+  --environment-id <comparisonId> \
+  --environment-risk-acceptance-file ./environment-risk-acceptance.json
+
 # A fresh Agent may resume only a crashed READ_ONLY cycle. Side-effect cycles
 # require reconciliation and a new authorization instead of automatic replay.
 ivx-migrate review runtime-resume-platform \
@@ -165,6 +176,8 @@ ivx-migrate review runtime-resume-platform \
 ```
 
 Runtime Scenario actions use only the published action/semantic-locator vocabulary; arbitrary JavaScript, CSS/XPath, credential entry, and native Playwright traces are rejected. `READ_ONLY` blocks non-idempotent requests. `REVERSIBLE` requires cleanup and a single-use USER authorization; `EXTERNAL_SIDE_EFFECT` additionally requires a visible takeover. Browser storage state is kept in separate private `0600` files per preview origin and is never returned. Runtime cycles remain evidence-only: they never apply a Patch or invoke a platform write. A later, separately authorized repair operation may consume their redacted evidence.
+
+An unresolved Environment Gate still blocks by default. A user may separately accept exactly the current Review, source/target revisions, unresolved paths, and selected scenarios for at most eight hours. Such a cycle remains labeled `USER_ACCEPTED_RISK`: its Environment Comparison is not changed, its comparisons are excluded from Diagnosis v2, and its result cannot claim parity, attribute a Converter defect, or enable automatic repair. Environment-risk acceptance never substitutes for browser authentication, platform/revision checks, side-effect authorization, or a write confirmation. `/config/name` is the only newly ignored config field: it is a saved-preset display label absent from the platform runtime config contract; unknown fields remain fail-closed.
 
 When a Runtime Cycle reports a mismatch, Diagnosis v2 exposes stable candidates and accepts only a complete Schema-v2 Root Cause Classification. Every issue must cite its actual local comparison artifact; Knowledge rule IDs must have been retrieved by this review. The Workflow independently computes repair and diagnostic-save decisions and produces a redacted JSON/Markdown owner report:
 

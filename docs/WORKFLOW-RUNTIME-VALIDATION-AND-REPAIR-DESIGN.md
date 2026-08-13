@@ -1,6 +1,6 @@
 # V4→V5 工作流：运行时验证、问题诊断与 AI 修复设计
 
-> 状态：阶段 0–8 已全部完成；Workflow `0.4.4`、Converter `1.2.2` 与 Knowledge Runtime `0.1.2` 已公开发布，真实案例、全新安装、旧用户协调恢复、Agent 同步与回滚验收均已关闭
+> 状态：阶段 0–8 已全部完成；Workflow `0.4.4`、Converter `1.2.2` 与 Knowledge Runtime `0.1.2` 已公开发布，真实案例、全新安装、旧用户协调恢复、Agent 同步与回滚验收均已关闭。环境风险下诊断运行作为 Workflow `0.5.0` 候选变更在本地实现和验证，尚未提交或发布
 > 初稿：2026-08-12；本次修订：2026-08-13
 > 适用项目：`ivx-v4-v5-migration` 及其独立分发的 Workflow、Agent 适配器和知识运行时
 > 不修改：`tov5parser` 的转换规则；转换器继续由维护者在独立仓库中维护
@@ -215,7 +215,7 @@ flowchart TD
 | `USE_TARGET_BINDING` | 使用目标用户/目标组已有绑定 | 账号级资源、目标默认环境 |
 | `REQUIRE_USER_BINDING` | 无法安全自动复制，要求用户为目标重新绑定 | 支付、OAuth、证书、外部账号密钥 |
 | `REDACT_AND_COMPARE` | 只在可信代码内比较类型/存在性/等价标志，不持久化原值 | `customVars` 中的敏感值、secret 类字段 |
-| `IGNORE_FOR_PARITY` | 已证明不影响当前场景语义，可从轨迹中忽略 | 请求 ID、时间戳、平台生成追踪号 |
+| `IGNORE_FOR_PARITY` | 已证明不影响当前场景语义，可从轨迹中忽略 | 请求 ID、时间戳、平台生成追踪号、保存配置预设名称 `/config/name` |
 
 ### 7.3 推荐的首版政策
 
@@ -226,17 +226,35 @@ flowchart TD
 - 安全的展示/加载设置：建立明确 allowlist 后才复制；首版不得使用“复制所有未知键”。
 - 密钥、证书、客户端 secret、账号资源：只报告缺失/不等价，要求用户在目标侧绑定；绝不输出原值。
 - 外部 API、数据库、消息队列：记录逻辑绑定是否等价。可能产生真实副作用的测试默认禁止自动执行。
+- 保存配置预设名称 `/config/name`：VxEditor 保存预设时可能把显示名称带入 work config，但 VxServer 运行时配置合同不读取该字段，因此显式忽略。该结论不扩展为“忽略所有非域名字段”；其他未知字段仍默认阻塞。
 
 ### 7.4 环境门禁状态
 
-| 状态 | 是否允许评价 Converter |
-|---|---|
-| `ENVIRONMENT_EQUIVALENT` | 允许 |
-| `NORMALIZED_EQUIVALENT` | 允许，但报告必须列出归一化项 |
-| `REQUIRES_USER_BINDING` | 不允许，等待用户完成目标绑定 |
-| `BLOCKED_ENVIRONMENT` | 不允许，先处理环境或测试条件 |
+| 状态 | 正常运行时对照 | 是否允许评价 Converter |
+|---|---|---|
+| `ENVIRONMENT_EQUIVALENT` | 允许 | 允许 |
+| `NORMALIZED_EQUIVALENT` | 允许，报告列出归一化/用户声明项 | 允许 |
+| `REQUIRES_USER_BINDING` | 默认停止；可另行授权风险诊断 | 不允许 |
+| `BLOCKED_ENVIRONMENT` | 默认停止；可另行授权风险诊断 | 不允许 |
 
-在环境未达到前两种状态前，即使观察到 V4/V5 差异，也不能归因给 Converter。
+环境比较必须如实保留原状态。用户接受风险不是环境等价声明；即使风险下观察到 V4/V5 差异，也不能归因给 Converter。
+
+### 7.5 用户接受风险后的诊断运行
+
+当用户暂时无法完成目标绑定或消除已知环境差异，但希望先打开运行态定位问题时，可创建独立的私有 `environment-risk-acceptance`。它必须：
+
+- 由用户明确确认，使用 `ACCEPT_ENVIRONMENT_RISK` 和目的 `DIAGNOSTIC_RUNTIME_ONLY`；
+- 精确绑定 Review ID、源/目标 nid + workId、当前全部未解决字段路径和所选 Runtime Scenario ID；
+- 创建后最长 8 小时有效，不能从 Agent 的一般“继续”指令静默推导；
+- 不绕过认证、平台可用性、revision、浏览器登录、场景副作用授权或任何写入门禁。
+
+运行时记录三种环境保证级别：`STRICT_EQUIVALENT`、`USER_DECLARED_EQUIVALENT` 和 `USER_ACCEPTED_RISK`。风险运行只产生：
+
+- `DIAGNOSTIC_RUNTIME_PASSED_WITH_ENVIRONMENT_RISK`；
+- `MISMATCH_UNDER_ENVIRONMENT_RISK`；
+- `DIAGNOSTIC_RUNTIME_INCONCLUSIVE_WITH_ENVIRONMENT_RISK`。
+
+这些结果不是严格运行时等价，也不进入 Diagnosis v2 候选、Converter 归因或自动目标修复。用户解决环境后可返回 Environment Preflight，重新执行严格对照。用户对目标绑定作出业务语义等价声明并通过对照时，单独使用 `RUNTIME_PARITY_PASSED_WITH_USER_DECLARED_ENVIRONMENT`，不得与风险接受混淆。修复后的目标复测必须使用等价环境，禁止依赖风险接受关闭 Repair Batch。
 
 ## 8. 运行时测试与行为比较
 
@@ -618,10 +636,18 @@ stateDiagram-v2
     [*] --> REVIEW_OPEN
     REVIEW_OPEN --> ENVIRONMENT_PREFLIGHT
     ENVIRONMENT_PREFLIGHT --> RUNTIME_TESTING: 环境可比
+    ENVIRONMENT_PREFLIGHT --> RUNTIME_DIAGNOSTIC_TESTING: 用户接受精确环境风险
     ENVIRONMENT_PREFLIGHT --> AWAITING_USER_BINDING: 需用户绑定
     ENVIRONMENT_PREFLIGHT --> BLOCKED_ENVIRONMENT: 环境不可比
     RUNTIME_TESTING --> RUNTIME_PARITY_PASSED: 全部断言通过
+    RUNTIME_TESTING --> RUNTIME_PARITY_PASSED_WITH_USER_DECLARED_ENVIRONMENT: 用户声明绑定等价且断言通过
     RUNTIME_TESTING --> MISMATCH_DETECTED: 发现差异
+    RUNTIME_DIAGNOSTIC_TESTING --> DIAGNOSTIC_RUNTIME_PASSED_WITH_ENVIRONMENT_RISK: 风险下断言通过
+    RUNTIME_DIAGNOSTIC_TESTING --> MISMATCH_UNDER_ENVIRONMENT_RISK: 风险下发现差异
+    RUNTIME_DIAGNOSTIC_TESTING --> DIAGNOSTIC_RUNTIME_INCONCLUSIVE_WITH_ENVIRONMENT_RISK: 风险下不确定
+    DIAGNOSTIC_RUNTIME_PASSED_WITH_ENVIRONMENT_RISK --> ENVIRONMENT_PREFLIGHT: 解决环境后严格重测
+    MISMATCH_UNDER_ENVIRONMENT_RISK --> ENVIRONMENT_PREFLIGHT: 解决环境后严格重测
+    DIAGNOSTIC_RUNTIME_INCONCLUSIVE_WITH_ENVIRONMENT_RISK --> ENVIRONMENT_PREFLIGHT: 解决环境后严格重测
     MISMATCH_DETECTED --> DIAGNOSING
     DIAGNOSING --> CONVERTER_REPORT_READY: Converter 根因
     DIAGNOSING --> REPAIR_PROPOSED: 允许修复目标
@@ -640,6 +666,7 @@ stateDiagram-v2
     AWAITING_HUMAN_EVIDENCE --> DIAGNOSING: 收到 Human Finding
     CONVERTER_REPORT_READY --> [*]
     RUNTIME_PARITY_PASSED --> [*]
+    RUNTIME_PARITY_PASSED_WITH_USER_DECLARED_ENVIRONMENT --> [*]
 ```
 
 建议的摘要状态还包括：
@@ -652,6 +679,10 @@ stateDiagram-v2
 - `AWAITING_HUMAN_EVIDENCE`
 - `TARGET_EXTERNALLY_MODIFIED`
 - `RUNTIME_PARITY_PASSED`
+- `RUNTIME_PARITY_PASSED_WITH_USER_DECLARED_ENVIRONMENT`
+- `DIAGNOSTIC_RUNTIME_PASSED_WITH_ENVIRONMENT_RISK`
+- `MISMATCH_UNDER_ENVIRONMENT_RISK`
+- `DIAGNOSTIC_RUNTIME_INCONCLUSIVE_WITH_ENVIRONMENT_RISK`
 
 ### 13.3 诊断另存是与修复状态正交的决定
 
@@ -850,7 +881,7 @@ Converter 修复后由维护者发布新 Converter；用户更新后可以对原
 - 无问题 V4→V5，配置等价，运行时通过；
 - 已知 Converter 缺陷，仍创建诊断副本并生成报告；
 - SOURCE_DATA/TARGET_CASE 问题可修复并复测通过；
-- 环境/预览域名差异先阻塞，处理后再测试；
+- 环境/预览域名差异默认先阻塞；用户精确接受风险后可做不归因、不修复的诊断运行，处理环境后再做严格测试；
 - PLATFORM_RUNTIME/KNOWLEDGE_GAP/UNKNOWN 停止自动修复后仍可创建或保留诊断副本；
 - AUTHORIZATION 或平台写入故障先进入等待，恢复后可继续诊断另存；
 - Playwright 无人值守完成无副作用场景，登录/复杂交互可转用户可见接管；
@@ -864,7 +895,7 @@ Converter 修复后由维护者发布新 Converter；用户更新后可以对原
 
 ## 18. 验收标准
 
-只有同时满足以下条件，才可以对用户报告“运行时验证通过”：
+只有同时满足以下条件，才可以对用户报告无条件“运行时验证通过”：
 
 - 源和目标版本/revision 固定；
 - Environment Gate 为 `ENVIRONMENT_EQUIVALENT` 或 `NORMALIZED_EQUIVALENT`；
@@ -876,7 +907,7 @@ Converter 修复后由维护者发布新 Converter；用户更新后可以对原
 - 报告列出 Workflow/Converter/Knowledge 版本、归一化项和未覆盖场景。
 - 报告列出 Runtime Driver/浏览器版本、执行模式和是否发生人工接管。
 
-如果只完成转换和静态验证，应报告“结构验证通过”；如果创建的是带问题副本，应明确报告“诊断副本已创建”；两者都不能写成“运行时等价”。
+若 Environment Gate 的等价包含用户绑定声明，可报告 `RUNTIME_PARITY_PASSED_WITH_USER_DECLARED_ENVIRONMENT`，同时列出声明范围。若使用 `USER_ACCEPTED_RISK`，无论所选断言是否通过都只能报告风险诊断结果，不能写成“运行时等价”、不能归因 Converter、不能自动修复。只完成转换和静态验证时报告“结构验证通过”；创建带问题副本时明确报告“诊断副本已创建”。
 
 ## 19. 已确认并实现的默认值
 
@@ -887,7 +918,7 @@ Converter 修复后由维护者发布新 Converter；用户更新后可以对原
 3. **诊断副本：**所有根因分类均可独立评估并创建/保留 V5 诊断案例；分类本身不否决另存。认证、服务器权限、平台写入可用性、revision 安全、Saveable Checkpoint 和用户授权作为独立硬前提。
 4. **知识分发：**Workflow 只从 `ivx-v4-v5-knowledge` 的签名稳定通道安装不可变 Knowledge Release，不读取维护源、候选或仓库分支。
 5. **运行时首版：**Playwright 无人值守是正式 Runtime Driver，用户可见模式负责登录、复杂交互和人工接管；先做结构化 Trace 与“只报告”试点，验证稳定后再接自动修复。
-6. **配置策略：**不完整复制；使用字段政策注册表，目标身份重映射、`customVars` 语义保留、secret 用户绑定、未知字段阻塞。
+6. **配置策略：**不完整复制；使用字段政策注册表，目标身份重映射、`customVars` 语义保留、secret 用户绑定、`/config/name` 作为已证明的预设名称元数据忽略、其他未知字段阻塞。用户可精确授权环境风险下诊断，但不能借此产生等价、归因或修复结论。
 7. **持久化：**完整 Job/Review 数据留在 `~/.ivx-v4-v5/jobs`；当前工作目录只保留可选的轻量引用。
 8. **人工续接：**用户后续反馈通过 Human Finding 进入同一 Review Session；用户手工修改目标后必须显式接纳新 revision。
 9. **知识反馈：**Workflow 只输出脱敏 Knowledge Feedback Report，不直接修改已安装规则，也不参与知识审查或发布。
@@ -896,5 +927,7 @@ Converter 修复后由维护者发布新 Converter；用户更新后可以对原
 ## 20. 当前状态与后续维护
 
 代码改造阶段 0–8 已全部完成。Knowledge Runtime `0.1.2`、Workflow `0.4.4` 和兼容的独立 Converter `1.2.2` 均已公开发布；受控真实案例已完成另存、环境门禁和无人值守运行时一致性验收。Workflow `0.4.0` 公共全新安装暴露的 GitHub Release 正文下载超时，已由 `0.4.1` 的受校验系统下载路径、`0.4.2` 的显式防降级 Launcher 恢复，以及 `0.4.3` 的协调式 setup 依次修复。`0.4.3` 的全新安装、旧用户恢复、Agent 同步和回滚验收均通过；`0.4.4` 仅重构普通用户入口、授权说明与维护者验收信息架构，不改变运行时行为，阶段 8 仍保持关闭。
+
+Workflow `0.5.0` 候选在此基础上增加 `/config/name` 的明确字段政策、精确范围的环境风险接受、诊断专用运行状态和 Agent 报告边界。该候选当前仅完成本地代码/合同/文档与回归验证；发布前还必须提升 Agent protocol、发布兼容该协议的 Knowledge Runtime、完成签名 Release/更新/回滚验收。公开稳定版在这些步骤完成前仍为 `0.4.4`。
 
 后续工作属于持续维护和扩大真实案例覆盖，不是本轮功能缺口：继续收集稳定、可回滚的真实场景校准 Diagnosis/Repair 政策；按真实试点数据评估预算；为 Windows 建立原生 Token 文件 ACL 合同。任何尚未由真实稳定场景覆盖的能力都必须明确标注为 mock、校准夹具或故障注入结果，不以静态结果替代运行时等价结论。Converter 的后续修复继续独立发布；只要版本仍满足 Workflow `0.4.4` 的 `>=1.2.0 <2.0.0` 兼容范围，就不要求同步发布新的 Workflow。

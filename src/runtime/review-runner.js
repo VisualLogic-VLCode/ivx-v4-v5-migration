@@ -11,9 +11,9 @@ export class RuntimeReviewRunner {
     this.now = now;
   }
 
-  async runCycle(reviewId, { scenarioIds, source, target, environmentComparison, authorization = null } = {}) {
+  async runCycle(reviewId, { scenarioIds, source, target, environmentComparison, riskAcceptance = null, authorization = null } = {}) {
     return this.reviews.withRuntimeLease(reviewId, async () => {
-      const prepared = this.reviews.prepareRuntimeCycle(reviewId, { scenarioIds, source, target, environmentComparison, authorization });
+      const prepared = this.reviews.prepareRuntimeCycle(reviewId, { scenarioIds, source, target, environmentComparison, riskAcceptance, authorization });
       if (prepared.blocked) return prepared;
       return this.#executePrepared(reviewId, { ...prepared, source, target, completedScenarioIds: [] });
     });
@@ -48,6 +48,8 @@ export class RuntimeReviewRunner {
           sourceNormalized,
           targetNormalized,
           environment: environmentComparison,
+          environmentAssurance: cycle.environmentAssurance || 'STRICT_EQUIVALENT',
+          riskAcceptanceId: cycle.environmentRiskAcceptanceId || null,
           subjects,
           now: this.now,
         });

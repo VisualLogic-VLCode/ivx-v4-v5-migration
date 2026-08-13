@@ -43,7 +43,7 @@ function register(paths, policy) {
 
 register(CONFIG_TARGET_BINDINGS.map((key) => `/config/${key}`), 'USE_TARGET_BINDING');
 register(CONFIG_EXPLICIT_BINDINGS.map((key) => `/config/${key}`), 'REQUIRE_USER_BINDING');
-register(['/config/default'], 'IGNORE_FOR_PARITY');
+register(['/config/default', '/config/name'], 'IGNORE_FOR_PARITY');
 
 register([
   '/settings/favicon',

@@ -190,7 +190,19 @@ ivx-migrate review runtime-run-platform \
   --environment-id <comparisonId>
 ```
 
-Workflow 会先对 V4/V5 的配置、设置、域名、路由和绑定做脱敏环境比较。只有 `ENVIRONMENT_EQUIVALENT` 或 `NORMALIZED_EQUIVALENT` 才开始浏览器对照；需用户绑定或环境阻塞时不会把差异归因给 Converter。预览 URL 来自平台当前元数据并与源/目标 `workId` 复核，不需要用户手填。
+Workflow 会先对 V4/V5 的配置、设置、域名、路由和绑定做脱敏环境比较。`ENVIRONMENT_EQUIVALENT` 或 `NORMALIZED_EQUIVALENT` 可进入正常浏览器对照；需用户绑定或环境阻塞时默认停止，也不会把差异归因给 Converter。`/config/name` 是已确认不进入平台运行时的保存配置预设名称，因此明确按 `IGNORE_FOR_PARITY` 处理；其他未知字段仍默认阻塞。预览 URL 来自平台当前元数据并与源/目标 `workId` 复核，不需要用户手填。
+
+用户若暂时无法消除环境差异，可以在 Agent 完整列出当前 Review、源/目标 revision、全部未解决路径和所选场景后，明确确认 `ACCEPT_ENVIRONMENT_RISK`。Agent 随后创建最长 8 小时的私有 `environment-risk-acceptance`，并只为该精确范围增加：
+
+```bash
+ivx-migrate review runtime-run-platform \
+  --review <reviewId> \
+  --scenario <scenarioId> \
+  --environment-id <comparisonId> \
+  --environment-risk-acceptance-file <USER-acceptance.json>
+```
+
+这条路径只允许诊断运行。Environment Comparison 仍保留 `REQUIRES_USER_BINDING` / `BLOCKED_ENVIRONMENT`；结果只能是风险下通过、不一致或不确定，不能声称严格等价、不能进入 Converter 归因或自动修复。认证、平台/revision 安全、场景副作用授权和所有写入门禁仍独立生效。修复后的正式复测不接受该风险文件，必须先恢复环境等价。
 
 平台场景的首个 `OPEN_PAGE` 使用 `"input": "$SUBJECT_URL"`，表示分别打开当前 V4 与 V5 的完整、revision-pinned 预览 URL。只有确实要访问同源固定路径时才填写 `/path`；不要用 `/` 代替案例预览地址。
 
@@ -200,7 +212,7 @@ Workflow 会先对 V4/V5 的配置、设置、域名、路由和绑定做脱敏�
 
 初始授权最多允许每个问题簇 3 次本地 Repair Attempt，以及整个 Review 最多 10 个已读回确认的目标 revision。额外 `+2` 次尝试和 `+5` 个 revision 必须再次获得用户授权。重复 Patch、A→B→A 振荡、范围持续扩大、新高严重度问题、目标被外部修改或写入结果未知都会停止。每次目标更新都要先做 revision CAS、静态全量验证，再通过写后读回确认；未知写入结果只能对账，不能重放。
 
-修复后必须重新检查环境并复测原场景及受影响场景。只有 Review 到达 `RUNTIME_PARITY_PASSED` 才能汇报运行时一致；没有稳定断言时只能汇报 `RUNTIME_NOT_TESTED`。用户后续手动定位出的信息通过 `review finding-add` 追加到同一个 Review，它是证据而不是新的写入授权。
+修复后必须重新检查环境并复测原场景及受影响场景。只有 Review 到达 `RUNTIME_PARITY_PASSED` 才能无条件汇报运行时一致；`RUNTIME_PARITY_PASSED_WITH_USER_DECLARED_ENVIRONMENT` 必须同时说明用户声明的绑定范围。风险诊断的通过不是运行时等价；没有稳定断言时只能汇报 `RUNTIME_NOT_TESTED`。用户后续手动定位出的信息通过 `review finding-add` 追加到同一个 Review，它是证据而不是新的写入授权。
 
 ## 9. 更新和回滚
 

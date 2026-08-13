@@ -18,9 +18,40 @@
       "required": ["comparisonId", "status"],
       "properties": {
         "comparisonId": { "$ref": "common.schema.json#/$defs/id" },
-        "status": { "enum": ["ENVIRONMENT_EQUIVALENT", "NORMALIZED_EQUIVALENT", "REQUIRES_USER_BINDING", "BLOCKED_ENVIRONMENT"] }
+        "status": { "enum": ["ENVIRONMENT_EQUIVALENT", "NORMALIZED_EQUIVALENT", "REQUIRES_USER_BINDING", "BLOCKED_ENVIRONMENT"] },
+        "assurance": { "enum": ["STRICT_EQUIVALENT", "USER_DECLARED_EQUIVALENT", "USER_ACCEPTED_RISK"] },
+        "riskAcceptanceId": {
+          "oneOf": [
+            { "$ref": "common.schema.json#/$defs/id" },
+            { "type": "null" }
+          ]
+        }
       },
-      "additionalProperties": false
+      "additionalProperties": false,
+      "dependentRequired": {
+        "assurance": ["riskAcceptanceId"],
+        "riskAcceptanceId": ["assurance"]
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "assurance": { "const": "USER_ACCEPTED_RISK" } }, "required": ["assurance"] },
+          "then": {
+            "properties": {
+              "status": { "enum": ["REQUIRES_USER_BINDING", "BLOCKED_ENVIRONMENT"] },
+              "riskAcceptanceId": { "$ref": "common.schema.json#/$defs/id" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "assurance": { "enum": ["STRICT_EQUIVALENT", "USER_DECLARED_EQUIVALENT"] } }, "required": ["assurance"] },
+          "then": {
+            "properties": {
+              "status": { "enum": ["ENVIRONMENT_EQUIVALENT", "NORMALIZED_EQUIVALENT"] },
+              "riskAcceptanceId": { "type": "null" }
+            }
+          }
+        }
+      ]
     },
     "status": { "enum": ["PARITY_PASSED", "MISMATCH_DETECTED", "INCONCLUSIVE"] },
     "assertions": {
