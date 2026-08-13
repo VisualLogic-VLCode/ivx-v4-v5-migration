@@ -4,7 +4,7 @@
 
 ```text
 请读取并严格按照下面这份不可变引导，在我的本机安装或更新 iVX V4→V5 工作流，并完成安全初始化：
-https://raw.githubusercontent.com/VisualLogic-VLCode/ivx-v4-v5-migration/v0.4.3/docs/AI-AGENT-BOOTSTRAP.md
+https://raw.githubusercontent.com/VisualLogic-VLCode/ivx-v4-v5-migration/v0.4.4/docs/AI-AGENT-BOOTSTRAP.md
 
 请由你完成环境检查、Launcher 安装或更新、工作流初始化、doctor、签名更新检查和 Agent Skill 状态检查，不要让我手动执行 ivx-migrate 命令，也不要从 Git 仓库安装或更新运行时。
 
@@ -17,4 +17,3 @@ https://raw.githubusercontent.com/VisualLogic-VLCode/ivx-v4-v5-migration/v0.4.3/
 ```
 
 初始化成功后，普通用户不必再次粘贴这段提示。以后直接用自然语言给出 `nid` 和目标即可。可复制的任务示例、授权范围和结果含义见[通过 AI Agent 使用工作流](../AI-USER-GUIDE.md)。
-
