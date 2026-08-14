@@ -8,9 +8,37 @@ This context describes the language used to distinguish migration, runtime revie
 The immutable audit record from source-case classification through conversion, structural validation, and initial V5 creation or no-save completion.
 _Avoid_: Runtime review, chat task
 
+**Migration Continuation**:
+The recovery or continuation of the same non-terminal Migration Job through its existing operation journal; it must never create an additional target case.
+_Avoid_: Rerun, new migration, another Save As
+
+**Additional V5 Creation**:
+An explicit user intent that starts a new Migration Job from the current V4 source and creates a new V5 target while preserving every earlier Job, Review, and target.
+_Avoid_: Retry, resume, Existing Target Refresh
+
+**Existing Target Refresh**:
+A separate managed operation that fully converts the current V4 source into a previously Workflow-created V5 target while retaining that target nid and, by default, its target-side configuration.
+_Avoid_: Save As, Runtime Repair, overwrite
+
+**Refresh Job**:
+The immutable audit record for one Existing Target Refresh, linking the current source revision, the confirmed target baseline, the validated candidate, the write journal, and the resulting target revision.
+_Avoid_: Migration Job, Runtime Review Session
+
+**Refresh Plan**:
+An immutable, expiring proposal that binds exact source and target revisions and digests, runtime versions, a fully converted candidate digest, identity rewrites, preserved configuration policy, and known diagnostics before any refresh write is authorized.
+_Avoid_: Repair Proposal, Patch, platform request
+
+**Refresh Authorization**:
+A private, time-bounded user authorization bound to one Refresh Plan, one target baseline, and at most one confirmed target revision.
+_Avoid_: Save As authorization, Review repair authorization, global write mode
+
 **Runtime Review Session**:
 A reopenable review associated with one Migration Job and one target V5 case, covering runtime comparison, diagnosis, repair, and human evidence.
 _Avoid_: Reopened Migration Job
+
+**Superseded Review**:
+A preserved read-only Runtime Review Session whose target baseline has been replaced by a confirmed Existing Target Refresh and whose write authority has moved to a newly created Review.
+_Avoid_: Deleted Review, rewritten history, active Review
 
 **Review Write Lease**:
 The exclusive claim allowing one Runtime Review Session to prepare target updates against one Target Revision; it does not itself authorize a platform write.

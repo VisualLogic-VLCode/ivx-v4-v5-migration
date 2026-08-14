@@ -1,6 +1,6 @@
 # V4→V5 工作流：运行时验证、问题诊断与 AI 修复设计
 
-> 状态：阶段 0–9 已全部完成；Workflow `0.5.2`、Converter `1.2.2` 与 Knowledge Runtime `0.1.3` 构成当前公开运行时集合。环境风险下诊断运行、Save As 后源 revision 安全协调、全新安装、旧用户协调更新、Agent 同步与回滚均已纳入发布验收
+> 状态：阶段 0–9 已全部完成；Workflow `0.5.2`、Converter `1.2.2` 与 Knowledge Runtime `0.1.3` 构成当前公开运行时集合。环境风险下诊断运行、Save As 后源 revision 安全协调、全新安装、旧用户协调更新、Agent 同步与回滚均已纳入发布验收。阶段 10“Additional V5 Creation 与 Existing Target Refresh”设计已确认，但尚未实现或发布
 > 初稿：2026-08-12；本次修订：2026-08-14
 > 适用项目：`ivx-v4-v5-migration` 及其独立分发的 Workflow、Agent 适配器和知识运行时
 > 不修改：`tov5parser` 的转换规则；转换器继续由维护者在独立仓库中维护
@@ -11,6 +11,7 @@
 
 1. V4 转成 V5 并创建目标案例后，在用户本地由 AI Agent 对 V4/V5 进行运行时对照测试；发现差异时，区分转换器缺陷、源案例问题、目标案例局部问题、测试问题、环境配置问题、平台运行时问题和知识缺口。
 2. 转换器缺陷只生成可交给维护者的报告，不由工作流修改转换器；允许自动修复的问题由 AI 在严格边界内修复 V5 目标案例、重新保存并复测，直到通过、预算耗尽或触发安全停止条件。
+3. 在不破坏既有 Job/Review 审计链的前提下，明确区分“继续原操作”“再创建一个独立 V5”和“用当前 V4 完整刷新既有 V5 目标”三种用户意图。
 
 同时，本文定义 Workflow 如何消费、锁定和检索独立发布的 Knowledge Runtime；知识内容如何从维护者资料生成和发布不属于 Workflow 的职责。
 
@@ -106,6 +107,13 @@
 | Diagnostic Save Eligibility | 独立判断当前能否创建/保留 V5 诊断案例、需要等待什么前提或是否必须对账 |
 | Saveable Checkpoint | 可序列化、平台可接收，且不处于半次 Patch 或已知回归中的 V5 候选版本 |
 | Diagnostic Copy | 在仍有未解决问题时，为编辑态/运行态定位而创建或保留的 V5 案例；不等于转换成功 |
+| Migration Continuation | 通过原 Job 和原 journal 恢复同一个未完成操作；不得创建新目标 |
+| Additional V5 Creation | 用户明确要求基于当前 V4 新建一个独立 V5；创建新 Migration Job 和新 target nid，并保留全部旧历史 |
+| Existing Target Refresh | 把当前 V4 完整转换后写入有可信 Workflow lineage 的既有 V5，保留 target nid，默认保留目标配置 |
+| Refresh Job | 一次 Existing Target Refresh 的不可变审计记录，与 Migration Job、Runtime Review Session 分离 |
+| Refresh Plan | 写入前锁定源/目标 revision、摘要、运行时版本、候选摘要、身份改写、配置政策和诊断的不可变计划 |
+| Refresh Authorization | 绑定单个 Refresh Plan、目标基线、一次确认写入和有效期的用户授权 |
+| Superseded Review | 目标经 Refresh 成功推进后保留为只读历史、已失去写权限的旧 Runtime Review Session |
 
 ### 4.2 两层生命周期
 
@@ -895,6 +903,29 @@ Converter 修复后由维护者发布新 Converter；用户更新后可以对原
 
 > 完成记录（2026-08-13）：阶段 8 已关闭。受控真实案例完成 V5 另存、revision 读回、配置归一化等价和无副作用 Playwright 运行时一致性验收；公开 Workflow `0.4.3` 完成全新安装、旧用户协调恢复、Agent protocol 5 同步、签名更新与回滚。无法安全、稳定复现的 Converter/Source/Platform/Authorization/Unknown 等分支继续由 mock、校准夹具和故障注入覆盖，不将其误报为真实运行时等价。
 
+### 阶段 9：环境风险诊断与 Save As 后源 revision 协调
+
+- 为 `/config/name` 建立明确忽略政策，未知环境字段继续受门禁约束。
+- 增加绑定精确 revision、环境路径和 Runtime Scenario 的风险接受；风险运行只能产生诊断观察，不能生成等价、Converter 归因或自动修复结论。
+- Review 创建和无证据旧 Review 恢复前，使用完整 V4 输入的规范摘要协调 Save As 后源 workId 推进；仅 revision 变化且内容相同时允许继续。
+- 源内容变化、读取不完整或 Review 已有证据时必须阻断，且不能通过重复 Save As 或新 Job 暗中绕过。
+- 协调 Workflow 回滚后的 Agent Skill 同步，并把 Agent protocol 提升到 6、Knowledge 兼容范围同步到 `0.1.3`。
+
+**验收门：**环境风险授权不能提升诊断证据等级；源内容变化不会污染旧 Review；Workflow/Agent/Knowledge 更新与回滚保持协议一致。
+
+> 完成记录（2026-08-14）：Workflow `0.5.0`–`0.5.2` 已依次完成本阶段能力、签名发布、全新安装、协调更新、回滚和既有 Review 恢复验收。
+
+### 阶段 10：Additional V5 Creation 与 Existing Target Refresh
+
+- 为 Migration Job 增加显式 `CREATE_ADDITIONAL_V5` 意图；恢复/重试仍只允许继续原 Job 和 journal。
+- 增加独立 Refresh Job、Refresh Plan、Refresh Authorization、Refresh Journal、目标操作租约和 Review 继任关系。
+- 增加源/目标判版、可信 lineage、独立读写权限、版本兼容、完整候选验证、目标身份改写、目标 CAS 与未知结果对账。
+- 首版只做 content-only refresh，保留目标配置、settings、路由、预览与环境绑定；配置迁移不隐式附带。
+- 更新 Agent SOP 和协议；先发布兼容新协议的 Knowledge Release，再发布签名 Workflow 与 Agent 适配器。
+- 详细合同、状态机和验收矩阵见第 21 节。
+
+**验收门：**新增目标只能来自显式意图；Refresh 不复用 Save As/Repair 授权；旧审计历史不被改写；每次写入都有 CAS、journal、读回和可恢复对账；未知结果绝不自动重放。
+
 ## 18. 验收标准
 
 只有同时满足以下条件，才可以对用户报告无条件“运行时验证通过”：
@@ -932,4 +963,167 @@ Converter 修复后由维护者发布新 Converter；用户更新后可以对原
 
 Workflow `0.5.0` 在此基础上增加 `/config/name` 的明确字段政策、精确范围的环境风险接受、诊断专用运行状态和 Agent 报告边界。Agent protocol 已提升到 6，Knowledge Runtime `0.1.3` 提供对应兼容范围。`0.5.1` 补齐 Workflow 回滚后的 Agent Skill 协调同步；`0.5.2` 增加以完整 V4 输入摘要为证据的 post-Save source revision 协调，并明确禁止通过重复 Save As 处理内容变化。签名 Release、稳定通道、全新安装、协调更新、回滚和既有 Review 恢复共同构成发布验收。
 
-后续工作属于持续维护和扩大真实案例覆盖，不是本轮功能缺口：继续收集稳定、可回滚的真实场景校准 Diagnosis/Repair 政策；按真实试点数据评估预算；为 Windows 建立原生 Token 文件 ACL 合同。任何尚未由真实稳定场景覆盖的能力都必须明确标注为 mock、校准夹具或故障注入结果，不以静态结果替代运行时等价结论。Converter 的后续修复继续独立发布；只要版本仍满足 Workflow `0.5.2` 的 `>=1.2.0 <2.0.0` 兼容范围，就不要求同步发布新的 Workflow。
+阶段 0–9 的后续工作属于持续维护和扩大真实案例覆盖：继续收集稳定、可回滚的真实场景校准 Diagnosis/Repair 政策；按真实试点数据评估预算；为 Windows 建立原生 Token 文件 ACL 合同。阶段 10 则是已经确认但尚未实现的新能力，不能由当前 Workflow/Agent 宣称可用。任何尚未由真实稳定场景覆盖的能力都必须明确标注为 mock、校准夹具或故障注入结果，不以静态结果替代运行时等价结论。Converter 的后续修复继续独立发布；只要版本仍满足 Workflow `0.5.2` 的 `>=1.2.0 <2.0.0` 兼容范围，就不要求同步发布新的 Workflow。
+
+## 21. Additional V5 Creation 与 Existing Target Refresh（阶段 10 设计，尚未实现）
+
+### 21.1 三种用户意图必须显式区分
+
+| 用户意图 | 状态对象 | 目标 nid | 旧 Job/Review/目标 | 允许的入口 |
+|---|---|---|---|---|
+| 继续或恢复 | 原 Migration/Refresh Job 与原 journal | 不新增 | 原地继续，不改写已确认历史 | `resume` / `reconcile` |
+| `CREATE_ADDITIONAL_V5` | 新 Migration Job | 必须新建 | 全部保留，互不取代 | `migrate --intent create-additional-v5` |
+| `EXISTING_TARGET_REFRESH` | 新 Refresh Job | 必须保留既有 nid | 旧 Job 保留；成功后旧 Review 被 supersede | `refresh prepare/apply/reconcile` |
+
+Agent 不得把“再转一次”“继续”“重试”“更新原 V5”等自然语言自行混为同一操作。语义明确时使用相应入口；若目标身份会变化而用户意图不明确，必须先让用户确认。尤其是：
+
+- `resume`/`retry` 永远不能创建第二个 target nid；
+- `CREATE_ADDITIONAL_V5` 永远不能覆盖旧 target；
+- `EXISTING_TARGET_REFRESH` 永远不能先创建新 nid 再冒充刷新完成；
+- 原 Review 因源内容改变而阻断时，不得暗中改用另外两种意图绕过；必须由用户明确提出新操作。
+
+### 21.2 Additional V5 Creation
+
+用户可以明确声明“以当前 V4 再转换并另存为另一个 V5”。Workflow 应：
+
+1. 新建独立 Migration Job，并持久化 `intent: CREATE_ADDITIONAL_V5`；
+2. 重新读取和判定当前源必须为 V4，锁定当前 revision、输入摘要和 Workflow/Converter/Knowledge 版本；
+3. 运行完整转换、诊断和静态验证，按现有 Saveable Checkpoint/诊断副本政策决定可写候选；
+4. 执行一次普通、可恢复的 Save As，必须得到新的 target nid；
+5. 当调用方已知旧 Job 时记录 `relatedPriorJobIds`，但不改变旧 Job、Review 或 V5；
+6. 对新目标建立独立 Runtime Review Session。
+
+它不需要新的平台保存协议，但需要新的 Agent/Job 意图合同和回归测试，防止 Agent 把“继续原 Job”误路由成再次另存。
+
+### 21.3 Existing Target Refresh 的范围
+
+首版 Refresh 只支持满足以下全部条件的目标：
+
+- 当前源经平台权威元数据和物理结构共同判定为 V4；
+- 当前目标经平台权威元数据和物理结构共同判定为 V5；
+- 已完成的 Workflow Migration Job 能证明 `source nid → target nid` lineage，且 lineage 的 source nid 与本次源一致；
+- 用户 Token 当前既能读取完整源，也拥有该目标的编辑/保存权限；Group 内源案例仍按相同流程处理，`gid` 只是源读取与权限上下文，不改变 Refresh 语义；
+- 当前 Workflow、Converter、Knowledge 组合兼容，转换器能够从当前完整 V4 生成候选；
+- 候选可序列化、平台可接受且通过整例结构校验；所有根因分类的已知诊断都必须列入 Refresh Plan。根因分类本身不是 refresh 白名单/黑名单；用户可明确接受带问题候选，但认证、服务器权限、平台控制面、revision/CAS、未知结果对账和 Saveable Checkpoint 仍是独立硬门禁，且任何问题都不能被隐藏或误报为已修复。
+
+首版不允许把任意陌生 V5 声明为目标。以后若要支持无 Workflow lineage 的目标，需要新的来源证明、目标所有权和基线接纳决策，不能通过放宽首版检查实现。
+
+### 21.4 Refresh 的内容与配置政策
+
+Refresh 是完整内容替换，不是局部 JSON Patch：
+
+- 使用当前完整 V4 重新调用 Converter；
+- 把候选中的源 nid/身份引用按既有 Save As 身份改写规则统一改写为既有 target nid；
+- 默认只更新案例内容，保留目标现有 config、settings、路由、预览域名/路径、环境绑定和目标名称；
+- Refresh Plan 同时记录目标配置摘要与 `PRESERVE_TARGET_CONFIGURATION` 政策；apply 前摘要变化即视为目标基线漂移；
+- 若用户以后要求同步源环境配置，必须进入独立配置迁移计划、字段政策和授权，不能在 content-only refresh 中静默复制 secret 或源配置。
+
+保留目标配置可能使新内容与旧环境暂时不等价；这不否决 content refresh，但新 Review 必须重新执行 Environment Gate，并把差异明确报告给用户。
+
+### 21.5 命令与持久化产物
+
+建议的受管入口为：
+
+```text
+ivx-migrate migrate --nid <sourceNid> [--gid <gid>] --intent create-additional-v5
+ivx-migrate refresh prepare --source-nid <sourceNid> --target-nid <targetNid> [--gid <gid>]
+ivx-migrate refresh apply --refresh-id <refreshId> --authorization-id <authorizationId>
+ivx-migrate refresh reconcile --refresh-id <refreshId>
+```
+
+普通用户仍由 Agent 调用这些入口，不要求手工拼命令。Refresh 数据保存在私有目录：
+
+```text
+~/.ivx-v4-v5/refreshes/<refreshId>/
+├── state.json
+├── source/
+├── target-baseline/
+├── candidate/
+├── refresh-plan.json
+├── authorization.json
+├── refresh-journal.json
+├── target-readbacks/
+└── reports/
+```
+
+Refresh Plan 至少绑定：source nid/gid/workId/规范摘要、target nid/workId/规范摘要、lineage Job、Workflow/Converter/Knowledge 版本、完整候选摘要、身份改写摘要、目标配置摘要、配置保留政策、全部诊断、计划有效期和 plan digest。Token、Cookie 和 secret 不进入任何产物。
+
+### 21.6 权限、授权和并发
+
+`prepare` 只读，并完成源读取权限、目标读取权限、目标编辑/保存权限的独立预检；不能用“源可另存”代替“目标可编辑”。通过后获取目标级独占操作租约，同一 target revision 不得同时存在 write-capable Review Repair 和 Refresh apply。
+
+Refresh Authorization 由用户单独授予，必须绑定：
+
+- `refreshId + planDigest`；
+- 精确 source workId/digest；
+- 精确 target nid/workId/digest/configDigest；
+- candidate digest 与已披露诊断摘要；
+- 最多一次确认成功的目标 revision；
+- 到期时间。
+
+它不能复用 Save As 授权、Review Repair 授权或全局 `writeMode`。apply 在写前重新读取源和目标；任一 revision、内容、配置、权限或兼容版本漂移都使计划失效，必须重新 prepare，不能由 Agent 修改计划字段来续用旧授权。
+
+### 21.7 状态机与未知结果
+
+```mermaid
+stateDiagram-v2
+    [*] --> REFRESH_PREPARING
+    REFRESH_PREPARING --> REFRESH_PLAN_READY: 判版、lineage、权限、转换与校验通过
+    REFRESH_PREPARING --> REFRESH_BLOCKED: 任一硬前提失败
+    REFRESH_PLAN_READY --> AWAITING_REFRESH_AUTHORIZATION
+    AWAITING_REFRESH_AUTHORIZATION --> REFRESH_READY_TO_APPLY: 用户授权精确计划
+    REFRESH_READY_TO_APPLY --> REFRESH_PLAN_STALE: 源/目标/配置/权限/版本漂移
+    REFRESH_READY_TO_APPLY --> REFRESH_WRITE_REQUESTED: CAS 通过且 journal 已落盘
+    REFRESH_WRITE_REQUESTED --> TARGET_REFRESHED: 读回内容匹配候选
+    REFRESH_WRITE_REQUESTED --> REFRESH_RECONCILIATION_REQUIRED: 响应丢失或读回不确定
+    REFRESH_RECONCILIATION_REQUIRED --> TARGET_REFRESHED: 后续读回匹配候选
+    REFRESH_RECONCILIATION_REQUIRED --> REFRESH_TARGET_DRIFTED: revision 或内容冲突
+    REFRESH_RECONCILIATION_REQUIRED --> REFRESH_OUTCOME_UNKNOWN: 多次读回仍为旧基线
+    TARGET_REFRESHED --> [*]
+    REFRESH_BLOCKED --> [*]
+    REFRESH_PLAN_STALE --> [*]
+    REFRESH_TARGET_DRIFTED --> [*]
+    REFRESH_OUTCOME_UNKNOWN --> [*]
+```
+
+写请求前必须持久化 `WRITE_REQUESTED`、预期 baseline、candidate digest 和授权 ID。响应或连接丢失后只允许读回对账：
+
+1. 目标内容匹配 candidate，且 revision 已推进：确认 `TARGET_REFRESHED`；
+2. revision/content/config 与 baseline 之外发生不匹配变化：进入 `REFRESH_TARGET_DRIFTED`，等待人工对账；
+3. 经过有界等待后仍完整保持 baseline：记录 `REFRESH_OUTCOME_UNKNOWN`。由于当前平台没有幂等键，不能使用同一授权自动重放；用户确认现状后重新 prepare 并签发新授权，才可发起新写入。
+
+### 21.8 Review 继任与审计历史
+
+Refresh 成功前，旧 Migration Job 和 Review 不发生任何历史改写。prepare/apply 占用目标操作租约期间，旧 write-capable Review 只能只读或暂停写入。
+
+确认 `TARGET_REFRESHED` 后：
+
+1. 旧 Migration Job 保持终态不变；
+2. Refresh Job 记录旧/新 target revision 和所有证据；
+3. 以该 target revision 为基线的旧 write-capable Reviews 转为 `REVIEW_SUPERSEDED_BY_REFRESH`，保留全部证据但撤销写租约；
+4. 新建 Runtime Review Session，绑定 Refresh Job、原 lineage Job 和刷新后的 target revision；
+5. 新 Review 从 Environment Gate 开始，不继承旧 Review 的 parity 结论、修复预算或授权。
+
+Additional V5 Creation 不 supersede 任何旧 Review；它为新 target 建立完全独立的 Review。
+
+### 21.9 Agent 协议、Knowledge 兼容与发布顺序
+
+Agent 必须学会识别三种意图、解释目标身份后果、使用 Refresh prepare/apply/reconcile、在未知结果时停止重放，并正确报告 Superseded Review。因此实现时预计把 `agentProtocolVersion` 从 6 提升到 7。
+
+当前 Knowledge Runtime `0.1.3` 的协议兼容上限为 6。发布支持阶段 10 的 Workflow 前，应先发布声明兼容 protocol 7 的 Knowledge Release（预计 `0.1.4`，最终版本在实现时确定），再同步 Codex/Claude Agent 适配器并发布签名 Workflow Release。Converter 不因该工作流能力自动发版；只有实现测试发现真实转换缺陷时才进入 Converter 的独立维护流程。
+
+### 21.10 验收矩阵
+
+阶段 10 至少覆盖：
+
+- 同一 V4 已有一个 V5 时，显式 Additional V5 Creation 产生不同的新 nid，旧 Job/Review/V5 完全不变；
+- 恢复或重试原 Job 不会新建 nid；
+- Refresh 使用当前 V4 更新既有 V5，target nid 不变、内容匹配候选、目标配置摘要不变；
+- Refresh 成功后旧 Review 只读 supersede，新 Review 绑定新 revision；
+- source 已是 V5、target 不是 V5、lineage 不匹配、目标无编辑权限、组合版本不兼容时均在写前阻断；
+- prepare 后源 revision、目标内容、目标配置或权限漂移时旧 plan/authorization 失效；
+- 所有根因分类的已知诊断都完整显示；硬写入前提满足并由用户精确授权时可生成诊断 refresh，但不会被报告成问题已修复；
+- 写响应丢失时，candidate 匹配可确认成功，冲突漂移进入对账，旧 baseline 不自动重放；
+- 中断后新 Agent 会话可从 Refresh Job/journal 恢复，不依赖聊天记忆；
+- Refresh 不消耗或伪造 Repair Attempt/Batch 预算，不复制 secret，不隐式改配置；
+- 旧 Agent protocol、旧 Knowledge 兼容范围和旧 Workflow 不会把尚未支持的 Refresh 误报为可用。
