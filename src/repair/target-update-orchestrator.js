@@ -1,5 +1,6 @@
 import { invariant, WorkflowError } from '../errors.js';
 import { revisionValueDigest } from '../reviews/revision-diff.js';
+import { withTargetWriteLease } from '../platform/target-write-lease.js';
 
 function publicErrorCode(error) {
   return typeof error?.code === 'string' ? error.code : 'PLATFORM_WRITE_FAILED';
@@ -13,7 +14,8 @@ export class TargetUpdateOrchestrator {
   }
 
   async run(reviewId, batchId) {
-    return this.reviews.withRepairLease(reviewId, async () => {
+    const review = this.reviews.load(reviewId);
+    return withTargetWriteLease(this.reviews.paths, review.target.nid, 'runtime-repair', () => this.reviews.withRepairLease(reviewId, async () => {
       const prepared = this.reviews.prepareTargetRepairWrite(reviewId, batchId);
       let observedBefore;
       try {
@@ -92,11 +94,12 @@ export class TargetUpdateOrchestrator {
         observedWorkId: observed.workId,
         observedSnapshot: observed.snapshot,
       });
-    });
+    }));
   }
 
   async reconcile(reviewId, batchId) {
-    return this.reviews.withRepairLease(reviewId, async () => {
+    const review = this.reviews.load(reviewId);
+    return withTargetWriteLease(this.reviews.paths, review.target.nid, 'runtime-repair-reconcile', () => this.reviews.withRepairLease(reviewId, async () => {
       const batch = this.reviews.loadRepairBatch(reviewId, batchId);
       invariant(batch.state === 'WRITE_OUTCOME_UNKNOWN', 'TARGET_REPAIR_RECONCILIATION_NOT_REQUIRED', 'Repair Batch does not have an unknown write outcome');
       const observed = await this.#readTarget(batch.expectedTarget.nid);
@@ -114,7 +117,7 @@ export class TargetUpdateOrchestrator {
           : 'TARGET_REPAIR_RECONCILIATION_DRIFT',
       });
       return { ...result, reconciled: false };
-    });
+    }));
   }
 
   async #readTarget(targetNid) {

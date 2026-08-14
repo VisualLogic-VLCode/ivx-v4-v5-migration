@@ -12,7 +12,14 @@
       "required": ["sourceNid", "gid"],
       "properties": {
         "sourceNid": { "type": "integer", "minimum": 1 },
-        "gid": { "type": ["integer", "null"], "minimum": 1 }
+        "gid": { "type": ["integer", "null"], "minimum": 1 },
+        "intent": { "enum": ["CREATE_V5", "CREATE_ADDITIONAL_V5"] },
+        "relatedPriorJobIds": {
+          "type": "array",
+          "maxItems": 50,
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^mig_[A-Za-z0-9_]+$" }
+        }
       },
       "additionalProperties": false
     },

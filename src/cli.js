@@ -10,8 +10,12 @@ import { WorkflowError, invariant } from './errors.js';
 import { diagnosticOwnerBucket, issueAutoRepairAllowed, issueCause } from './contracts/compatibility.js';
 import { readJson, sha256File, writePrivateJson } from './fs/secure-json.js';
 import { JobStore } from './jobs/job-store.js';
+import { MIGRATION_INTENTS, normalizeMigrationIntent, normalizeRelatedJobIds } from './jobs/intents.js';
 import { KnowledgeRuntime } from './knowledge/runtime.js';
 import { createAppPaths, resolveAppHome } from './paths.js';
+import { RefreshApplyOrchestrator } from './refresh/refresh-apply-orchestrator.js';
+import { RefreshPrepareOrchestrator } from './refresh/refresh-prepare-orchestrator.js';
+import { RefreshStore } from './refresh/refresh-store.js';
 import { RuntimeReviewStore } from './reviews/review-store.js';
 import { evaluateEnvironmentGate } from './environment/environment-gate.js';
 import { PlaywrightRuntimeDriver } from './runtime/playwright-driver.js';
@@ -80,6 +84,21 @@ function optionBoolean(value, fallback = false) {
   throw new WorkflowError('CLI_ARGUMENT_INVALID', `Expected a boolean option, received: ${value}`);
 }
 
+function migrationIntentOptions(options) {
+  const intent = normalizeMigrationIntent(options.intent || 'create-v5');
+  const relatedPriorJobIds = normalizeRelatedJobIds(
+    options['related-job']
+      ? String(options['related-job']).split(',').map((value) => value.trim()).filter(Boolean)
+      : [],
+  );
+  invariant(
+    intent === MIGRATION_INTENTS.CREATE_ADDITIONAL_V5 || relatedPriorJobIds.length === 0,
+    'INVALID_MIGRATION_INTENT',
+    '--related-job is allowed only with --intent create-additional-v5',
+  );
+  return { intent, relatedPriorJobIds };
+}
+
 function runtimeAgentInstaller(context, workflow = context.registry.readCurrent().workflow) {
   return new AgentInstaller({
     appPaths: context.appPaths,
@@ -89,6 +108,11 @@ function runtimeAgentInstaller(context, workflow = context.registry.readCurrent(
 
 function agentProtocolVersion(workflow = null) {
   return workflow?.compatibility?.agentProtocolVersion || AGENT_PROTOCOL_VERSION;
+}
+
+function assertRefreshAgentProtocol(context) {
+  const protocolVersion = agentProtocolVersion(context.registry.readCurrent().workflow);
+  invariant(protocolVersion >= 7, 'REFRESH_AGENT_PROTOCOL_INCOMPATIBLE', 'Existing Target Refresh requires Workflow Agent protocol 7 or newer');
 }
 
 function knowledgePin(descriptor) {
@@ -126,6 +150,26 @@ function reviewRuntimePins(job, context) {
       schemaVersion: knowledge.schemaVersion,
       ruleIds: [...(knowledge.ruleIds || [])],
     },
+  };
+}
+
+function refreshRuntimePins(converterDescriptor, context) {
+  const current = context.registry.readCurrent();
+  assertRefreshAgentProtocol(context);
+  assertRuntimeSet(runtimeSetFromCurrent(current));
+  const pin = (name, descriptor) => {
+    invariant(descriptor?.version, 'REFRESH_MANAGED_RUNTIME_REQUIRED', `Existing Target Refresh requires an active managed ${name} runtime`);
+    const sha256 = descriptor.artifactSha256 || descriptor.sha256;
+    invariant(typeof sha256 === 'string' && /^[a-f0-9]{64}$/.test(sha256), 'REFRESH_RUNTIME_PIN_MISSING', `Managed ${name} runtime has no artifact SHA-256`);
+    return { version: descriptor.version, sha256 };
+  };
+  invariant(current.converter?.version === converterDescriptor?.version, 'REFRESH_RUNTIME_PIN_MISMATCH', 'Loaded Converter does not match the active managed Converter runtime');
+  const knowledge = knowledgePin(current.knowledge);
+  invariant(knowledge, 'REFRESH_MANAGED_RUNTIME_REQUIRED', 'Existing Target Refresh requires an active managed Knowledge runtime');
+  return {
+    workflow: pin('Workflow', current.workflow),
+    converter: pin('Converter', current.converter),
+    knowledge,
   };
 }
 
@@ -400,11 +444,13 @@ async function runDryRun(options, context) {
 
 async function runPlatformMigration(options, context) {
   invariant(options.nid, 'CLI_ARGUMENT_REQUIRED', '--nid is required');
+  const migrationIntent = migrationIntentOptions(options);
   const { provider, converterDescriptor, updateCheck } = await loadConverterForJob(options, context);
   const adapter = createPlatformAdapter(options, context);
   const job = context.jobs.create({
     sourceNid: options.nid,
     gid: options.gid,
+    ...migrationIntent,
     mode: 'platform',
     workspaceReference: Boolean(options['workspace-ref']),
     workflowRuntime: { version: packageJson.version, packageName: packageJson.name },
@@ -509,6 +555,7 @@ async function handleJob(positionals, options, context) {
     return context.jobs.create({
       sourceNid: options.nid,
       gid: options.gid,
+      ...migrationIntentOptions(options),
       workflowRuntime: current.workflow,
       converterRuntime: current.converter,
       knowledgeRuntime: knowledgePin(current.knowledge),
@@ -585,6 +632,89 @@ async function handleJob(positionals, options, context) {
     }).run(state.jobId);
   }
   throw new WorkflowError('CLI_COMMAND_UNKNOWN', `Unknown job action: ${action || ''}`);
+}
+
+function refreshIdOption(options) {
+  const refreshId = options['refresh-id'] || options.refresh;
+  invariant(refreshId, 'CLI_ARGUMENT_REQUIRED', '--refresh-id is required');
+  return refreshId;
+}
+
+async function handleRefresh(positionals, options, context) {
+  const action = positionals[1];
+  if (action === 'prepare') {
+    const sourceNid = options['source-nid'] || options.nid;
+    invariant(sourceNid, 'CLI_ARGUMENT_REQUIRED', '--source-nid is required');
+    invariant(options['target-nid'], 'CLI_ARGUMENT_REQUIRED', '--target-nid is required');
+    assertRefreshAgentProtocol(context);
+    const { provider, converterDescriptor, updateCheck } = await loadConverterForJob(options, context);
+    const runtime = refreshRuntimePins(converterDescriptor, context);
+    const adapter = createPlatformAdapter(options, context);
+    const prepared = await new RefreshPrepareOrchestrator({
+      refreshes: context.refreshes,
+      jobs: context.jobs,
+      adapter,
+      converter: provider,
+      runtime,
+    }).prepare({
+      sourceNid,
+      targetNid: options['target-nid'],
+      gid: options.gid || null,
+      lineageJobId: options['lineage-job'] || null,
+    });
+    context.refreshes.writeArtifact(prepared.refresh.refreshId, 'reports/update-check.json', updateCheck);
+    return prepared;
+  }
+  if (action === 'authorize') {
+    return context.refreshes.authorize(
+      refreshIdOption(options),
+      readRequiredJson(options.file, 'Refresh Authorization'),
+    );
+  }
+  if (action === 'apply') {
+    const refreshId = refreshIdOption(options);
+    invariant(options['authorization-id'], 'CLI_ARGUMENT_REQUIRED', '--authorization-id is required');
+    assertRefreshAgentProtocol(context);
+    const { converterDescriptor } = await loadConverterForJob(options, context);
+    const runtime = refreshRuntimePins(converterDescriptor, context);
+    const adapter = createPlatformAdapter(options, context, { write: true, confirmation: 'REFRESH_EXISTING_V5' });
+    return new RefreshApplyOrchestrator({
+      refreshes: context.refreshes,
+      reviews: context.reviews,
+      adapter,
+      runtime,
+    }).run(refreshId, options['authorization-id']);
+  }
+  if (action === 'reconcile') {
+    const refreshId = refreshIdOption(options);
+    const plan = context.refreshes.loadPlan(refreshId);
+    const adapter = createPlatformAdapter(options, context);
+    return new RefreshApplyOrchestrator({
+      refreshes: context.refreshes,
+      reviews: context.reviews,
+      adapter,
+      runtime: plan.runtime,
+    }).reconcile(refreshId);
+  }
+  if (action === 'finalize') {
+    const refreshId = refreshIdOption(options);
+    const plan = context.refreshes.loadPlan(refreshId);
+    return new RefreshApplyOrchestrator({
+      refreshes: context.refreshes,
+      reviews: context.reviews,
+      runtime: plan.runtime,
+    }).finalize(refreshId);
+  }
+  if (action === 'status') return context.refreshes.load(refreshIdOption(options));
+  if (action === 'list') {
+    return {
+      refreshes: context.refreshes.list({
+        sourceNid: options['source-nid'] || options.nid,
+        targetNid: options['target-nid'],
+      }),
+    };
+  }
+  throw new WorkflowError('CLI_COMMAND_UNKNOWN', `Unknown refresh action: ${action || ''}`);
 }
 
 async function handleReview(positionals, options, context) {
@@ -1138,6 +1268,7 @@ export async function runCli(argv, dependencies = {}) {
   const config = adoptPublicKnowledgeProfile(loadedConfig, PUBLIC_RELEASE_PROFILE, appPaths);
   const registry = new RuntimeRegistry(appPaths);
   const jobs = new JobStore(appPaths);
+  const refreshes = new RefreshStore(appPaths);
   const reviews = new RuntimeReviewStore(appPaths, { jobs });
   const runtimeDriver = dependencies.runtimeDriver || new PlaywrightRuntimeDriver({
     appPaths,
@@ -1150,6 +1281,7 @@ export async function runCli(argv, dependencies = {}) {
     config,
     registry,
     jobs,
+    refreshes,
     reviews,
     runtimeDriver,
     runtimeRunner: dependencies.runtimeRunner || new RuntimeReviewRunner({ reviews, driver: runtimeDriver }),
@@ -1206,6 +1338,7 @@ export async function runCli(argv, dependencies = {}) {
     }, appPaths);
     result = { writeMode: updated.platform.writeMode };
   } else if (command === 'job') result = await handleJob(positionals, options, context);
+  else if (command === 'refresh') result = await handleRefresh(positionals, options, context);
   else if (command === 'review') result = await handleReview(positionals, options, context);
   else if (command === 'knowledge') result = await handleKnowledge(positionals, options, context);
   else if (command === 'runtime') result = await handleRuntime(positionals, options, context);
@@ -1243,12 +1376,19 @@ export async function runCli(argv, dependencies = {}) {
         'ivx-migrate config write-mode --mode disabled',
         'ivx-migrate dry-run --input <app.json> --nid <nid> [--converter-path <development-package>] [--metadata <json>]',
         'ivx-migrate platform preflight --nid <nid> [--gid <gid>] [--token-file <0600-file>]',
-        'ivx-migrate migrate --nid <nid> [--gid <gid>] [--token-file <0600-file>] [--converter-path <development-package>] [--save --confirm-live-write SAVE_V5]',
+        'ivx-migrate migrate --nid <nid> [--gid <gid>] [--intent create-v5|create-additional-v5] [--related-job <jobId[,jobId]>] [--token-file <0600-file>] [--converter-path <development-package>] [--save --confirm-live-write SAVE_V5]',
         'ivx-migrate job status --job <jobId>',
         'ivx-migrate job classify --job <jobId> --file <classification.json>',
         'ivx-migrate job apply-patch --job <jobId> --file <patch.json>',
         'ivx-migrate job resume-save --job <jobId> --confirm-live-write SAVE_V5',
         'ivx-migrate job resume-diagnostic-save --job <jobId> --confirm-live-write SAVE_V5_WITH_KNOWN_ISSUES',
+        'ivx-migrate refresh prepare --source-nid <nid> --target-nid <nid> [--gid <gid>] [--lineage-job <jobId>]',
+        'ivx-migrate refresh authorize --refresh-id <refreshId> --file <refresh-authorization.json>',
+        'ivx-migrate refresh apply --refresh-id <refreshId> --authorization-id <authorizationId> --confirm-live-write REFRESH_EXISTING_V5',
+        'ivx-migrate refresh reconcile --refresh-id <refreshId>',
+        'ivx-migrate refresh finalize --refresh-id <refreshId>',
+        'ivx-migrate refresh status --refresh-id <refreshId>',
+        'ivx-migrate refresh list [--source-nid <nid>] [--target-nid <nid>]',
         'ivx-migrate review create --job <jobId> --capability READ_ONLY|WRITE --runtime-file <runtime-pins.json> --target-file <target-readback.json>',
         'ivx-migrate review create-platform --job <jobId> --capability READ_ONLY|WRITE',
         'ivx-migrate review status|recover --review <reviewId>',
@@ -1285,7 +1425,7 @@ export async function runCli(argv, dependencies = {}) {
         'ivx-migrate agents status',
         'ivx-migrate agents sync [--force]',
       ],
-      note: 'Platform writes require config platform.writeMode=explicit. Validated saves use SAVE_V5; a separately authorized diagnostic copy with classified known issues uses SAVE_V5_WITH_KNOWN_ISSUES and never reports normal success.',
+      note: 'Platform writes require config platform.writeMode=explicit. Validated saves use SAVE_V5; a separately authorized diagnostic copy uses SAVE_V5_WITH_KNOWN_ISSUES; existing-target content refresh uses its own exact authorization plus REFRESH_EXISTING_V5 and never replays an unknown write.',
     };
   } else {
     throw new WorkflowError('CLI_COMMAND_UNKNOWN', `Unknown command: ${positionals.join(' ')}`);

@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { invariant } from '../errors.js';
 import { validateIssueClassificationV2 } from './schema-v2.js';
+import { MIGRATION_INTENTS, normalizeMigrationIntent, normalizeRelatedJobIds } from '../jobs/intents.js';
 
 function canonicalize(value) {
   if (Array.isArray(value)) return value.map(canonicalize);
@@ -28,6 +29,8 @@ function validateJobV1(job) {
   invariant(/^mig_[A-Za-z0-9_]+$/.test(job.jobId), 'INVALID_JOB_STATE', 'Job state has an invalid jobId');
   invariant(typeof job.status === 'string' && job.status, 'INVALID_JOB_STATE', 'Job state status is required');
   invariant(job.input && Number.isSafeInteger(job.input.sourceNid) && job.input.sourceNid > 0, 'INVALID_JOB_STATE', 'Job state sourceNid is invalid');
+  normalizeMigrationIntent(job.input.intent || MIGRATION_INTENTS.CREATE_V5);
+  normalizeRelatedJobIds(job.input.relatedPriorJobIds || []);
   invariant(Array.isArray(job.history), 'INVALID_JOB_STATE', 'Job state history must be an array');
   return job;
 }
@@ -41,6 +44,8 @@ export function validateJobStateV2(job) {
   invariant(['platform', 'local-file'].includes(job.mode), 'INVALID_JOB_STATE', 'Job state mode is invalid');
   invariant(job.input && Number.isSafeInteger(job.input.sourceNid) && job.input.sourceNid > 0, 'INVALID_JOB_STATE', 'Job state sourceNid is invalid');
   invariant(job.input.gid === null || (Number.isSafeInteger(job.input.gid) && job.input.gid > 0), 'INVALID_JOB_STATE', 'Job state gid is invalid');
+  normalizeMigrationIntent(job.input.intent || MIGRATION_INTENTS.CREATE_V5);
+  normalizeRelatedJobIds(job.input.relatedPriorJobIds || []);
   invariant(object(job.runtime) && object(job.source) && object(job.target) && object(job.issues), 'INVALID_JOB_STATE', 'Job state runtime/source/target/issues must be objects');
   invariant(validUtcDateTime(job.createdAt) && validUtcDateTime(job.updatedAt), 'INVALID_JOB_STATE', 'Job state timestamps are invalid');
   invariant(Array.isArray(job.history), 'INVALID_JOB_STATE', 'Job state history must be an array');
@@ -79,6 +84,8 @@ export function migrateJobStateV1ToV2(job, { migratedAt = new Date().toISOString
   const migrated = structuredClone(job);
   migrated.schemaVersion = 2;
   migrated.kind = 'migration-job';
+  migrated.input.intent = migrated.input.intent || MIGRATION_INTENTS.CREATE_V5;
+  migrated.input.relatedPriorJobIds = migrated.input.relatedPriorJobIds || [];
   migrated.provenance = {
     sourceSchemaVersion: 1,
     sourceStateSha256: contentSha256(job),

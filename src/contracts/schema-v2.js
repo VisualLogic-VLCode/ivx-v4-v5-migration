@@ -112,9 +112,33 @@ export const REVIEW_STATUSES = Object.freeze([
   'RUNTIME_REPAIR_EXHAUSTED',
   'BLOCKED_PLATFORM_RUNTIME',
   'RUNTIME_NOT_TESTED',
+  'REVIEW_SUPERSEDED_BY_REFRESH',
 ]);
 
 export const REVIEW_CAPABILITIES = Object.freeze(['READ_ONLY', 'WRITE']);
+
+export const REFRESH_STATUSES = Object.freeze([
+  'REFRESH_PREPARING',
+  'AWAITING_REFRESH_AUTHORIZATION',
+  'REFRESH_READY_TO_APPLY',
+  'REFRESH_WRITE_REQUESTED',
+  'REFRESH_RECONCILIATION_REQUIRED',
+  'TARGET_REFRESHED',
+  'REFRESH_BLOCKED',
+  'REFRESH_PLAN_STALE',
+  'REFRESH_TARGET_DRIFTED',
+  'REFRESH_OUTCOME_UNKNOWN',
+]);
+
+export const REFRESH_JOURNAL_PHASES = Object.freeze([
+  'NOT_STARTED',
+  'WRITE_REQUESTED',
+  'WRITE_OUTCOME_UNKNOWN',
+  'READBACK_VERIFIED',
+  'RECONCILIATION_REQUIRED',
+  'TARGET_DRIFTED',
+  'BASELINE_STILL_PRESENT',
+]);
 
 const CREATED_BY = new Set(['CLI', 'AGENT', 'USER']);
 const SENSITIVITY = new Set(['PRIVATE', 'REDACTED']);
@@ -139,6 +163,7 @@ const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const JOB_ID_PATTERN = /^mig_[A-Za-z0-9_]+$/;
 const REVIEW_ID_PATTERN = /^rev_[A-Za-z0-9_]+$/;
+const REFRESH_ID_PATTERN = /^rfr_[A-Za-z0-9_]+$/;
 const SECRET_KEY = /^(?:token|accesstoken|refreshtoken|bearertoken|cookie|authorization|password|secret|clientsecret|secretkey|privatekey|certificatepassword|apikey|accesskey)$/i;
 const SECRET_TARGET = /(?:password|passwd|token|cookie|authorization|secret|api[-_ ]?key|密码|验证码)/iu;
 
@@ -235,6 +260,10 @@ function reviewId(value, path = 'reviewId') {
   return string(value, path, { max: 128, pattern: REVIEW_ID_PATTERN });
 }
 
+function refreshId(value, path = 'refreshId') {
+  return string(value, path, { max: 128, pattern: REFRESH_ID_PATTERN });
+}
+
 function sha256(value, path) {
   return string(value, path, { min: 64, max: 64, pattern: SHA256_PATTERN });
 }
@@ -275,6 +304,19 @@ function validateArtifactMetadata(document, path = '$') {
 function validateEvidenceRefs(document, path) {
   uniqueStrings(document.evidenceRefs, `${path}.evidenceRefs`, { max: 200 });
   uniqueStrings(document.knowledgeRuleIds, `${path}.knowledgeRuleIds`, { max: 200 });
+}
+
+function safeArtifactPath(value, path) {
+  string(value, path, { max: 1024 });
+  if (value.startsWith('/') || value.includes('..')) fail(`${path} must be a safe relative path`);
+  return value;
+}
+
+function validatePinnedRuntimeSet(runtime, path) {
+  exactKeys(runtime, ['workflow', 'converter', 'knowledge'], ['workflow', 'converter', 'knowledge'], path);
+  validateRuntimePin(runtime.workflow, `${path}.workflow`);
+  validateRuntimePin(runtime.converter, `${path}.converter`);
+  validateKnowledgeRuntimePin(runtime.knowledge, `${path}.knowledge`);
 }
 
 const CAUSE_DEFAULTS = Object.freeze({
@@ -1158,14 +1200,174 @@ export function validateDiagnosisReport(document) {
   return document;
 }
 
+export function validateRefreshJob(document) {
+  schemaHeader(document, 'existing-target-refresh');
+  exactKeys(document,
+    ['schemaVersion', 'kind', 'refreshId', 'status', 'source', 'target', 'runtime', 'plan', 'result', 'history', 'createdAt', 'updatedAt', 'createdBy', 'sensitivity'],
+    ['schemaVersion', 'kind', 'refreshId', 'status', 'source', 'target', 'runtime', 'plan', 'result', 'history', 'createdAt', 'updatedAt', 'createdBy', 'sensitivity'],
+    '$');
+  refreshId(document.refreshId);
+  enumValue(document.status, REFRESH_STATUSES, '$.status');
+  exactKeys(document.source, ['nid', 'gid'], ['nid', 'gid'], '$.source');
+  integer(document.source.nid, '$.source.nid', { min: 1 });
+  if (document.source.gid !== null) integer(document.source.gid, '$.source.gid', { min: 1 });
+  exactKeys(document.target, ['nid', 'lineageJobId'], ['nid', 'lineageJobId'], '$.target');
+  integer(document.target.nid, '$.target.nid', { min: 1 });
+  jobId(document.target.lineageJobId, '$.target.lineageJobId');
+  validatePinnedRuntimeSet(document.runtime, '$.runtime');
+  exactKeys(document.plan, ['planId', 'planSha256', 'artifact', 'authorizationId'], ['planId', 'planSha256', 'artifact', 'authorizationId'], '$.plan');
+  if (document.plan.planId !== null) id(document.plan.planId, '$.plan.planId');
+  nullableSha256(document.plan.planSha256, '$.plan.planSha256');
+  if (document.plan.artifact !== null) safeArtifactPath(document.plan.artifact, '$.plan.artifact');
+  if (document.plan.authorizationId !== null) id(document.plan.authorizationId, '$.plan.authorizationId');
+  exactKeys(document.result, ['targetWorkId', 'targetSha256', 'newReviewId', 'supersededReviewIds'], ['targetWorkId', 'targetSha256', 'newReviewId', 'supersededReviewIds'], '$.result');
+  if (document.result.targetWorkId !== null) string(document.result.targetWorkId, '$.result.targetWorkId', { max: 256 });
+  nullableSha256(document.result.targetSha256, '$.result.targetSha256');
+  if (document.result.newReviewId !== null) reviewId(document.result.newReviewId, '$.result.newReviewId');
+  uniqueStrings(document.result.supersededReviewIds, '$.result.supersededReviewIds', { max: 1000 });
+  array(document.history, '$.history', { max: 10000 }).forEach((entry, index) => {
+    const path = `$.history[${index}]`;
+    exactKeys(entry, ['status', 'at', 'reason'], ['status', 'at', 'reason'], path);
+    enumValue(entry.status, REFRESH_STATUSES, `${path}.status`);
+    isoDate(entry.at, `${path}.at`);
+    nullableString(entry.reason, `${path}.reason`, { max: 4096 });
+  });
+  isoDate(document.updatedAt, '$.updatedAt');
+  validateArtifactMetadata(document);
+  if (document.createdBy !== 'CLI' || document.sensitivity !== 'PRIVATE') fail('Refresh Job must be private CLI state');
+  if (document.history.length === 0 || document.history.at(-1).status !== document.status) fail('Refresh Job history must end with its current status');
+  if (Date.parse(document.updatedAt) < Date.parse(document.createdAt)) fail('Refresh Job updatedAt must not precede createdAt');
+  return document;
+}
+
+export function validateRefreshPlan(document) {
+  schemaHeader(document, 'refresh-plan');
+  exactKeys(document,
+    ['schemaVersion', 'kind', 'planId', 'refreshId', 'source', 'target', 'runtime', 'candidate', 'identityRewrite', 'configurationPolicy', 'diagnostics', 'expiresAt', 'createdAt', 'createdBy', 'sensitivity'],
+    ['schemaVersion', 'kind', 'planId', 'refreshId', 'source', 'target', 'runtime', 'candidate', 'identityRewrite', 'configurationPolicy', 'diagnostics', 'expiresAt', 'createdAt', 'createdBy', 'sensitivity'],
+    '$');
+  id(document.planId, '$.planId');
+  refreshId(document.refreshId);
+  exactKeys(document.source, ['nid', 'gid', 'workId', 'sha256', 'classificationArtifact'], ['nid', 'gid', 'workId', 'sha256', 'classificationArtifact'], '$.source');
+  integer(document.source.nid, '$.source.nid', { min: 1 });
+  if (document.source.gid !== null) integer(document.source.gid, '$.source.gid', { min: 1 });
+  string(document.source.workId, '$.source.workId', { max: 256 });
+  sha256(document.source.sha256, '$.source.sha256');
+  safeArtifactPath(document.source.classificationArtifact, '$.source.classificationArtifact');
+  exactKeys(document.target, ['nid', 'workId', 'sha256', 'configSha256', 'settingsSha256', 'routingSha256', 'lineageJobId', 'classificationArtifact'], ['nid', 'workId', 'sha256', 'configSha256', 'settingsSha256', 'routingSha256', 'lineageJobId', 'classificationArtifact'], '$.target');
+  integer(document.target.nid, '$.target.nid', { min: 1 });
+  string(document.target.workId, '$.target.workId', { max: 256 });
+  for (const key of ['sha256', 'configSha256', 'settingsSha256', 'routingSha256']) sha256(document.target[key], `$.target.${key}`);
+  jobId(document.target.lineageJobId, '$.target.lineageJobId');
+  safeArtifactPath(document.target.classificationArtifact, '$.target.classificationArtifact');
+  validatePinnedRuntimeSet(document.runtime, '$.runtime');
+  exactKeys(document.candidate, ['artifact', 'sha256', 'validationArtifact', 'structuralValidationPassed', 'issueCount', 'blockerCount'], ['artifact', 'sha256', 'validationArtifact', 'structuralValidationPassed', 'issueCount', 'blockerCount'], '$.candidate');
+  safeArtifactPath(document.candidate.artifact, '$.candidate.artifact');
+  sha256(document.candidate.sha256, '$.candidate.sha256');
+  safeArtifactPath(document.candidate.validationArtifact, '$.candidate.validationArtifact');
+  boolean(document.candidate.structuralValidationPassed, '$.candidate.structuralValidationPassed');
+  integer(document.candidate.issueCount, '$.candidate.issueCount', { min: 0, max: 100000 });
+  integer(document.candidate.blockerCount, '$.candidate.blockerCount', { min: 0, max: 100000 });
+  exactKeys(document.identityRewrite, ['sourceNid', 'targetNid'], ['sourceNid', 'targetNid'], '$.identityRewrite');
+  integer(document.identityRewrite.sourceNid, '$.identityRewrite.sourceNid', { min: 1 });
+  integer(document.identityRewrite.targetNid, '$.identityRewrite.targetNid', { min: 1 });
+  if (document.identityRewrite.sourceNid !== document.source.nid || document.identityRewrite.targetNid !== document.target.nid) fail('identityRewrite must match the pinned source and target');
+  enumValue(document.configurationPolicy, ['PRESERVE_TARGET_CONFIGURATION'], '$.configurationPolicy');
+  exactKeys(document.diagnostics, ['manifestArtifact', 'converterDiagnosticsArtifact', 'sha256', 'total'], ['manifestArtifact', 'converterDiagnosticsArtifact', 'sha256', 'total'], '$.diagnostics');
+  safeArtifactPath(document.diagnostics.manifestArtifact, '$.diagnostics.manifestArtifact');
+  if (document.diagnostics.converterDiagnosticsArtifact !== null) safeArtifactPath(document.diagnostics.converterDiagnosticsArtifact, '$.diagnostics.converterDiagnosticsArtifact');
+  sha256(document.diagnostics.sha256, '$.diagnostics.sha256');
+  integer(document.diagnostics.total, '$.diagnostics.total', { min: 0, max: 100000 });
+  isoDate(document.expiresAt, '$.expiresAt');
+  validateArtifactMetadata(document);
+  if (document.createdBy !== 'CLI' || document.sensitivity !== 'PRIVATE') fail('Refresh Plan must be private CLI state');
+  if (Date.parse(document.expiresAt) <= Date.parse(document.createdAt)) fail('Refresh Plan must expire after creation');
+  if (Date.parse(document.expiresAt) - Date.parse(document.createdAt) > 8 * 60 * 60 * 1000) fail('Refresh Plan cannot last longer than 8 hours');
+  return document;
+}
+
+export function validateRefreshAuthorization(document) {
+  schemaHeader(document, 'refresh-authorization');
+  exactKeys(document,
+    ['schemaVersion', 'kind', 'authorizationId', 'refreshId', 'planId', 'planSha256', 'source', 'target', 'candidateSha256', 'diagnosticsSha256', 'maxTargetRevisions', 'confirmation', 'expiresAt', 'createdAt', 'createdBy', 'sensitivity'],
+    ['schemaVersion', 'kind', 'authorizationId', 'refreshId', 'planId', 'planSha256', 'source', 'target', 'candidateSha256', 'diagnosticsSha256', 'maxTargetRevisions', 'confirmation', 'expiresAt', 'createdAt', 'createdBy', 'sensitivity'],
+    '$');
+  id(document.authorizationId, '$.authorizationId');
+  refreshId(document.refreshId);
+  id(document.planId, '$.planId');
+  sha256(document.planSha256, '$.planSha256');
+  exactKeys(document.source, ['workId', 'sha256'], ['workId', 'sha256'], '$.source');
+  string(document.source.workId, '$.source.workId', { max: 256 });
+  sha256(document.source.sha256, '$.source.sha256');
+  exactKeys(document.target, ['nid', 'workId', 'sha256', 'configSha256', 'settingsSha256', 'routingSha256'], ['nid', 'workId', 'sha256', 'configSha256', 'settingsSha256', 'routingSha256'], '$.target');
+  integer(document.target.nid, '$.target.nid', { min: 1 });
+  string(document.target.workId, '$.target.workId', { max: 256 });
+  for (const key of ['sha256', 'configSha256', 'settingsSha256', 'routingSha256']) sha256(document.target[key], `$.target.${key}`);
+  sha256(document.candidateSha256, '$.candidateSha256');
+  sha256(document.diagnosticsSha256, '$.diagnosticsSha256');
+  if (document.maxTargetRevisions !== 1) fail('Refresh Authorization permits exactly one confirmed target revision');
+  if (document.confirmation !== 'REFRESH_EXISTING_V5') fail('$.confirmation must be REFRESH_EXISTING_V5');
+  isoDate(document.expiresAt, '$.expiresAt');
+  validateArtifactMetadata(document);
+  if (document.createdBy !== 'USER' || document.sensitivity !== 'PRIVATE') fail('Refresh Authorization must be private USER evidence');
+  if (Date.parse(document.expiresAt) <= Date.parse(document.createdAt)) fail('Refresh Authorization must expire after creation');
+  if (Date.parse(document.expiresAt) - Date.parse(document.createdAt) > 8 * 60 * 60 * 1000) fail('Refresh Authorization cannot last longer than 8 hours');
+  return document;
+}
+
+export function validateRefreshJournal(document) {
+  schemaHeader(document, 'refresh-journal');
+  exactKeys(document,
+    ['schemaVersion', 'kind', 'refreshId', 'planId', 'planSha256', 'authorizationId', 'phase', 'expectedTarget', 'candidateSha256', 'write', 'attempts', 'createdAt', 'updatedAt', 'createdBy', 'sensitivity'],
+    ['schemaVersion', 'kind', 'refreshId', 'planId', 'planSha256', 'authorizationId', 'phase', 'expectedTarget', 'candidateSha256', 'write', 'attempts', 'createdAt', 'updatedAt', 'createdBy', 'sensitivity'],
+    '$');
+  refreshId(document.refreshId);
+  id(document.planId, '$.planId');
+  sha256(document.planSha256, '$.planSha256');
+  id(document.authorizationId, '$.authorizationId');
+  enumValue(document.phase, REFRESH_JOURNAL_PHASES, '$.phase');
+  exactKeys(document.expectedTarget, ['nid', 'workId', 'sha256', 'configSha256', 'settingsSha256', 'routingSha256'], ['nid', 'workId', 'sha256', 'configSha256', 'settingsSha256', 'routingSha256'], '$.expectedTarget');
+  integer(document.expectedTarget.nid, '$.expectedTarget.nid', { min: 1 });
+  string(document.expectedTarget.workId, '$.expectedTarget.workId', { max: 256 });
+  for (const key of ['sha256', 'configSha256', 'settingsSha256', 'routingSha256']) sha256(document.expectedTarget[key], `$.expectedTarget.${key}`);
+  sha256(document.candidateSha256, '$.candidateSha256');
+  exactKeys(document.write, ['requestedAt', 'responseWorkId', 'observedWorkId', 'observedSha256', 'errorCode'], ['requestedAt', 'responseWorkId', 'observedWorkId', 'observedSha256', 'errorCode'], '$.write');
+  nullableIsoDate(document.write.requestedAt, '$.write.requestedAt');
+  nullableString(document.write.responseWorkId, '$.write.responseWorkId', { max: 256 });
+  nullableString(document.write.observedWorkId, '$.write.observedWorkId', { max: 256 });
+  nullableSha256(document.write.observedSha256, '$.write.observedSha256');
+  nullableString(document.write.errorCode, '$.write.errorCode', { max: 256 });
+  array(document.attempts, '$.attempts', { max: 100 }).forEach((entry, index) => {
+    const path = `$.attempts[${index}]`;
+    exactKeys(entry, ['operation', 'status', 'at', 'errorCode'], ['operation', 'status', 'at', 'errorCode'], path);
+    id(entry.operation, `${path}.operation`);
+    id(entry.status, `${path}.status`);
+    isoDate(entry.at, `${path}.at`);
+    nullableString(entry.errorCode, `${path}.errorCode`, { max: 256 });
+  });
+  isoDate(document.updatedAt, '$.updatedAt');
+  validateArtifactMetadata(document);
+  if (document.createdBy !== 'CLI' || document.sensitivity !== 'PRIVATE') fail('Refresh Journal must be private CLI state');
+  if (Date.parse(document.updatedAt) < Date.parse(document.createdAt)) fail('Refresh Journal updatedAt must not precede createdAt');
+  return document;
+}
+
 export function validateRuntimeReviewSession(document) {
   schemaHeader(document, 'runtime-review-session');
   exactKeys(document,
     ['schemaVersion', 'kind', 'reviewId', 'jobId', 'target', 'capability', 'status', 'runtime', 'baseline', 'activeCycleId', 'issueClusterIds', 'scenarioIds', 'humanFindingIds', 'repairBudgetIds', 'history', 'createdAt', 'updatedAt', 'createdBy', 'sensitivity'],
-    ['schemaVersion', 'kind', 'reviewId', 'jobId', 'target', 'capability', 'status', 'runtime', 'baseline', 'activeCycleId', 'issueClusterIds', 'scenarioIds', 'humanFindingIds', 'repairBudgetIds', 'history', 'createdAt', 'updatedAt', 'createdBy', 'sensitivity'],
+    ['schemaVersion', 'kind', 'reviewId', 'jobId', 'refreshId', 'supersession', 'target', 'capability', 'status', 'runtime', 'baseline', 'activeCycleId', 'issueClusterIds', 'scenarioIds', 'humanFindingIds', 'repairBudgetIds', 'history', 'createdAt', 'updatedAt', 'createdBy', 'sensitivity'],
     '$');
   reviewId(document.reviewId);
   jobId(document.jobId);
+  if (document.refreshId !== undefined && document.refreshId !== null) refreshId(document.refreshId);
+  if (document.supersession !== undefined && document.supersession !== null) {
+    exactKeys(document.supersession, ['refreshId', 'newReviewId', 'newTargetWorkId', 'at'], ['refreshId', 'newReviewId', 'newTargetWorkId', 'at'], '$.supersession');
+    refreshId(document.supersession.refreshId);
+    reviewId(document.supersession.newReviewId);
+    string(document.supersession.newTargetWorkId, '$.supersession.newTargetWorkId', { max: 256 });
+    isoDate(document.supersession.at, '$.supersession.at');
+  }
   exactKeys(document.target, ['nid', 'workId'], ['nid', 'workId'], '$.target');
   integer(document.target.nid, '$.target.nid', { min: 1 });
   string(document.target.workId, '$.target.workId', { max: 256 });
@@ -1175,9 +1377,10 @@ export function validateRuntimeReviewSession(document) {
   validateRuntimePin(document.runtime.workflow, '$.runtime.workflow');
   validateRuntimePin(document.runtime.converter, '$.runtime.converter');
   validateKnowledgeRuntimePin(document.runtime.knowledge, '$.runtime.knowledge');
-  exactKeys(document.baseline, ['sourceWorkId', 'targetWorkId'], ['sourceWorkId', 'targetWorkId'], '$.baseline');
+  exactKeys(document.baseline, ['sourceWorkId', 'targetWorkId'], ['sourceWorkId', 'targetWorkId', 'sourceArtifact'], '$.baseline');
   string(document.baseline.sourceWorkId, '$.baseline.sourceWorkId', { max: 256 });
   string(document.baseline.targetWorkId, '$.baseline.targetWorkId', { max: 256 });
+  if (document.baseline.sourceArtifact !== undefined && document.baseline.sourceArtifact !== null) safeArtifactPath(document.baseline.sourceArtifact, '$.baseline.sourceArtifact');
   if (document.baseline.targetWorkId !== document.target.workId) fail('baseline.targetWorkId must match target.workId');
   if (document.activeCycleId !== null) id(document.activeCycleId, '$.activeCycleId');
   uniqueStrings(document.issueClusterIds, '$.issueClusterIds', { max: 2000 });
@@ -1195,6 +1398,12 @@ export function validateRuntimeReviewSession(document) {
   validateArtifactMetadata(document);
   if (Date.parse(document.updatedAt) < Date.parse(document.createdAt)) fail('updatedAt must not precede createdAt');
   if (document.history.length === 0 || document.history.at(-1).status !== document.status) fail('history must end with the current review status');
+  if (document.refreshId !== undefined && document.refreshId !== null && !document.baseline.sourceArtifact) fail('Refresh-created Review must pin its sourceArtifact');
+  if (document.status === 'REVIEW_SUPERSEDED_BY_REFRESH') {
+    if (document.capability !== 'READ_ONLY' || document.activeCycleId !== null || !document.supersession) fail('Superseded Review must be READ_ONLY, cycle-free, and contain supersession metadata');
+  } else if (document.supersession !== undefined && document.supersession !== null) {
+    fail('Only REVIEW_SUPERSEDED_BY_REFRESH may contain supersession metadata');
+  }
   return document;
 }
 
@@ -1218,6 +1427,10 @@ export const SCHEMA_V2_VALIDATORS = Object.freeze({
   'automatic-repair-decision': validateAutomaticRepairDecision,
   'diagnostic-save-eligibility': validateDiagnosticSaveEligibility,
   'runtime-review-session': validateRuntimeReviewSession,
+  'existing-target-refresh': validateRefreshJob,
+  'refresh-plan': validateRefreshPlan,
+  'refresh-authorization': validateRefreshAuthorization,
+  'refresh-journal': validateRefreshJournal,
 });
 
 export function validateSchemaV2Artifact(document, options = {}) {

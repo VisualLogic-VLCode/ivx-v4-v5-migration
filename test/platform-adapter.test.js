@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { IvxPlatformAdapter, mergeSaveAsConfig, normalizePlatformBaseUrl } from '../src/platform/http-adapter.js';
+import { extractWorkRouting, IvxPlatformAdapter, mergeSaveAsConfig, normalizePlatformBaseUrl } from '../src/platform/http-adapter.js';
 import { encodePlatformWork } from '../src/platform/work-codec.js';
 
 const work = {
@@ -70,6 +70,19 @@ test('platform adapter preflight separates personal allow, role deny, and group 
   assert.equal((await adapter.preflightSaveAs({ nid: 10 })).decision, 'ALLOWED');
   assert.equal((await adapter.preflightSaveAs({ nid: 11 })).decision, 'DENIED');
   assert.equal((await adapter.preflightSaveAs({ nid: 12, gid: 99 })).decision, 'UNKNOWN');
+  assert.equal((await adapter.preflightTargetUpdate({ nid: 10 })).decision, 'ALLOWED');
+  assert.equal((await adapter.preflightTargetUpdate({ nid: 11 })).reason, 'TARGET_ROLE_NOT_EDITABLE');
+  assert.equal((await adapter.preflightTargetUpdate({ nid: 12 })).decision, 'UNKNOWN');
+});
+
+test('target routing snapshot prefers settings over work metadata without retaining unrelated fields', () => {
+  assert.deepEqual(
+    extractWorkRouting(
+      { domain: 'published.example', path: '/v4', previewDomain: 'old-preview.example', ignored: 'no' },
+      { previewDomain: 'preview.example', previewPath: '/v5', customDomain: true, another: 'no' },
+    ),
+    { domain: 'published.example', path: '/v4', previewDomain: 'preview.example', previewPath: '/v5', customDomain: true },
+  );
 });
 
 test('platform writes are disabled by default and errors redact the token', async () => {

@@ -4,7 +4,7 @@ This project is the distributable local workflow used by Codex or Claude Code. I
 
 ## Current status
 
-The current stable runtime set is Workflow `0.5.2` with Agent protocol 6, Converter `1.2.2`, and Knowledge Runtime `0.1.3`. It provides:
+The current public stable runtime set remains Workflow `0.5.2` with Agent protocol 6, Converter `1.2.2`, and Knowledge Runtime `0.1.3`. This source tree is the unreleased Workflow `0.6.0` / Agent protocol 7 candidate; it additionally requires a signed Knowledge Runtime whose compatibility includes protocol 7 before publication. The stable capabilities plus this candidate's additions are:
 
 - private global Job storage with atomic state writes and per-Job locks;
 - metadata + physical work version classification;
@@ -18,6 +18,8 @@ The current stable runtime set is Workflow `0.5.2` with Agent protocol 6, Conver
 - an editor-compatible binary work codec;
 - bearer-token metadata/load/config adapters with token redaction and strict `0600` Token-file support;
 - permission preflight, source revision checks, resumable Save As checkpoints, final nid rewrite, post-save read-back verification, and content-guarded source-revision reconciliation before Runtime Review;
+- explicit `CREATE_ADDITIONAL_V5` intent for a separate new target without weakening retry/resume semantics;
+- independent Existing Target Refresh with trusted lineage, source/target/config CAS, exact short-lived authorization, target-identity rewrite, preserved target configuration, write-ahead reconciliation, no unknown replay, and Review succession;
 - a separately authorized diagnostic Save As path that creates an editor-openable V5 copy for any classified issue after independent write hard gates pass, without reporting normal success;
 - independent private Runtime Review Session persistence, one-writer-per-target-revision leases, Human Finding evidence, and external-revision baseline reconciliation;
 - a locked Playwright Runtime Driver with closed declarative scenarios, isolated V4/V5 contexts, private browser authentication state, redacted traces, reviewed normalization, side-effect gates, and report-only parity comparison;
@@ -39,6 +41,8 @@ Authoritative Job data defaults to:
 ├── jobs/
 ├── reviews/
 ├── review-registry.json
+├── refreshes/
+├── refresh-registry.json
 ├── locks/
 ├── workflows/
 ├── converters/
@@ -80,7 +84,7 @@ Ordinary users should start in Codex or Claude Code, not in a terminal. Give the
 
 The user intervenes only to type their own Token into a visible native macOS hidden-answer dialog owned by the Launcher. The Token is never pasted into Agent chat or command arguments, and the Agent never opens the Token file. Background PTYs and Agent-generated input scripts are forbidden. A healthy existing Token is preserved without asking the user to enter it again.
 
-After initialization, a user can simply ask the Agent `请使用 v4-to-v5-workflow，把 nid <NID> 转成 V5。` That phrase authorizes one ordinary validated Save As. Personal and Group cases use the same migration flow; an explicit `gid` is only optional platform context and is never guessed. Inspect-only, runtime comparison/repair, resume, and Human Finding examples are in the [AI user guide](docs/AI-USER-GUIDE.md). The managed Skill applies the Workflow's version, permission, diagnosis, repair, and write gates; known-issues copies, side-effect scenarios, repair-budget extensions, and manual-baseline acceptance remain separately authorized.
+After initialization, a user can ask the Agent `请使用 v4-to-v5-workflow，把 nid <NID> 转成 V5。` for one ordinary validated Save As. With Workflow `0.6.0` / Agent protocol 7 and a compatible Knowledge Runtime, the user may instead explicitly ask `再创建一个独立 V5` for Additional V5 Creation, or name both source and target nids to request an Existing Target Refresh. Retry/resume never implies an additional target or Refresh. Personal and Group cases use the same migration flow; an explicit `gid` is optional platform context and is never guessed. Examples and authorization boundaries are in the [AI user guide](docs/AI-USER-GUIDE.md).
 
 ## CLI reference
 
@@ -119,7 +123,7 @@ ivx-migrate job classify --job <jobId> --file ./classification.json
 ivx-migrate job apply-patch --job <jobId> --file ./repair.patch.json
 ```
 
-After a completed Job has an existing V5 target, Workflow `0.5.2` can create and recover an independent Runtime Review Session from the Job's runtime pins and a revision-checked platform read-back:
+After a completed Job has an existing V5 target, Workflow `0.5.2` and later can create and recover an independent Runtime Review Session from the Job's runtime pins and a revision-checked platform read-back:
 
 ```bash
 ivx-migrate review create-platform \
@@ -134,6 +138,29 @@ ivx-migrate review finding-list --review <reviewId>
 ```
 
 `create-platform` reads the current source as well as the confirmed target. If Save As advanced only the source `workId`, the Workflow compares the complete current source snapshot with the immutable Job `v4/app.json` by canonical digest; equal content is pinned to the newer revision and recorded in a private `source-reconciliations` audit artifact. The first `environment-check` applies the same repair to an already-created, still-open Review before any environment or runtime evidence exists. Different source content fails as `REVIEW_SOURCE_CONTENT_CHANGED`, creates no new Review, and must reuse the existing target rather than repeating migration or Save As. A baseline is never changed after environment/runtime evidence exists.
+
+The unreleased `0.6.0` candidate also exposes separate Additional V5 and Existing Target Refresh operations. The Agent normally owns these commands:
+
+```bash
+ivx-migrate migrate --nid <sourceNid> --intent create-additional-v5
+
+ivx-migrate refresh prepare \
+  --source-nid <sourceV4Nid> \
+  --target-nid <existingV5Nid>
+
+ivx-migrate refresh authorize \
+  --refresh-id <refreshId> \
+  --file ./refresh-authorization.json
+
+ivx-migrate config write-mode --mode explicit --confirm ENABLE_LIVE_WRITES
+ivx-migrate refresh apply \
+  --refresh-id <refreshId> \
+  --authorization-id <authorizationId> \
+  --confirm-live-write REFRESH_EXISTING_V5
+ivx-migrate config write-mode --mode disabled
+```
+
+`prepare` is read-only and persists no target configuration values—only stable digests. `apply` preserves existing target configuration and may issue at most one target write for the exact plan. If its outcome is uncertain, keep writes disabled and run `refresh reconcile`; never call apply again. `refresh finalize` is local-only recovery after content was already confirmed but Review succession did not finish.
 
 `finding-add` records USER evidence only. If the target may have been edited, `observe-platform-revision` reads it through the Platform Adapter, creates a bounded redacted diff, and pauses the review as `TARGET_EXTERNALLY_MODIFIED`. `accept-baseline` requires both that observation and a matching USER Human Finding that requested `ACCEPT_TARGET_REVISION`; it adopts the snapshot locally and returns to `LOCAL_VALIDATING`.
 

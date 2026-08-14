@@ -32,6 +32,26 @@
 
 个人案例与 Group 案例使用完全相同的判版、转换、诊断、验证、另存和运行时测试流程，用户通常只需提供 `nid`。只有用户明确知道且平台上下文确实需要时才同时提供 `gid`；Agent 不得猜测。Group 的实际读取和另存能力以平台权限预检结果为准。
 
+下面的 Additional V5 与 Existing Target Refresh 需要 Workflow `0.6.0`、Agent protocol 7 以及兼容的 Knowledge Runtime。旧运行时必须先通过签名更新完成整组兼容检查，不能只照抄新命令。
+
+### 明确再创建一个独立 V5
+
+```text
+请使用 v4-to-v5-workflow，用当前 nid <NID> 再创建一个独立的 V5 案例；这是 Additional V5 Creation，不是继续或重试之前的 Job。
+```
+
+Agent 会创建带 `CREATE_ADDITIONAL_V5` 意图的新 Job，并执行一条新的普通 Save As 链；新旧 V5、Job 和 Review 都保留。只有用户明确表达“再创建一个”时才允许这样做。失败后的“继续、重试、恢复”只处理原 Job，绝不会暗中创建第二个 nid。
+
+### 用当前 V4 内容刷新已有 V5
+
+```text
+请使用 v4-to-v5-workflow，用当前 V4 nid <SOURCE_NID> 的内容刷新已有 V5 nid <TARGET_NID>，保留目标 nid 和目标配置。先准备并向我汇报计划，等我确认后再写入。
+```
+
+Agent 先执行只读 Refresh prepare：证明该目标来自相同源案例的受管迁移历史，独立检查目标编辑权限，确认源仍是 V4、目标仍是 V5，并固定当前 revision、内容、目标配置摘要、转换候选、诊断和到期时间。目标域名、settings、路由、环境绑定与配置值默认保留，不会从源案例复制，私有 Refresh 产物中也不保存这些配置值。
+
+用户确认的是这一份精确计划，而不是长期写权限。写入前 Workflow 会再次核对 runtime、权限、源/目标内容和配置摘要；任何变化都会让计划失效。响应不确定时只允许对账，不能自动重放。确认成功后旧写 Review 变为只读 `REVIEW_SUPERSEDED_BY_REFRESH`，新 Review 从 Environment Gate 重新开始，不继承旧 parity、修复预算或授权。
+
 ### 转换后自动进行运行时测试和受限修复
 
 ```text
@@ -55,12 +75,13 @@
 - 执行会造成业务副作用的运行时场景；
 - 在初始预算之外增加每问题簇 `+2` 次尝试或整个 Review `+5` 个目标 revision；
 - 接受用户手工修改后的目标 revision 作为新基线。
+- 应用一份精确的 Existing Target Refresh 计划；该授权不能复用普通 Save As 或局部 Repair 授权。
 
 普通 Agent 不会修改 Converter。确定为 Converter 问题时，它会生成给维护者的诊断结论；用户可以另行决定是否创建编辑器可打开的已知问题诊断副本。
 
 ## 4. 继续已有任务
 
-Agent 返回 `jobId` 或 `reviewId` 后应保留它。以后可以在同一任务或新任务中说：
+Agent 返回 `jobId`、`refreshId` 或 `reviewId` 后应保留它。以后可以在同一任务或新任务中说：
 
 ```text
 请使用 v4-to-v5-workflow，恢复并继续 Job <JOB_ID>。
@@ -68,6 +89,10 @@ Agent 返回 `jobId` 或 `reviewId` 后应保留它。以后可以在同一任�
 
 ```text
 请使用 v4-to-v5-workflow，继续 Review <REVIEW_ID>。我手动定位到的问题是：<发现内容>。
+```
+
+```text
+请使用 v4-to-v5-workflow，检查并继续 Refresh <REFRESH_ID>；若写入结果未知，只做 reconcile，不要重放 apply。
 ```
 
 手工发现会作为 Human Finding 加入既有 Review，它只是新证据，不会自动扩大写入或修复授权。
@@ -80,6 +105,10 @@ Agent 返回 `jobId` 或 `reviewId` 后应保留它。以后可以在同一任�
 | `READY_TO_SAVE` | 转换和静态验证通过，但本次请求没有创建 V5 案例 |
 | `SKIPPED_ALREADY_V5` | 源案例已经是 V5，没有调用 Converter |
 | `DIAGNOSTIC_COPY_CREATED` | 创建了带已知问题的诊断副本，不代表转换正确 |
+| `TARGET_REFRESHED` | 已用当前 V4 内容更新既有 V5 nid，完成候选读回与 Review 继任 |
+| `REVIEW_SUPERSEDED_BY_REFRESH` | 旧 Review 作为只读证据保留，写权限已移交到刷新后的新 Review |
+| `REFRESH_PLAN_STALE` | 源、目标、配置、权限或 runtime 与授权计划不再一致；必须重新 prepare |
+| `REFRESH_OUTCOME_UNKNOWN` | 只读对账仍显示旧基线，但写入结果不能安全证明；不能重放旧授权 |
 | `RUNTIME_PARITY_PASSED` | 声明式运行时对照已通过 |
 | `RUNTIME_PARITY_PASSED_WITH_USER_DECLARED_ENVIRONMENT` | 用户已声明列出的目标绑定在业务语义上等价，运行时对照通过 |
 | `DIAGNOSTIC_RUNTIME_PASSED_WITH_ENVIRONMENT_RISK` | 在用户接受的未解决环境风险下，所选断言通过；不代表严格运行时等价 |

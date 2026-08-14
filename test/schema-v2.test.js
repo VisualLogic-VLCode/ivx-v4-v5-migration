@@ -19,6 +19,10 @@ import {
   validateHumanFinding,
   validateIssueClassificationV2,
   validateRepairBudget,
+  validateRefreshAuthorization,
+  validateRefreshJob,
+  validateRefreshJournal,
+  validateRefreshPlan,
   validateRuntimeReviewSession,
   validateRuntimeComparison,
   validateRuntimeScenario,
@@ -305,6 +309,110 @@ function reviewSession() {
   });
 }
 
+function runtimePins() {
+  return {
+    workflow: { version: '0.6.0', sha256: HASH_A },
+    converter: { version: '1.2.2', sha256: HASH_B },
+    knowledge: { version: '0.1.4', sha256: HASH_C, contentSha256: HASH_A, schemaVersion: 1, ruleIds: [] },
+  };
+}
+
+function refreshPlan() {
+  return artifact('refresh-plan', {
+    planId: 'refresh-plan-1',
+    refreshId: 'rfr_20260813040000_abcde',
+    source: { nid: 11064050, gid: null, workId: 'source-work-2', sha256: HASH_A, classificationArtifact: 'reports/source-version.json' },
+    target: {
+      nid: 12229365,
+      workId: 'target-work-1',
+      sha256: HASH_B,
+      configSha256: HASH_C,
+      settingsSha256: HASH_A,
+      routingSha256: HASH_B,
+      lineageJobId: 'mig_20260813040000_abcde',
+      classificationArtifact: 'reports/target-version.json',
+    },
+    runtime: runtimePins(),
+    candidate: {
+      artifact: 'candidate/app.v5.json',
+      sha256: HASH_C,
+      validationArtifact: 'reports/validation.json',
+      structuralValidationPassed: true,
+      issueCount: 2,
+      blockerCount: 0,
+    },
+    identityRewrite: { sourceNid: 11064050, targetNid: 12229365 },
+    configurationPolicy: 'PRESERVE_TARGET_CONFIGURATION',
+    diagnostics: { manifestArtifact: 'reports/diagnostics-manifest.json', converterDiagnosticsArtifact: 'reports/converter-diagnostics.json', sha256: HASH_A, total: 2 },
+    expiresAt: '2026-08-13T11:00:00.000Z',
+  }, { createdBy: 'CLI', sensitivity: 'PRIVATE' });
+}
+
+function refreshAuthorization() {
+  const plan = refreshPlan();
+  return artifact('refresh-authorization', {
+    authorizationId: 'refresh-auth-1',
+    refreshId: plan.refreshId,
+    planId: plan.planId,
+    planSha256: HASH_B,
+    source: { workId: plan.source.workId, sha256: plan.source.sha256 },
+    target: {
+      nid: plan.target.nid,
+      workId: plan.target.workId,
+      sha256: plan.target.sha256,
+      configSha256: plan.target.configSha256,
+      settingsSha256: plan.target.settingsSha256,
+      routingSha256: plan.target.routingSha256,
+    },
+    candidateSha256: plan.candidate.sha256,
+    diagnosticsSha256: plan.diagnostics.sha256,
+    maxTargetRevisions: 1,
+    confirmation: 'REFRESH_EXISTING_V5',
+    expiresAt: '2026-08-13T11:00:00.000Z',
+  }, { createdBy: 'USER', sensitivity: 'PRIVATE' });
+}
+
+function refreshJournal() {
+  const plan = refreshPlan();
+  return artifact('refresh-journal', {
+    refreshId: plan.refreshId,
+    planId: plan.planId,
+    planSha256: HASH_B,
+    authorizationId: 'refresh-auth-1',
+    phase: 'NOT_STARTED',
+    expectedTarget: {
+      nid: plan.target.nid,
+      workId: plan.target.workId,
+      sha256: plan.target.sha256,
+      configSha256: plan.target.configSha256,
+      settingsSha256: plan.target.settingsSha256,
+      routingSha256: plan.target.routingSha256,
+    },
+    candidateSha256: plan.candidate.sha256,
+    write: { requestedAt: null, responseWorkId: null, observedWorkId: null, observedSha256: null, errorCode: null },
+    attempts: [],
+    updatedAt: NOW,
+  }, { createdBy: 'CLI', sensitivity: 'PRIVATE' });
+}
+
+function refreshJob() {
+  const plan = refreshPlan();
+  return artifact('existing-target-refresh', {
+    refreshId: plan.refreshId,
+    status: 'AWAITING_REFRESH_AUTHORIZATION',
+    source: { nid: plan.source.nid, gid: plan.source.gid },
+    target: { nid: plan.target.nid, lineageJobId: plan.target.lineageJobId },
+    runtime: runtimePins(),
+    plan: { planId: plan.planId, planSha256: HASH_B, artifact: 'refresh-plan.json', authorizationId: null },
+    result: { targetWorkId: null, targetSha256: null, newReviewId: null, supersededReviewIds: [] },
+    history: [
+      { status: 'REFRESH_PREPARING', at: NOW, reason: 'refresh-created' },
+      { status: 'AWAITING_REFRESH_AUTHORIZATION', at: NOW, reason: 'refresh-plan-ready' },
+    ],
+    updatedAt: NOW,
+  }, { createdBy: 'CLI', sensitivity: 'PRIVATE' });
+}
+
 test('all schema-v2 artifact contracts accept a complete valid document', () => {
   const classification = issueClassification();
   assert.equal(validateIssueClassificationV2(classification, { issues: [{ issueId: 'VAL-1' }] }), classification);
@@ -319,7 +427,33 @@ test('all schema-v2 artifact contracts accept a complete valid document', () => 
   assert.equal(validateAutomaticRepairDecision(automaticRepairDecision()).kind, 'automatic-repair-decision');
   assert.equal(validateDiagnosticSaveEligibility(diagnosticSaveEligibility()).kind, 'diagnostic-save-eligibility');
   assert.equal(validateRuntimeReviewSession(reviewSession()).kind, 'runtime-review-session');
+  assert.equal(validateRefreshJob(refreshJob()).kind, 'existing-target-refresh');
+  assert.equal(validateRefreshPlan(refreshPlan()).kind, 'refresh-plan');
+  assert.equal(validateRefreshAuthorization(refreshAuthorization()).kind, 'refresh-authorization');
+  assert.equal(validateRefreshJournal(refreshJournal()).kind, 'refresh-journal');
   assert.equal(validateSchemaV2Artifact(runtimeScenario()).kind, 'runtime-scenario');
+});
+
+test('Refresh contracts bind one plan, one baseline, and one private user authorization', () => {
+  const mismatchedRewrite = refreshPlan();
+  mismatchedRewrite.identityRewrite.targetNid += 1;
+  assert.throws(() => validateRefreshPlan(mismatchedRewrite), /identityRewrite/);
+
+  const broadAuthorization = refreshAuthorization();
+  broadAuthorization.maxTargetRevisions = 2;
+  assert.throws(() => validateRefreshAuthorization(broadAuthorization), /exactly one/);
+
+  const longAuthorization = refreshAuthorization();
+  longAuthorization.expiresAt = '2026-08-13T13:00:00.000Z';
+  assert.throws(() => validateRefreshAuthorization(longAuthorization), /longer than 8 hours/);
+
+  const replayableJournal = refreshJournal();
+  replayableJournal.phase = 'RETRY_ALLOWED';
+  assert.throws(() => validateRefreshJournal(replayableJournal), /phase must be one of/);
+
+  const secretBearing = refreshPlan();
+  secretBearing.target.apiKey = 'forbidden';
+  assert.throws(() => validateRefreshPlan(secretBearing), /forbidden secret-bearing field/);
 });
 
 test('review capability and Human Finding provenance are closed contracts', () => {
@@ -333,6 +467,34 @@ test('review capability and Human Finding provenance are closed contracts', () =
   finding.createdBy = 'USER';
   finding.sensitivity = 'REDACTED';
   assert.throws(() => validateHumanFinding(finding), /sensitivity must be PRIVATE/);
+});
+
+test('Refresh Review lineage and supersession are explicit closed contracts', () => {
+  const refreshed = reviewSession();
+  refreshed.refreshId = 'rfr_20260814040000_abcde';
+  refreshed.supersession = null;
+  refreshed.baseline.sourceArtifact = 'baselines/source-v4.json';
+  assert.equal(validateRuntimeReviewSession(refreshed).refreshId, refreshed.refreshId);
+
+  const superseded = reviewSession();
+  superseded.capability = 'READ_ONLY';
+  superseded.status = 'REVIEW_SUPERSEDED_BY_REFRESH';
+  superseded.history.push({ status: superseded.status, at: NOW, reason: 'superseded' });
+  superseded.supersession = {
+    refreshId: 'rfr_20260814040000_abcde',
+    newReviewId: 'rev_20260814050000_fghij',
+    newTargetWorkId: 'target-work-2',
+    at: NOW,
+  };
+  assert.equal(validateRuntimeReviewSession(superseded).status, 'REVIEW_SUPERSEDED_BY_REFRESH');
+
+  const missingSource = reviewSession();
+  missingSource.refreshId = refreshed.refreshId;
+  assert.throws(() => validateRuntimeReviewSession(missingSource), /sourceArtifact/);
+
+  const writableSuperseded = structuredClone(superseded);
+  writableSuperseded.capability = 'WRITE';
+  assert.throws(() => validateRuntimeReviewSession(writableSuperseded), /Superseded Review/);
 });
 
 test('schema-v2 classification separates cause, responsibility, target, and repair permission', () => {
@@ -515,6 +677,10 @@ test('all distributable schema-v2 documents are valid JSON with stable identifie
     'issue-classification.schema.json',
     'issue-cluster.schema.json',
     'job-state.schema.json',
+    'refresh-authorization.schema.json',
+    'refresh-job.schema.json',
+    'refresh-journal.schema.json',
+    'refresh-plan.schema.json',
     'repair-attempt.schema.json',
     'repair-batch.schema.json',
     'repair-budget.schema.json',

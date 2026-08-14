@@ -9,6 +9,23 @@
     "kind": { "const": "runtime-review-session" },
     "reviewId": { "$ref": "common.schema.json#/$defs/reviewId" },
     "jobId": { "$ref": "common.schema.json#/$defs/jobId" },
+    "refreshId": { "oneOf": [{ "type": "string", "pattern": "^rfr_[A-Za-z0-9_]+$" }, { "type": "null" }] },
+    "supersession": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["refreshId", "newReviewId", "newTargetWorkId", "at"],
+          "properties": {
+            "refreshId": { "type": "string", "pattern": "^rfr_[A-Za-z0-9_]+$" },
+            "newReviewId": { "$ref": "common.schema.json#/$defs/reviewId" },
+            "newTargetWorkId": { "type": "string", "minLength": 1, "maxLength": 256 },
+            "at": { "$ref": "common.schema.json#/$defs/dateTime" }
+          },
+          "additionalProperties": false
+        },
+        { "type": "null" }
+      ]
+    },
     "target": {
       "type": "object",
       "required": ["nid", "workId"],
@@ -46,7 +63,8 @@
       "required": ["sourceWorkId", "targetWorkId"],
       "properties": {
         "sourceWorkId": { "type": "string", "minLength": 1, "maxLength": 256 },
-        "targetWorkId": { "type": "string", "minLength": 1, "maxLength": 256 }
+        "targetWorkId": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "sourceArtifact": { "oneOf": [{ "$ref": "common.schema.json#/$defs/safeRelativePath" }, { "type": "null" }] }
       },
       "additionalProperties": false
     },
@@ -77,7 +95,7 @@
   },
   "$defs": {
     "reviewStatus": {
-      "enum": ["REVIEW_OPEN", "ENVIRONMENT_PREFLIGHT", "AWAITING_USER_BINDING", "BLOCKED_ENVIRONMENT", "RUNTIME_TESTING", "RUNTIME_DIAGNOSTIC_TESTING", "MISMATCH_DETECTED", "MISMATCH_UNDER_ENVIRONMENT_RISK", "DIAGNOSING", "CONVERTER_REPORT_READY", "REPAIR_PROPOSED", "TEST_OR_ENV_REPAIR", "AUTO_REPAIR_STOPPED", "AWAITING_HUMAN_EVIDENCE", "LOCAL_VALIDATING", "READY_TO_UPDATE_TARGET", "TARGET_UPDATED", "TARGET_EXTERNALLY_MODIFIED", "RUNTIME_RETESTING", "RUNTIME_PARITY_PASSED", "RUNTIME_PARITY_PASSED_WITH_USER_DECLARED_ENVIRONMENT", "DIAGNOSTIC_RUNTIME_PASSED_WITH_ENVIRONMENT_RISK", "DIAGNOSTIC_RUNTIME_INCONCLUSIVE_WITH_ENVIRONMENT_RISK", "RUNTIME_REPAIR_EXHAUSTED", "BLOCKED_PLATFORM_RUNTIME", "RUNTIME_NOT_TESTED"]
+      "enum": ["REVIEW_OPEN", "ENVIRONMENT_PREFLIGHT", "AWAITING_USER_BINDING", "BLOCKED_ENVIRONMENT", "RUNTIME_TESTING", "RUNTIME_DIAGNOSTIC_TESTING", "MISMATCH_DETECTED", "MISMATCH_UNDER_ENVIRONMENT_RISK", "DIAGNOSING", "CONVERTER_REPORT_READY", "REPAIR_PROPOSED", "TEST_OR_ENV_REPAIR", "AUTO_REPAIR_STOPPED", "AWAITING_HUMAN_EVIDENCE", "LOCAL_VALIDATING", "READY_TO_UPDATE_TARGET", "TARGET_UPDATED", "TARGET_EXTERNALLY_MODIFIED", "RUNTIME_RETESTING", "RUNTIME_PARITY_PASSED", "RUNTIME_PARITY_PASSED_WITH_USER_DECLARED_ENVIRONMENT", "DIAGNOSTIC_RUNTIME_PASSED_WITH_ENVIRONMENT_RISK", "DIAGNOSTIC_RUNTIME_INCONCLUSIVE_WITH_ENVIRONMENT_RISK", "RUNTIME_REPAIR_EXHAUSTED", "BLOCKED_PLATFORM_RUNTIME", "RUNTIME_NOT_TESTED", "REVIEW_SUPERSEDED_BY_REFRESH"]
     }
   },
   "additionalProperties": false

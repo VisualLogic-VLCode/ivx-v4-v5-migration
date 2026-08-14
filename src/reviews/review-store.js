@@ -33,11 +33,53 @@ import { redactRuntimeText } from '../runtime/trace-redaction.js';
 import { validateConvertedCase } from '../validation/basic-validator.js';
 import { applyRepairPatch } from '../workflow/patch-policy.js';
 import { assertRepairableCluster, evaluateRepairCandidate, repairPatchDigest } from '../repair/repair-engine.js';
+import { withTargetWriteLease } from '../platform/target-write-lease.js';
 import { assertReviewTransition, TERMINAL_REVIEW_STATES } from './states.js';
 
 const REVIEWABLE_JOB_STATES = new Set(['SUCCEEDED', 'DIAGNOSTIC_COPY_CREATED']);
 const REVIEW_ID_PATTERN = /^rev_[A-Za-z0-9_]+$/;
+const REFRESH_ID_PATTERN = /^rfr_[A-Za-z0-9_]+$/;
 const ARTIFACT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+const REFRESH_UNSAFE_REVIEW_STATES = new Set([
+  'READY_TO_UPDATE_TARGET',
+  'TARGET_UPDATED',
+  'TARGET_EXTERNALLY_MODIFIED',
+  'RUNTIME_RETESTING',
+]);
+const REFRESH_UNSAFE_BATCH_STATES = new Set([
+  'WRITE_REQUESTED',
+  'WRITE_OUTCOME_UNKNOWN',
+  'RECONCILIATION_REQUIRED',
+]);
+const REVIEW_CHILD_DIRECTORIES = [
+  'baselines',
+  'findings',
+  'revision-observations',
+  'observed-targets',
+  'baseline-acceptances',
+  'source-reconciliations',
+  'knowledge',
+  'environment',
+  'environment-risk-acceptances',
+  'scenarios',
+  'cycles',
+  'runtime-authorizations',
+  'repair-authorizations',
+  'reports',
+  'issues',
+  'issues/diagnoses',
+  'issues/clusters',
+  'issues/budgets',
+  'issues/decisions',
+  'issues/eligibility',
+  'repairs',
+  'repairs/proposals',
+  'repairs/attempts',
+  'repairs/batches',
+  'repairs/candidates',
+  'checkpoints',
+  'checkpoints/artifacts',
+];
 
 function timestampPart(now) {
   return now.toISOString().replace(/[-:.TZ]/g, '').slice(0, 14);
@@ -145,6 +187,8 @@ export class RuntimeReviewStore {
         kind: 'runtime-review-session',
         reviewId,
         jobId,
+        refreshId: null,
+        supersession: null,
         target: { nid: targetNid, workId: targetWorkId },
         capability,
         status: 'REVIEW_OPEN',
@@ -163,7 +207,7 @@ export class RuntimeReviewStore {
       };
       validateRuntimeReviewSession(review);
       const directory = ensurePrivateDir(this.reviewDir(reviewId));
-      for (const child of ['baselines', 'findings', 'revision-observations', 'observed-targets', 'baseline-acceptances', 'source-reconciliations', 'knowledge', 'environment', 'environment-risk-acceptances', 'scenarios', 'cycles', 'runtime-authorizations', 'repair-authorizations', 'reports', 'issues', 'issues/diagnoses', 'issues/clusters', 'issues/budgets', 'issues/decisions', 'issues/eligibility', 'repairs', 'repairs/proposals', 'repairs/attempts', 'repairs/batches', 'repairs/candidates', 'checkpoints', 'checkpoints/artifacts']) {
+      for (const child of REVIEW_CHILD_DIRECTORIES) {
         ensurePrivateDir(path.join(directory, child));
       }
       if (resolvedSourceWorkId !== pinnedSourceWorkId) {
@@ -242,6 +286,164 @@ export class RuntimeReviewStore {
       }
       writePrivateJson(this.statePath(reviewId), review);
       this.#updateRegistryValue(registry, review);
+      return review;
+    });
+  }
+
+  createFromRefresh({
+    refreshId,
+    jobId,
+    targetNid,
+    targetWorkId,
+    targetSnapshot,
+    sourceWorkId,
+    sourceSnapshot,
+    runtime,
+    createdBy = 'CLI',
+  } = {}) {
+    normalizeId(refreshId, REFRESH_ID_PATTERN, 'INVALID_REFRESH_ID', 'Invalid Refresh id');
+    return this.#withRegistryLock(() => {
+      const registry = this.#readRegistry();
+      const existing = registry.reviews.find((entry) => entry.refreshId === refreshId);
+      if (existing) return this.load(existing.reviewId);
+      const job = this.jobs.load(jobId);
+      invariant(REVIEWABLE_JOB_STATES.has(job.status), 'JOB_NOT_REVIEWABLE', 'Refresh Review requires a completed lineage Migration Job', {
+        jobId,
+        status: job.status,
+      });
+      const resolvedTargetNid = positiveInteger(targetNid, 'targetNid');
+      invariant(resolvedTargetNid === positiveInteger(job.target?.nid, 'job.target.nid'), 'REFRESH_REVIEW_LINEAGE_MISMATCH', 'Refresh Review target nid must match the lineage Migration Job target');
+      const resolvedTargetWorkId = nonEmptyString(targetWorkId, 'targetWorkId');
+      const resolvedSourceWorkId = nonEmptyString(sourceWorkId, 'sourceWorkId');
+      assertSnapshot(targetSnapshot);
+      assertSnapshot(sourceSnapshot, 'sourceSnapshot');
+      const at = this.now().toISOString();
+      const reviewId = this.#createId('rev', at);
+      const sourceArtifact = 'baselines/source-v4.json';
+      const review = {
+        schemaVersion: 2,
+        kind: 'runtime-review-session',
+        reviewId,
+        jobId,
+        refreshId,
+        supersession: null,
+        target: { nid: resolvedTargetNid, workId: resolvedTargetWorkId },
+        capability: 'READ_ONLY',
+        status: 'REVIEW_OPEN',
+        runtime,
+        baseline: { sourceWorkId: resolvedSourceWorkId, targetWorkId: resolvedTargetWorkId, sourceArtifact },
+        activeCycleId: null,
+        issueClusterIds: [],
+        scenarioIds: [],
+        humanFindingIds: [],
+        repairBudgetIds: [],
+        history: [{ status: 'REVIEW_OPEN', at, reason: `review-created-from-refresh:${refreshId}` }],
+        createdAt: at,
+        updatedAt: at,
+        createdBy,
+        sensitivity: 'PRIVATE',
+      };
+      validateRuntimeReviewSession(review);
+      const directory = ensurePrivateDir(this.reviewDir(reviewId));
+      for (const child of REVIEW_CHILD_DIRECTORIES) ensurePrivateDir(path.join(directory, child));
+      this.#writeImmutableJson(this.#artifactPath(reviewId, sourceArtifact), sourceSnapshot, 'REFRESH_REVIEW_SOURCE_CONFLICT');
+      const baselinePath = this.#writeBaselineSnapshot(reviewId, resolvedTargetWorkId, targetSnapshot);
+      const sessionBudget = validateRepairBudget({
+        schemaVersion: 2,
+        kind: 'repair-budget',
+        budgetId: `budget-session-${revisionValueDigest(reviewId).slice(0, 20)}`,
+        reviewId,
+        scope: 'REVIEW_SESSION',
+        clusterId: null,
+        attempts: null,
+        targetRevisions: { baseLimit: 10, used: 0, extensionLimit: 5, extensionUsed: 0 },
+        status: 'ACTIVE',
+        updatedAt: at,
+        createdAt: at,
+        createdBy: 'CLI',
+        sensitivity: 'REDACTED',
+      });
+      writePrivateJson(this.#artifactPath(reviewId, relativeArtifactPath('issues', 'budgets', `${sessionBudget.budgetId}.json`)), sessionBudget);
+      review.repairBudgetIds.push(sessionBudget.budgetId);
+      const validation = validateConvertedCase({ v4CaseJson: sourceSnapshot, v5CaseJson: targetSnapshot });
+      this.#writeCheckpoint(reviewId, {
+        checkpointType: 'CONFIRMED_TARGET_REVISION',
+        artifact: path.relative(this.reviewDir(reviewId), baselinePath).split(path.sep).join('/'),
+        sha256: revisionValueDigest(targetSnapshot),
+        targetNid: resolvedTargetNid,
+        targetWorkId: resolvedTargetWorkId,
+        staticValidation: validation.summary,
+        createdAt: at,
+      });
+      const converterArtifact = this.#artifactPath(reviewId, relativeArtifactPath('checkpoints', 'artifacts', 'converter-output.json'));
+      writePrivateJson(converterArtifact, targetSnapshot);
+      this.#writeCheckpoint(reviewId, {
+        checkpointType: 'CONVERTER_OUTPUT',
+        artifact: path.relative(this.reviewDir(reviewId), converterArtifact).split(path.sep).join('/'),
+        sha256: revisionValueDigest(targetSnapshot),
+        targetNid: null,
+        targetWorkId: null,
+        staticValidation: validation.summary,
+        createdAt: at,
+      });
+      validateRuntimeReviewSession(review);
+      writePrivateJson(this.statePath(reviewId), review);
+      this.#updateRegistryValue(registry, review);
+      return review;
+    });
+  }
+
+  assertRefreshSuccessionSafe({ targetNid, previousTargetWorkId } = {}) {
+    const resolvedTargetNid = positiveInteger(targetNid, 'targetNid');
+    const resolvedTargetWorkId = nonEmptyString(previousTargetWorkId, 'previousTargetWorkId');
+    const reviews = this.#readRegistry().reviews
+      .filter((entry) => entry.targetNid === resolvedTargetNid && entry.targetWorkId === resolvedTargetWorkId && entry.capability === 'WRITE')
+      .map((entry) => this.load(entry.reviewId));
+    for (const review of reviews) this.#assertReviewRefreshSafe(review);
+    return reviews.map((review) => review.reviewId).sort();
+  }
+
+  supersedeForRefresh({ refreshId, targetNid, previousTargetWorkId, newTargetWorkId, newReviewId } = {}) {
+    normalizeId(refreshId, REFRESH_ID_PATTERN, 'INVALID_REFRESH_ID', 'Invalid Refresh id');
+    normalizeId(newReviewId, REVIEW_ID_PATTERN, 'INVALID_REVIEW_ID', 'Invalid new Review id');
+    const resolvedTargetNid = positiveInteger(targetNid, 'targetNid');
+    const resolvedPreviousWorkId = nonEmptyString(previousTargetWorkId, 'previousTargetWorkId');
+    const resolvedNewWorkId = nonEmptyString(newTargetWorkId, 'newTargetWorkId');
+    return this.#withRegistryLock(() => {
+      const registry = this.#readRegistry();
+      const entries = registry.reviews.filter((entry) => entry.targetNid === resolvedTargetNid && entry.targetWorkId === resolvedPreviousWorkId);
+      const supersededReviewIds = [];
+      for (const entry of entries) {
+        this.#withReviewLock(entry.reviewId, () => {
+          const review = this.load(entry.reviewId);
+          if (review.status === 'REVIEW_SUPERSEDED_BY_REFRESH') {
+            if (review.supersession?.refreshId === refreshId) supersededReviewIds.push(review.reviewId);
+            return;
+          }
+          if (review.capability !== 'WRITE') return;
+          this.#assertReviewRefreshSafe(review);
+          review.capability = 'READ_ONLY';
+          review.supersession = { refreshId, newReviewId, newTargetWorkId: resolvedNewWorkId, at: this.now().toISOString() };
+          this.#setStatus(review, 'REVIEW_SUPERSEDED_BY_REFRESH', `superseded-by-refresh:${refreshId}`);
+          validateRuntimeReviewSession(review);
+          writePrivateJson(this.statePath(review.reviewId), review);
+          this.#updateRegistryValue(registry, review);
+          supersededReviewIds.push(review.reviewId);
+        });
+      }
+      return [...new Set(supersededReviewIds)].sort();
+    });
+  }
+
+  enableRefreshReviewWrite(reviewId) {
+    return this.#mutate(reviewId, (review, registry) => {
+      invariant(review.refreshId, 'REFRESH_REVIEW_REQUIRED', 'Only a Refresh-created Review may acquire the Refresh write capability');
+      invariant(review.status === 'REVIEW_OPEN', 'REVIEW_STATE_MISMATCH', 'Refresh-created Review must still be open before acquiring write capability');
+      if (review.capability === 'WRITE') return review;
+      this.#assertNoWriteConflict(registry, { reviewId, targetNid: review.target.nid, targetWorkId: review.baseline.targetWorkId });
+      review.capability = 'WRITE';
+      review.updatedAt = this.now().toISOString();
+      review.history.push({ status: review.status, at: review.updatedAt, reason: `refresh-write-capability-activated:${review.refreshId}` });
       return review;
     });
   }
@@ -519,7 +721,8 @@ export class RuntimeReviewStore {
   prepareRuntimeCycle(reviewId, { scenarioIds, source, target, environmentComparison, riskAcceptance = null, authorization = null } = {}) {
     validateEnvironmentComparison(environmentComparison);
     if (riskAcceptance !== null) validateEnvironmentRiskAcceptance(riskAcceptance);
-    return this.#mutate(reviewId, (review) => {
+    const targetNid = this.load(reviewId).target.nid;
+    return withTargetWriteLease(this.paths, targetNid, 'runtime-cycle-prepare', () => this.#mutate(reviewId, (review) => {
       invariant(environmentComparison.reviewId === reviewId, 'ENVIRONMENT_REVIEW_MISMATCH', 'Environment comparison belongs to another review');
       invariant(Array.isArray(scenarioIds) && scenarioIds.length > 0 && scenarioIds.length <= 100, 'RUNTIME_SCENARIOS_REQUIRED', 'Runtime cycle requires 1-100 scenarios');
       invariant(new Set(scenarioIds).size === scenarioIds.length, 'RUNTIME_SCENARIOS_INVALID', 'Runtime cycle scenario ids must be unique');
@@ -630,7 +833,7 @@ export class RuntimeReviewStore {
       if (authorization) writePrivateJson(this.#artifactPath(reviewId, relativeArtifactPath('runtime-authorizations', `${authorization.authorizationId}.json`)), { ...authorization, usedByCycleId: cycleId });
       if (riskAcceptance) this.#writeImmutableJson(this.#artifactPath(reviewId, relativeArtifactPath('environment-risk-acceptances', `${riskAcceptance.acceptanceId}.json`)), riskAcceptance, 'ENVIRONMENT_RISK_ACCEPTANCE_CONFLICT');
       return { review, blocked: false, cycle, environmentComparison, scenarios };
-    });
+    }));
   }
 
   resumeRuntimeCycle(reviewId, { sourceBaseUrl, targetBaseUrl } = {}) {
@@ -840,8 +1043,8 @@ export class RuntimeReviewStore {
       const resolvedSourceWorkId = nonEmptyString(currentWorkId, 'currentWorkId');
       assertSnapshot(sourceSnapshot, 'sourceSnapshot');
       const job = this.jobs.load(review.jobId);
-      const sourceCase = readJson(path.join(this.jobs.jobDir(review.jobId), 'v4', 'app.json'), null);
-      invariant(sourceCase, 'REVIEW_SOURCE_SNAPSHOT_MISSING', 'Runtime Review cannot reconcile the platform source without the immutable Job V4 snapshot');
+      const sourceCase = this.#sourceSnapshotForReview(review);
+      invariant(sourceCase, 'REVIEW_SOURCE_SNAPSHOT_MISSING', 'Runtime Review cannot reconcile the platform source without its immutable V4 snapshot');
       const expectedContentSha256 = revisionValueDigest(sourceCase);
       const currentContentSha256 = revisionValueDigest(sourceSnapshot);
       invariant(currentContentSha256 === expectedContentSha256, 'REVIEW_SOURCE_CONTENT_CHANGED', 'Platform source content differs from the immutable V4 snapshot used by the Migration Job; reuse the existing V5 target and do not repeat Save As automatically', {
@@ -1085,7 +1288,7 @@ export class RuntimeReviewStore {
       const baseSha256 = revisionValueDigest(base);
       invariant(proposal.baseTarget.sha256 === baseSha256, 'TARGET_REPAIR_BASELINE_MISMATCH', 'Repair Proposal baseline content hash does not match the confirmed target');
       this.#assertEquivalentRepairEnvironment(reviewId, review);
-      const sourceCase = readJson(path.join(this.jobs.jobDir(review.jobId), 'v4', 'app.json'), null);
+      const sourceCase = this.#sourceSnapshotForReview(review);
       invariant(sourceCase, 'REPAIR_SOURCE_SNAPSHOT_MISSING', 'Runtime Review cannot statically validate repairs without its immutable V4 source snapshot');
       const clusters = proposal.clusterIds.map((clusterId) => this.#latestCluster(reviewId, clusterId));
       const attempts = this.listRepairAttempts(reviewId);
@@ -1616,6 +1819,38 @@ export class RuntimeReviewStore {
     return target;
   }
 
+  #sourceSnapshotForReview(review) {
+    if (review.baseline.sourceArtifact) {
+      const target = this.#assertPrivateRegularArtifact(
+        review.reviewId,
+        review.baseline.sourceArtifact,
+        'REVIEW_SOURCE_SNAPSHOT_INVALID',
+        'Runtime Review source snapshot is not a safe private artifact',
+      );
+      return readJson(target, null);
+    }
+    return readJson(path.join(this.jobs.jobDir(review.jobId), 'v4', 'app.json'), null);
+  }
+
+  #assertReviewRefreshSafe(review) {
+    invariant(review.activeCycleId === null, 'REFRESH_REVIEW_BUSY', 'Existing target Refresh cannot supersede a Review with an active runtime cycle', {
+      reviewId: review.reviewId,
+      activeCycleId: review.activeCycleId,
+    });
+    invariant(!REFRESH_UNSAFE_REVIEW_STATES.has(review.status), 'REFRESH_REVIEW_BUSY', 'Existing target Refresh cannot supersede a Review with an active or unresolved target-write lifecycle', {
+      reviewId: review.reviewId,
+      status: review.status,
+    });
+    const pendingBatch = this.#listArtifacts(review.reviewId, relativeArtifactPath('repairs', 'batches'))
+      .find((batch) => REFRESH_UNSAFE_BATCH_STATES.has(batch?.state));
+    invariant(!pendingBatch, 'REFRESH_REVIEW_BUSY', 'Existing target Refresh cannot supersede a Review with an unresolved Repair Batch write', {
+      reviewId: review.reviewId,
+      batchId: pendingBatch?.batchId || null,
+      batchState: pendingBatch?.state || null,
+    });
+    return review;
+  }
+
   #mutate(reviewId, callback) {
     return this.#withRegistryLock(() => this.#withReviewLock(reviewId, () => {
       const registry = this.#readRegistry();
@@ -1661,6 +1896,8 @@ export class RuntimeReviewStore {
     const entry = {
       reviewId: review.reviewId,
       jobId: review.jobId,
+      refreshId: review.refreshId || null,
+      supersededByRefreshId: review.supersession?.refreshId || null,
       targetNid: review.target.nid,
       targetWorkId: review.baseline.targetWorkId,
       capability: review.capability,

@@ -9,6 +9,7 @@ import { RuntimeReviewStore } from '../src/reviews/review-store.js';
 import { PlaywrightRuntimeDriver } from '../src/runtime/playwright-driver.js';
 import { RuntimeReviewRunner } from '../src/runtime/review-runner.js';
 import { redactRuntimeText, redactedUrl } from '../src/runtime/trace-redaction.js';
+import { withTargetWriteLease } from '../src/platform/target-write-lease.js';
 
 const HASH_A = 'a'.repeat(64);
 const HASH_B = 'b'.repeat(64);
@@ -190,6 +191,22 @@ function withReview(prefix, callback) {
   const review = reviews.create({ jobId: job.jobId, capability: 'READ_ONLY', runtime: runtimePins(), targetSnapshot: { value: 'baseline' } });
   return Promise.resolve(callback({ temporary, paths, jobs, job, reviews, review })).finally(() => fs.rmSync(temporary, { recursive: true, force: true }));
 }
+
+test('runtime cycle preparation cannot race an active target write lease', async () => {
+  await withReview('ivx-runtime-target-lease-', async ({ paths, reviews, review }) => {
+    reviews.addRuntimeScenario(review.reviewId, scenario());
+    withTargetWriteLease(paths, 200, 'test-refresh', () => {
+      assert.throws(() => reviews.prepareRuntimeCycle(review.reviewId, {
+        scenarioIds: ['scenario-parity'],
+        source: { generation: 'V4', nid: 100, workId: 'source-work-1' },
+        target: { generation: 'V5', nid: 200, workId: 'target-work-1' },
+        environmentComparison: environmentComparison(review.reviewId),
+      }), { code: 'TARGET_WRITE_LOCKED' });
+    });
+    assert.equal(reviews.load(review.reviewId).status, 'REVIEW_OPEN');
+    assert.equal(reviews.load(review.reviewId).activeCycleId, null);
+  });
+});
 
 test('report-only runner uses isolated contexts and normalizes only allowed identities and timestamps', async () => {
   await withReview('ivx-runtime-parity-', async ({ paths, reviews, review }) => {

@@ -11,6 +11,7 @@ Version `0.2.0` implements the Platform Adapter and Save As state machine. The c
 5. Re-read the source revision before saving to detect concurrent changes.
 6. Reproduce the VxEditor41 sequence: create the derived case, merge user defaults with source `customVars`, replace source nid while preserving `modDbId`, save final V5 work, and read it back.
 7. Journal every remote mutation so recognized `SAVE_INCOMPLETE` states can resume without duplicating a known target.
+8. For Workflow `0.6.0`, prepare and apply an independent content-only Existing Target Refresh: prove trusted source/target lineage, preflight target edit permission independently, preserve target configuration, bind source/target/config revisions into one immutable plan, and reconcile an uncertain write by read-back without replay.
 
 The binary codec is compatible with VxEditor41's SJCL/pako framing. The adapter sends `Authorization: Bearer <token>` only in memory and redacts it from errors.
 
@@ -59,6 +60,7 @@ Classified known issues have one explicit exception for diagnosis. The Job must 
 - If the final-save response is lost, resume first loads the known target. Matching content closes the save without another write.
 - Post-save content mismatch becomes reconciliation-required and is not overwritten again automatically.
 - Before a platform Runtime Review is created, the current complete source snapshot is compared by canonical digest with the immutable Job V4 input. A newer `workId` with equal content is accepted only into a private source-reconciliation audit checkpoint; different content returns `REVIEW_SOURCE_CONTENT_CHANGED` before Review persistence. The first Environment Gate can perform the same idempotent repair for an existing evidence-free `REVIEW_OPEN`, but no baseline changes after environment/runtime evidence exists. This path is read-only, retains the existing target, and never replays Save As.
+- Existing Target Refresh has its own immutable Plan, exact one-write Authorization, write-ahead journal, and target-level operation lease shared with Runtime Repair. It never reuses Save As or Repair authorization. Source, target, target configuration, permission, or runtime drift invalidates the plan before writing. A lost response permits only candidate/baseline/drift read-back reconciliation; the original authorization is never replayed.
 
 ## Live-write gate
 
@@ -78,5 +80,7 @@ For the diagnostic-copy exception, the path-specific requirements replace the no
 - no classified issue outside `CONVERTER`, `SOURCE`, or `UNKNOWN` ownership.
 
 The normal and diagnostic save intents cannot resume each other. After every authorized live-save attempt, restore `platform.writeMode` to `"disabled"` even when the command fails or is interrupted; never leave the global write gate open between Jobs.
+
+Existing Target Refresh uses a third, non-interchangeable confirmation: `--confirm-live-write REFRESH_EXISTING_V5`. It additionally requires the exact Refresh Authorization ID and a protocol-7-compatible managed Workflow/Converter/Knowledge set. A successful content read-back preserves the target nid and configuration, supersedes old write-capable Reviews as read-only evidence, and creates a fresh Review from the refreshed revision.
 
 Until the controlled real-platform permission matrix is complete, keep `writeMode` disabled for general users.

@@ -2,7 +2,12 @@ export { loadConfig, saveConfig, DEFAULT_CONFIG } from './config.js';
 export { AGENT_PROTOCOL_VERSION, PUBLIC_RELEASE_PROFILE } from './distribution-profile.js';
 export { createAppPaths, resolveAppHome } from './paths.js';
 export { JobStore } from './jobs/job-store.js';
+export { MIGRATION_INTENTS, normalizeMigrationIntent, normalizeRelatedJobIds } from './jobs/intents.js';
 export { RuntimeReviewStore } from './reviews/review-store.js';
+export { RefreshStore } from './refresh/refresh-store.js';
+export { RefreshPrepareOrchestrator } from './refresh/refresh-prepare-orchestrator.js';
+export { RefreshApplyOrchestrator } from './refresh/refresh-apply-orchestrator.js';
+export { assertRefreshTransition, REFRESH_TRANSITIONS, TERMINAL_REFRESH_STATES } from './refresh/states.js';
 export { createRedactedRevisionDiff, revisionValueDigest } from './reviews/revision-diff.js';
 export { assertReviewTransition, REVIEW_TRANSITIONS, TERMINAL_REVIEW_STATES } from './reviews/states.js';
 export {
@@ -30,6 +35,8 @@ export {
   RESPONSIBLE_PARTIES,
   REVIEW_CAPABILITIES,
   REVIEW_STATUSES,
+  REFRESH_JOURNAL_PHASES,
+  REFRESH_STATUSES,
   RUNTIME_ACTION_TYPES,
   RUNTIME_LOCATOR_STRATEGIES,
   RUNTIME_OBSERVATION_CAPTURES,
@@ -49,6 +56,10 @@ export {
   validateRepairAttempt,
   validateRepairBatch,
   validateRepairProposal,
+  validateRefreshAuthorization,
+  validateRefreshJob,
+  validateRefreshJournal,
+  validateRefreshPlan,
   validateRuntimeReviewSession,
   validateRuntimeScenario,
   validateSaveableCheckpoint,
@@ -95,7 +106,8 @@ export { validateRepairPatch, applyRepairPatch } from './workflow/patch-policy.j
 export { assertRepairableCluster, evaluateRepairCandidate, newHighSeverityIssues, repairPatchDigest, repairPatchMetrics } from './repair/repair-engine.js';
 export { TargetUpdateOrchestrator } from './repair/target-update-orchestrator.js';
 export { encodePlatformWork, decodePlatformWork } from './platform/work-codec.js';
-export { IvxPlatformAdapter, mergeSaveAsConfig, normalizePlatformBaseUrl } from './platform/http-adapter.js';
+export { withTargetWriteLease } from './platform/target-write-lease.js';
+export { extractWorkRouting, IvxPlatformAdapter, mergeSaveAsConfig, normalizePlatformBaseUrl } from './platform/http-adapter.js';
 export { inspectPlatformToken, normalizeTokenFilePath, readPlatformTokenFile, resolvePlatformToken } from './platform/token-source.js';
 export { SAVE_INTENTS, SaveAsOrchestrator, prepareInitialSaveAsWork, rewriteCaseNidForFinalSave } from './platform/save-as-orchestrator.js';
 export { AgentInstaller } from './agents/installer.js';

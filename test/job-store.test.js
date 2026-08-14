@@ -5,6 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { JobStore } from '../src/jobs/job-store.js';
 import { createAppPaths } from '../src/paths.js';
+import { MIGRATION_INTENTS } from '../src/jobs/intents.js';
 
 test('JobStore persists private state and enforces transitions', () => {
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'ivx-job-store-'));
@@ -12,12 +13,48 @@ test('JobStore persists private state and enforces transitions', () => {
     const store = new JobStore(createAppPaths(temporary));
     const job = store.create({ sourceNid: 123, gid: 9, workflowRuntime: { version: '1.0.0' } });
     assert.equal(job.status, 'RECEIVED');
+    assert.equal(job.input.intent, MIGRATION_INTENTS.CREATE_V5);
+    assert.deepEqual(job.input.relatedPriorJobIds, []);
     const mode = fs.statSync(store.statePath(job.jobId)).mode & 0o777;
     assert.equal(mode, 0o600);
     store.transition(job.jobId, 'UPDATE_CHECKED');
     assert.equal(store.load(job.jobId).status, 'UPDATE_CHECKED');
     assert.throws(() => store.transition(job.jobId, 'CONVERTED'), /Cannot transition/);
     assert.equal(store.list()[0].jobId, job.jobId);
+  } finally {
+    fs.rmSync(temporary, { recursive: true, force: true });
+  }
+});
+
+test('JobStore persists an explicit Additional V5 intent without changing ordinary defaults', () => {
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'ivx-job-additional-v5-'));
+  try {
+    const store = new JobStore(createAppPaths(temporary));
+    const prior = store.create({ sourceNid: 123 });
+    const additional = store.create({
+      sourceNid: 123,
+      intent: MIGRATION_INTENTS.CREATE_ADDITIONAL_V5,
+      relatedPriorJobIds: [prior.jobId],
+    });
+    assert.equal(additional.input.intent, MIGRATION_INTENTS.CREATE_ADDITIONAL_V5);
+    assert.deepEqual(additional.input.relatedPriorJobIds, [prior.jobId]);
+    assert.equal(store.list()[0].intent, MIGRATION_INTENTS.CREATE_ADDITIONAL_V5);
+    assert.throws(() => store.create({ sourceNid: 123, intent: 'RETRY' }), { code: 'INVALID_MIGRATION_INTENT' });
+    assert.throws(() => store.create({ sourceNid: 123, relatedPriorJobIds: ['not-a-job'] }), { code: 'INVALID_MIGRATION_INTENT' });
+    assert.throws(
+      () => store.create({ sourceNid: 123, relatedPriorJobIds: [prior.jobId] }),
+      { code: 'INVALID_MIGRATION_INTENT' },
+    );
+    const unrelated = store.create({ sourceNid: 456 });
+    assert.throws(
+      () => store.create({ sourceNid: 123, intent: MIGRATION_INTENTS.CREATE_ADDITIONAL_V5, relatedPriorJobIds: [unrelated.jobId] }),
+      { code: 'RELATED_JOB_SOURCE_MISMATCH' },
+    );
+    const differentGroup = store.create({ sourceNid: 123, gid: 9 });
+    assert.throws(
+      () => store.create({ sourceNid: 123, intent: MIGRATION_INTENTS.CREATE_ADDITIONAL_V5, relatedPriorJobIds: [differentGroup.jobId] }),
+      { code: 'RELATED_JOB_SOURCE_MISMATCH' },
+    );
   } finally {
     fs.rmSync(temporary, { recursive: true, force: true });
   }

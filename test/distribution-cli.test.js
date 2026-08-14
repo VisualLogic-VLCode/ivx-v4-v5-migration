@@ -125,7 +125,7 @@ test('setup, managed converter updates, Agent protocol sync, and rollback work i
   try {
     fs.writeFileSync(tokenFile, `${token}\n`, { mode: 0o600 });
     fs.chmodSync(tokenFile, 0o600);
-    assert.equal(run(['version'], env).agentProtocolVersion, 6);
+    assert.equal(run(['version'], env).agentProtocolVersion, 7);
     writeManifest(workflowManifest, 'workflow', '1.0.0', {
       '1.0.0': descriptor('@test/workflow', workflow100, {
         compatibleConverter: '>=1.0.0 <2.0.0',

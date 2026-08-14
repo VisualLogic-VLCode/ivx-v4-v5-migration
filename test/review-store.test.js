@@ -90,6 +90,91 @@ test('only one write-capable review owns a target revision while read-only revie
   });
 });
 
+test('Refresh Review succession freezes old write authority and pins the current V4 source snapshot', () => {
+  withHome('ivx-review-refresh-succession-', (temporary) => {
+    const paths = createAppPaths(temporary);
+    const jobs = new JobStore(paths);
+    const job = createCompletedJob(jobs);
+    const reviews = new RuntimeReviewStore(paths, { jobs });
+    const oldReview = reviews.create({
+      jobId: job.jobId,
+      capability: 'WRITE',
+      runtime: runtimePins(),
+      targetSnapshot: { case: { id: 'target', value: 'old' }, stage: {}, server: {} },
+    });
+    const sourceSnapshot = { case: { id: 'source', value: 'current' }, stage: {}, server: {} };
+    const targetSnapshot = { case: { id: 'target', value: 'refreshed' }, stage: {}, server: {} };
+    const refreshId = 'rfr_20260814040000_abcde';
+    const created = reviews.createFromRefresh({
+      refreshId,
+      jobId: job.jobId,
+      targetNid: 200,
+      targetWorkId: 'target-work-2',
+      targetSnapshot,
+      sourceWorkId: 'source-work-2',
+      sourceSnapshot,
+      runtime: runtimePins(),
+    });
+
+    assert.equal(created.capability, 'READ_ONLY');
+    assert.equal(created.refreshId, refreshId);
+    assert.equal(created.baseline.sourceArtifact, 'baselines/source-v4.json');
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(reviews.reviewDir(created.reviewId), created.baseline.sourceArtifact), 'utf8')), sourceSnapshot);
+    assert.equal(fs.statSync(path.join(reviews.reviewDir(created.reviewId), created.baseline.sourceArtifact)).mode & 0o777, 0o600);
+    assert.equal(reviews.createFromRefresh({
+      refreshId,
+      jobId: job.jobId,
+      targetNid: 200,
+      targetWorkId: 'target-work-2',
+      targetSnapshot,
+      sourceWorkId: 'source-work-2',
+      sourceSnapshot,
+      runtime: runtimePins(),
+    }).reviewId, created.reviewId);
+
+    assert.deepEqual(reviews.assertRefreshSuccessionSafe({ targetNid: 200, previousTargetWorkId: 'target-work-1' }), [oldReview.reviewId]);
+    const supersededIds = reviews.supersedeForRefresh({
+      refreshId,
+      targetNid: 200,
+      previousTargetWorkId: 'target-work-1',
+      newTargetWorkId: 'target-work-2',
+      newReviewId: created.reviewId,
+    });
+    assert.deepEqual(supersededIds, [oldReview.reviewId]);
+    const superseded = reviews.load(oldReview.reviewId);
+    assert.equal(superseded.status, 'REVIEW_SUPERSEDED_BY_REFRESH');
+    assert.equal(superseded.capability, 'READ_ONLY');
+    assert.equal(superseded.supersession.refreshId, refreshId);
+    assert.equal(superseded.supersession.newReviewId, created.reviewId);
+    assert.equal(reviews.enableRefreshReviewWrite(created.reviewId).capability, 'WRITE');
+
+    const reconciled = reviews.reconcileSourceRevision(created.reviewId, {
+      currentWorkId: 'source-work-3',
+      sourceSnapshot: structuredClone(sourceSnapshot),
+    });
+    assert.equal(reconciled.reconciled, true);
+    assert.equal(reconciled.review.baseline.sourceWorkId, 'source-work-3');
+  });
+});
+
+test('Refresh Review succession refuses unresolved target-write batches', () => {
+  withHome('ivx-review-refresh-busy-', (temporary) => {
+    const paths = createAppPaths(temporary);
+    const jobs = new JobStore(paths);
+    const job = createCompletedJob(jobs);
+    const reviews = new RuntimeReviewStore(paths, { jobs });
+    const oldReview = reviews.create({ jobId: job.jobId, capability: 'WRITE', runtime: runtimePins(), targetSnapshot: { value: 1 } });
+    const batchPath = path.join(reviews.reviewDir(oldReview.reviewId), 'repairs', 'batches', 'batch-pending.json');
+    fs.writeFileSync(batchPath, JSON.stringify({ batchId: 'batch-pending', state: 'WRITE_REQUESTED' }), { mode: 0o600 });
+    assert.throws(() => reviews.assertRefreshSuccessionSafe({
+      targetNid: 200,
+      previousTargetWorkId: 'target-work-1',
+    }), { code: 'REFRESH_REVIEW_BUSY' });
+    assert.equal(reviews.load(oldReview.reviewId).status, 'REVIEW_OPEN');
+    assert.equal(reviews.load(oldReview.reviewId).capability, 'WRITE');
+  });
+});
+
 test('source revision reconciliation is content-guarded, auditable, and idempotent before environment evidence', () => {
   withHome('ivx-review-source-reconcile-', (temporary) => {
     const paths = createAppPaths(temporary);

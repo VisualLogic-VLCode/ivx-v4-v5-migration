@@ -93,6 +93,15 @@ export function mergeSaveAsConfig(defaultConfig, sourceConfig) {
 
 const WORK_ROUTING_KEYS = Object.freeze(['domain', 'path', 'previewDomain', 'previewPath', 'customDomain']);
 
+export function extractWorkRouting(workInfo = {}, settings = {}) {
+  const output = {};
+  for (const key of WORK_ROUTING_KEYS) {
+    if (Object.hasOwn(settings || {}, key)) output[key] = structuredClone(settings[key]);
+    else if (Object.hasOwn(workInfo || {}, key)) output[key] = structuredClone(workInfo[key]);
+  }
+  return output;
+}
+
 function normalizeWorkRouting(routing) {
   invariant(routing && typeof routing === 'object' && !Array.isArray(routing), 'PLATFORM_INPUT_INVALID', 'routing must be an object');
   const keys = Object.keys(routing);
@@ -386,6 +395,30 @@ export class IvxPlatformAdapter {
       decision: 'UNKNOWN',
       reason: 'UNKNOWN_SERVER_POLICY',
       source,
+      evidence: { memberType, currentUserKnown: currentUid > 0, groupOwnerKnown: groupOwnerUid > 0 },
+    };
+  }
+
+  async preflightTargetUpdate({ nid, currentUser } = {}) {
+    const user = currentUser || await this.getCurrentUser();
+    const target = await this.getCaseInfo(nid);
+    const memberType = Number(target?.memberType || 0);
+    if (!EDIT_ROLES.has(memberType)) {
+      return { allowed: false, decision: 'DENIED', reason: 'TARGET_ROLE_NOT_EDITABLE', target };
+    }
+    const targetGid = Number(target?.gid || 0);
+    if (!targetGid) return { allowed: true, decision: 'ALLOWED', reason: 'PERSONAL_CASE_MEMBER', target };
+    const group = await this.getWorkGroup(targetGid);
+    const currentUid = Number(user?.id || user?.uid || 0);
+    const groupOwnerUid = Number(group?.uid || 0);
+    if (currentUid > 0 && currentUid === groupOwnerUid) {
+      return { allowed: true, decision: 'ALLOWED', reason: 'GROUP_OWNER', target };
+    }
+    return {
+      allowed: false,
+      decision: 'UNKNOWN',
+      reason: 'UNKNOWN_SERVER_POLICY',
+      target,
       evidence: { memberType, currentUserKnown: currentUid > 0, groupOwnerKnown: groupOwnerUid > 0 },
     };
   }

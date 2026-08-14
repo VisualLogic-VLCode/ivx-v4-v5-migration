@@ -1,6 +1,6 @@
 # Schema v2 contracts
 
-This directory contains the additive contracts for runtime review, environment gating, evidence, repair budgeting, and diagnostic-save decisions described in `docs/WORKFLOW-RUNTIME-VALIDATION-AND-REPAIR-DESIGN.md`.
+This directory contains the additive contracts for runtime review, environment gating, evidence, repair budgeting, diagnostic-save decisions, and Existing Target Refresh described in `docs/WORKFLOW-RUNTIME-VALIDATION-AND-REPAIR-DESIGN.md`.
 
 ## Compatibility boundary
 
@@ -9,7 +9,10 @@ This directory contains the additive contracts for runtime review, environment g
 - A Job migration is an explicit copy to `migrations/state.v2.json`; it never replaces the active `state.json`, and an existing migration copy is not overwritten.
 - Unknown future versions fail closed.
 - Runtime Review Session persistence is implemented as an independent private store. It references but never rewrites a terminal Migration Job.
+- Migration Jobs persist an explicit ordinary/additional creation intent. `CREATE_ADDITIONAL_V5` still creates a fresh immutable Job and target; it is never inferred from retry or resume.
+- Existing Target Refresh owns separate private Job/Plan/Authorization/Journal contracts. Its exact authorization binds one source/target/config/candidate/diagnostic baseline and one target revision; unknown write outcomes are never replayable.
 - A session records `READ_ONLY` or `WRITE` capability. At most one non-terminal `WRITE` session may hold the Review Write Lease for one target nid/revision; this lease is not platform-write authorization.
+- A Refresh-created Review pins the current V4 snapshot as its own immutable private source artifact. After confirmed refresh, replaced write-capable Reviews become `REVIEW_SUPERSEDED_BY_REFRESH`, preserve evidence as read-only, and point to the fresh Review without inheriting its budget, authorization, or parity result.
 - Human Findings are USER-created private evidence. An `ACCEPT_TARGET_REVISION` request is inert until a separate baseline-acceptance operation confirms the observed revision and matching evidence.
 - Runtime Scenarios have a closed action, semantic-locator, observation, network, artifact, timeout, and side-effect vocabulary. They cannot contain arbitrary JavaScript, CSS/XPath, authentication entry, or native Playwright tracing.
 - Behavior Traces contain only redacted summaries and hashes; Normalized Behavior Traces contain comparison digests only. Runtime Comparison reports state assertion coverage and allowed normalization categories without exposing captured values.

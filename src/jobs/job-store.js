@@ -7,6 +7,7 @@ import { WorkflowError, invariant } from '../errors.js';
 import { migrateJobStateV1ToV2, readJobStateCompatible } from '../contracts/compatibility.js';
 import { acquireFileLock, releaseFileLock } from '../fs/file-lock.js';
 import { assertTransition } from './states.js';
+import { MIGRATION_INTENTS, normalizeMigrationIntent, normalizeRelatedJobIds } from './intents.js';
 
 function createJobId(now = new Date()) {
   const timestamp = now.toISOString().replace(/[-:.TZ]/g, '').slice(0, 14);
@@ -37,8 +38,37 @@ export class JobStore {
     return path.join(this.jobDir(jobId), 'state.json');
   }
 
-  create({ sourceNid, gid, workflowRuntime, converterRuntime, knowledgeRuntime, mode = 'platform', workspaceReference = false, cwd } = {}) {
+  create({
+    sourceNid,
+    gid,
+    intent = MIGRATION_INTENTS.CREATE_V5,
+    relatedPriorJobIds = [],
+    workflowRuntime,
+    converterRuntime,
+    knowledgeRuntime,
+    mode = 'platform',
+    workspaceReference = false,
+    cwd,
+  } = {}) {
     const now = new Date();
+    const normalizedSourceNid = normalizePositiveInteger(sourceNid, 'sourceNid');
+    const normalizedGid = normalizePositiveInteger(gid, 'gid', { optional: true });
+    const normalizedIntent = normalizeMigrationIntent(intent);
+    const normalizedRelatedJobIds = normalizeRelatedJobIds(relatedPriorJobIds);
+    invariant(
+      normalizedIntent === MIGRATION_INTENTS.CREATE_ADDITIONAL_V5 || normalizedRelatedJobIds.length === 0,
+      'INVALID_MIGRATION_INTENT',
+      'relatedPriorJobIds are allowed only for CREATE_ADDITIONAL_V5',
+    );
+    for (const priorJobId of normalizedRelatedJobIds) {
+      const priorJob = this.load(priorJobId);
+      invariant(
+        Number(priorJob.input?.sourceNid) === normalizedSourceNid
+          && (priorJob.input?.gid ?? null) === normalizedGid,
+        'RELATED_JOB_SOURCE_MISMATCH',
+        `Related Job ${priorJobId} belongs to a different source identity`,
+      );
+    }
     const jobId = createJobId(now);
     const directory = ensurePrivateDir(this.jobDir(jobId));
     for (const child of ['v4', 'v5', 'reports', 'patches']) ensurePrivateDir(path.join(directory, child));
@@ -48,8 +78,10 @@ export class JobStore {
       status: 'RECEIVED',
       mode,
       input: {
-        sourceNid: normalizePositiveInteger(sourceNid, 'sourceNid'),
-        gid: normalizePositiveInteger(gid, 'gid', { optional: true }),
+        sourceNid: normalizedSourceNid,
+        gid: normalizedGid,
+        intent: normalizedIntent,
+        relatedPriorJobIds: normalizedRelatedJobIds,
       },
       runtime: {
         workflow: workflowRuntime || null,
@@ -142,6 +174,7 @@ export class JobStore {
       jobId: job.jobId,
       sourceNid: job.input.sourceNid,
       gid: job.input.gid,
+      intent: job.input.intent || MIGRATION_INTENTS.CREATE_V5,
       status: job.status,
     };
     writePrivateJson(path.join(refDir, `${job.jobId}.json`), reference);
@@ -187,6 +220,7 @@ export class JobStore {
       jobId: job.jobId,
       sourceNid: job.input.sourceNid,
       gid: job.input.gid,
+      intent: job.input.intent || MIGRATION_INTENTS.CREATE_V5,
       status: job.status,
       updatedAt: job.updatedAt,
     };

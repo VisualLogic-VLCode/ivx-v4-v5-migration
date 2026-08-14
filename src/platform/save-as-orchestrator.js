@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { WorkflowError, invariant } from '../errors.js';
 import { readJson, sha256Buffer } from '../fs/secure-json.js';
+import { MIGRATION_INTENTS } from '../jobs/intents.js';
 import { mergeSaveAsConfig } from './http-adapter.js';
 
 const JOURNAL_PATH = 'reports/platform-save-journal.json';
@@ -172,6 +173,9 @@ export class SaveAsOrchestrator {
     if (journal.phase === 'POST_SAVE_MISMATCH') {
       throw new WorkflowError('POST_SAVE_RECONCILIATION_REQUIRED', 'A previous post-save read-back mismatched; automatic resave is forbidden');
     }
+    if (journal.phase === 'TARGET_IDENTITY_CONFLICT') {
+      throw new WorkflowError('SAVE_AS_TARGET_IDENTITY_CONFLICT', 'The platform returned a source or prior target nid; automatic continuation is forbidden');
+    }
 
     if (!journal.target.nid) {
       const preflight = await this.adapter.preflightSaveAs({ nid: job.input.sourceNid, gid: job.input.gid });
@@ -223,6 +227,30 @@ export class SaveAsOrchestrator {
         this.persist(jobId, journal);
         this.transitionIfNeeded(jobId, 'SAVE_INCOMPLETE', 'save-as-create-outcome-unknown');
         throw new WorkflowError('SAVE_AS_OUTCOME_UNKNOWN', 'Save As request outcome is unknown; inspect the platform before resuming', { cause: publicError(error) });
+      }
+      const createdNid = Number(created.nid);
+      const priorTargetNids = job.input.intent === MIGRATION_INTENTS.CREATE_ADDITIONAL_V5
+        ? this.jobs.list()
+          .filter((entry) => entry.jobId !== jobId
+            && Number(entry.sourceNid) === Number(job.input.sourceNid)
+            && (entry.gid ?? null) === (job.input.gid ?? null))
+          .map((entry) => this.jobs.load(entry.jobId).target?.nid)
+          .filter((nid) => Number.isSafeInteger(Number(nid)) && Number(nid) > 0)
+          .map(Number)
+        : [];
+      if (createdNid === Number(job.input.sourceNid) || priorTargetNids.includes(createdNid)) {
+        journal.target = { nid: createdNid, workId: created.workId, createdAt: now() };
+        journal.phase = 'TARGET_IDENTITY_CONFLICT';
+        this.record(journal, 'save-as-create', 'IDENTITY_CONFLICT', {
+          targetNid: createdNid,
+          sourceNid: Number(job.input.sourceNid),
+          conflictsWithPriorTarget: priorTargetNids.includes(createdNid),
+        });
+        this.persist(jobId, journal);
+        this.transitionIfNeeded(jobId, 'SAVE_INCOMPLETE', 'save-as-target-identity-conflict');
+        throw new WorkflowError('SAVE_AS_TARGET_IDENTITY_CONFLICT', 'Save As did not return a distinct target nid; the response was checkpointed and must not be replayed', {
+          targetNid: createdNid,
+        });
       }
       journal.target = { nid: Number(created.nid), workId: created.workId, createdAt: now() };
       journal.phase = 'TARGET_CREATED';

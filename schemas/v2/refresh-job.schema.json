@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.ivx.local/migration/v2/refresh-job.schema.json",
+  "title": "iVX Existing Target Refresh Job v2",
+  "type": "object",
+  "required": ["schemaVersion", "kind", "refreshId", "status", "source", "target", "runtime", "plan", "result", "history", "createdAt", "updatedAt", "createdBy", "sensitivity"],
+  "properties": {
+    "schemaVersion": { "const": 2 },
+    "kind": { "const": "existing-target-refresh" },
+    "refreshId": { "type": "string", "pattern": "^rfr_[A-Za-z0-9_]+$" },
+    "status": { "$ref": "#/$defs/status" },
+    "source": {
+      "type": "object",
+      "required": ["nid", "gid"],
+      "properties": { "nid": { "type": "integer", "minimum": 1 }, "gid": { "type": ["integer", "null"], "minimum": 1 } },
+      "additionalProperties": false
+    },
+    "target": {
+      "type": "object",
+      "required": ["nid", "lineageJobId"],
+      "properties": { "nid": { "type": "integer", "minimum": 1 }, "lineageJobId": { "$ref": "common.schema.json#/$defs/jobId" } },
+      "additionalProperties": false
+    },
+    "runtime": { "$ref": "#/$defs/runtime" },
+    "plan": {
+      "type": "object",
+      "required": ["planId", "planSha256", "artifact", "authorizationId"],
+      "properties": {
+        "planId": { "oneOf": [{ "$ref": "common.schema.json#/$defs/id" }, { "type": "null" }] },
+        "planSha256": { "oneOf": [{ "$ref": "common.schema.json#/$defs/sha256" }, { "type": "null" }] },
+        "artifact": { "oneOf": [{ "$ref": "common.schema.json#/$defs/safeRelativePath" }, { "type": "null" }] },
+        "authorizationId": { "oneOf": [{ "$ref": "common.schema.json#/$defs/id" }, { "type": "null" }] }
+      },
+      "additionalProperties": false
+    },
+    "result": {
+      "type": "object",
+      "required": ["targetWorkId", "targetSha256", "newReviewId", "supersededReviewIds"],
+      "properties": {
+        "targetWorkId": { "type": ["string", "null"], "maxLength": 256 },
+        "targetSha256": { "oneOf": [{ "$ref": "common.schema.json#/$defs/sha256" }, { "type": "null" }] },
+        "newReviewId": { "oneOf": [{ "$ref": "common.schema.json#/$defs/reviewId" }, { "type": "null" }] },
+        "supersededReviewIds": { "$ref": "common.schema.json#/$defs/stringArray" }
+      },
+      "additionalProperties": false
+    },
+    "history": { "$ref": "#/$defs/history" },
+    "createdAt": { "$ref": "common.schema.json#/$defs/dateTime" },
+    "updatedAt": { "$ref": "common.schema.json#/$defs/dateTime" },
+    "createdBy": { "const": "CLI" },
+    "sensitivity": { "const": "PRIVATE" }
+  },
+  "$defs": {
+    "status": { "enum": ["REFRESH_PREPARING", "AWAITING_REFRESH_AUTHORIZATION", "REFRESH_READY_TO_APPLY", "REFRESH_WRITE_REQUESTED", "REFRESH_RECONCILIATION_REQUIRED", "TARGET_REFRESHED", "REFRESH_BLOCKED", "REFRESH_PLAN_STALE", "REFRESH_TARGET_DRIFTED", "REFRESH_OUTCOME_UNKNOWN"] },
+    "runtime": {
+      "type": "object",
+      "required": ["workflow", "converter", "knowledge"],
+      "properties": {
+        "workflow": { "$ref": "common.schema.json#/$defs/runtimePin" },
+        "converter": { "$ref": "common.schema.json#/$defs/runtimePin" },
+        "knowledge": { "$ref": "#/$defs/knowledgePin" }
+      },
+      "additionalProperties": false
+    },
+    "knowledgePin": {
+      "type": "object",
+      "required": ["version", "sha256", "contentSha256", "schemaVersion", "ruleIds"],
+      "properties": {
+        "version": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "sha256": { "$ref": "common.schema.json#/$defs/sha256" },
+        "contentSha256": { "$ref": "common.schema.json#/$defs/sha256" },
+        "schemaVersion": { "type": "integer", "minimum": 1, "maximum": 1000 },
+        "ruleIds": { "$ref": "common.schema.json#/$defs/stringArray" }
+      },
+      "additionalProperties": false
+    },
+    "history": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 10000,
+      "items": {
+        "type": "object",
+        "required": ["status", "at", "reason"],
+        "properties": { "status": { "$ref": "#/$defs/status" }, "at": { "$ref": "common.schema.json#/$defs/dateTime" }, "reason": { "type": ["string", "null"], "maxLength": 4096 } },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

@@ -15,6 +15,8 @@ export function createAppPaths(appHome = resolveAppHome()) {
     jobs: path.join(appHome, 'jobs'),
     reviews: path.join(appHome, 'reviews'),
     reviewRegistry: path.join(appHome, 'review-registry.json'),
+    refreshes: path.join(appHome, 'refreshes'),
+    refreshRegistry: path.join(appHome, 'refresh-registry.json'),
     locks: path.join(appHome, 'locks'),
     logs: path.join(appHome, 'logs'),
     workflows: path.join(appHome, 'workflows'),

@@ -5,6 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { createAppPaths } from '../src/paths.js';
 import { JobStore } from '../src/jobs/job-store.js';
+import { MIGRATION_INTENTS } from '../src/jobs/intents.js';
 import { SAVE_INTENTS, SaveAsOrchestrator, rewriteCaseNidForFinalSave } from '../src/platform/save-as-orchestrator.js';
 
 const sourceNid = 123;
@@ -15,8 +16,8 @@ const converted = {
   server: { id: 'server', type: 'server' },
 };
 
-function readyJob(jobs) {
-  let job = jobs.create({ sourceNid, workflowRuntime: { version: '1.0.0' }, converterRuntime: { version: '2.0.0' }, mode: 'platform' });
+function readyJob(jobs, { intent = MIGRATION_INTENTS.CREATE_V5, relatedPriorJobIds = [] } = {}) {
+  let job = jobs.create({ sourceNid, intent, relatedPriorJobIds, workflowRuntime: { version: '1.0.0' }, converterRuntime: { version: '2.0.0' }, mode: 'platform' });
   job = jobs.transition(job.jobId, 'UPDATE_CHECKED');
   job = jobs.transition(job.jobId, 'AUTHORIZED');
   job = jobs.transition(job.jobId, 'VERSION_CLASSIFIED');
@@ -26,6 +27,11 @@ function readyJob(jobs) {
   job = jobs.transition(job.jobId, 'VALIDATED');
   job = jobs.transition(job.jobId, 'ISSUES_CLASSIFIED');
   return jobs.transition(job.jobId, 'READY_TO_SAVE');
+}
+
+function completeReadyJob(jobs, job, nid) {
+  for (const status of ['SAVE_AS_CREATED', 'FINAL_SAVED', 'POST_SAVE_VERIFIED']) job = jobs.transition(job.jobId, status);
+  return jobs.transition(job.jobId, 'SUCCEEDED', { patch: { target: { nid, workId: `target-work-${nid}` } } });
 }
 
 function diagnosticReadyJob(jobs) {
@@ -130,6 +136,31 @@ test('resumable Save As completes creation, config, nid rewrite, save, and read-
     assert.equal(JSON.stringify(journal).includes('kept'), false);
   } finally {
     fs.rmSync(context.temporary, { recursive: true, force: true });
+  }
+});
+
+test('Additional V5 Save As rejects and checkpoints a non-distinct prior target nid without replay', async () => {
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'ivx-additional-save-as-'));
+  const jobs = new JobStore(createAppPaths(path.join(temporary, 'home')));
+  const prior = completeReadyJob(jobs, readyJob(jobs), targetNid);
+  const additional = readyJob(jobs, {
+    intent: MIGRATION_INTENTS.CREATE_ADDITIONAL_V5,
+    relatedPriorJobIds: [prior.jobId],
+  });
+  const adapter = new FakeAdapter();
+  const orchestrator = new SaveAsOrchestrator({ jobs, adapter });
+  try {
+    await assert.rejects(orchestrator.run(additional.jobId), { code: 'SAVE_AS_TARGET_IDENTITY_CONFLICT' });
+    assert.equal(jobs.load(additional.jobId).status, 'SAVE_INCOMPLETE');
+    const journal = JSON.parse(fs.readFileSync(orchestrator.journalFile(additional.jobId), 'utf8'));
+    assert.equal(journal.phase, 'TARGET_IDENTITY_CONFLICT');
+    assert.equal(journal.target.nid, targetNid);
+    await assert.rejects(orchestrator.run(additional.jobId), { code: 'SAVE_AS_TARGET_IDENTITY_CONFLICT' });
+    assert.equal(adapter.calls.create, 1);
+    assert.equal(adapter.calls.config, 0);
+    assert.equal(adapter.calls.save, 0);
+  } finally {
+    fs.rmSync(temporary, { recursive: true, force: true });
   }
 });
 
