@@ -23,6 +23,17 @@ function optionalPositiveInteger(value, name) {
   return number;
 }
 
+function validateRequestedSourceGid(sourceInfo, requestedGid) {
+  const sourceGid = Number(sourceInfo?.gid || 0);
+  if (sourceGid > 0) {
+    invariant(requestedGid !== null, 'SOURCE_GID_REQUIRED', 'Group source requires an explicit gid');
+    invariant(requestedGid === sourceGid, 'SOURCE_GID_MISMATCH', 'Source gid does not match the requested group');
+  } else {
+    invariant(requestedGid === null, 'SOURCE_GID_MISMATCH', 'Personal source must not be paired with a gid');
+  }
+  return sourceGid;
+}
+
 export class RefreshPrepareOrchestrator {
   constructor({ refreshes, jobs, adapter, converter, runtime, now = () => new Date() } = {}) {
     invariant(refreshes && jobs && adapter && converter && runtime, 'REFRESH_PREPARE_DEPENDENCY_REQUIRED', 'Refresh store, Job store, read adapter, Converter, and runtime pins are required');
@@ -34,27 +45,51 @@ export class RefreshPrepareOrchestrator {
     this.now = now;
   }
 
-  resolveLineage({ sourceNid, targetNid, gid = null, lineageJobId } = {}) {
+  findLineageCandidates({ sourceNid, targetNid, lineageJobId } = {}) {
     const candidates = this.jobs.list()
       .filter((entry) => lineageJobId ? entry.jobId === lineageJobId : true)
       .map((entry) => this.jobs.load(entry.jobId))
       .filter((job) => COMPLETED_LINEAGE_STATES.has(job.status)
         && Number(job.input?.sourceNid) === Number(sourceNid)
-        && (job.input?.gid ?? null) === gid
         && Number(job.target?.nid) === Number(targetNid));
     invariant(candidates.length > 0, 'REFRESH_LINEAGE_NOT_FOUND', 'No completed Workflow Migration Job proves this source-to-target lineage', {
       sourceNid: Number(sourceNid),
       targetNid: Number(targetNid),
       lineageJobId: lineageJobId || null,
     });
-    invariant(candidates.length === 1 || lineageJobId, 'REFRESH_LINEAGE_AMBIGUOUS', 'More than one Workflow Job proves this source-to-target lineage; specify --lineage-job');
-    return candidates[0];
+    return candidates;
+  }
+
+  resolveLineage({ candidates, sourceNid, targetNid, gid = null, sourceGid = 0, lineageJobId } = {}) {
+    const compatible = candidates.filter((job) => {
+      const historicalGid = job.input?.gid ?? null;
+      if (historicalGid === gid) return true;
+      return historicalGid === null && sourceGid > 0 && gid === sourceGid;
+    });
+    invariant(compatible.length > 0, 'REFRESH_LINEAGE_NOT_FOUND', 'No completed Workflow Migration Job proves this source-to-target lineage', {
+      sourceNid: Number(sourceNid),
+      targetNid: Number(targetNid),
+      lineageJobId: lineageJobId || null,
+    });
+    invariant(compatible.length === 1 || lineageJobId, 'REFRESH_LINEAGE_AMBIGUOUS', 'More than one Workflow Job proves this source-to-target lineage; specify --lineage-job');
+    return compatible[0];
   }
 
   async prepare({ sourceNid, targetNid, gid = null, lineageJobId = null } = {}) {
     invariant(Number(sourceNid) !== Number(targetNid), 'INVALID_REFRESH_INPUT', 'Source and target nid must be different');
     const normalizedGid = optionalPositiveInteger(gid, 'gid');
-    const lineage = this.resolveLineage({ sourceNid, targetNid, gid: normalizedGid, lineageJobId });
+    const candidates = this.findLineageCandidates({ sourceNid, targetNid, lineageJobId });
+    const sourceInfo = await this.adapter.getCaseInfo(sourceNid);
+    invariant(typeof sourceInfo?.workId === 'string' && sourceInfo.workId, 'PLATFORM_RESPONSE_INVALID', 'Source metadata has no workId');
+    const sourceGid = validateRequestedSourceGid(sourceInfo, normalizedGid);
+    const lineage = this.resolveLineage({
+      candidates,
+      sourceNid,
+      targetNid,
+      gid: normalizedGid,
+      sourceGid,
+      lineageJobId,
+    });
     const refresh = this.refreshes.create({
       sourceNid,
       gid: normalizedGid,
@@ -63,7 +98,7 @@ export class RefreshPrepareOrchestrator {
       runtime: this.runtime,
     });
     try {
-      return await this.refreshes.withOperationLease(refresh.refreshId, 'prepare', async () => this.#prepareLocked(refresh.refreshId));
+      return await this.refreshes.withOperationLease(refresh.refreshId, 'prepare', async () => this.#prepareLocked(refresh.refreshId, sourceInfo));
     } catch (error) {
       const current = this.refreshes.load(refresh.refreshId);
       if (current.status === 'REFRESH_PREPARING') this.refreshes.block(refresh.refreshId, publicReason(error));
@@ -71,18 +106,10 @@ export class RefreshPrepareOrchestrator {
     }
   }
 
-  async #prepareLocked(refreshId) {
+  async #prepareLocked(refreshId, sourceInfo) {
     const refresh = this.refreshes.load(refreshId);
     const currentUser = await this.adapter.getCurrentUser();
-    const sourceInfo = await this.adapter.getCaseInfo(refresh.source.nid);
-    invariant(typeof sourceInfo?.workId === 'string' && sourceInfo.workId, 'PLATFORM_RESPONSE_INVALID', 'Source metadata has no workId');
-    const sourceGid = Number(sourceInfo.gid || 0);
-    if (sourceGid > 0) {
-      invariant(refresh.source.gid !== null, 'SOURCE_GID_REQUIRED', 'Group source requires an explicit gid');
-      invariant(refresh.source.gid === sourceGid, 'SOURCE_GID_MISMATCH', 'Source gid does not match the requested group');
-    } else {
-      invariant(refresh.source.gid === null, 'SOURCE_GID_MISMATCH', 'Personal source must not be paired with a gid');
-    }
+    const sourceGid = validateRequestedSourceGid(sourceInfo, refresh.source.gid);
     const targetPermission = await this.adapter.preflightTargetUpdate({ nid: refresh.target.nid, currentUser });
     if (!targetPermission.allowed) {
       throw new WorkflowError(
@@ -102,7 +129,7 @@ export class RefreshPrepareOrchestrator {
       this.adapter.getCaseInfo(refresh.source.nid),
       this.adapter.getCaseInfo(refresh.target.nid),
     ]);
-    invariant(sourceAfter?.workId === sourceInfo.workId, 'REFRESH_SOURCE_CHANGED', 'Source revision changed while preparing the Refresh');
+    invariant(sourceAfter?.workId === sourceInfo.workId && Number(sourceAfter?.gid || 0) === sourceGid, 'REFRESH_SOURCE_CHANGED', 'Source revision or Group identity changed while preparing the Refresh');
     invariant(targetAfter?.workId === targetInfo.workId, 'REFRESH_TARGET_CHANGED', 'Target revision changed while preparing the Refresh');
 
     const sourceClassification = classifyCaseVersion({ metadata: sourceAfter, work: sourceWork });

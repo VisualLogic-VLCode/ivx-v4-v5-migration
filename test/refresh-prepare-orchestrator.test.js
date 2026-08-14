@@ -36,12 +36,14 @@ const targetV5 = (() => {
   return value;
 })();
 
-function completedLineage(jobs, gid = null) {
+function lineageJob(jobs, gid = null, { completed = true } = {}) {
   let job = jobs.create({ sourceNid, gid, mode: 'platform' });
   for (const status of ['UPDATE_CHECKED', 'AUTHORIZED', 'VERSION_CLASSIFIED']) job = jobs.transition(job.jobId, status);
   job = jobs.transition(job.jobId, 'SOURCE_LOADED', { patch: { source: { workId: 'source-work-1' } } });
   job = jobs.transition(job.jobId, 'CONVERTED', { patch: { target: { artifact: 'v5/app.v5.json' } } });
-  for (const status of ['VALIDATED', 'ISSUES_CLASSIFIED', 'READY_TO_SAVE', 'SAVE_AS_CREATED', 'FINAL_SAVED', 'POST_SAVE_VERIFIED']) job = jobs.transition(job.jobId, status);
+  for (const status of ['VALIDATED', 'ISSUES_CLASSIFIED', 'READY_TO_SAVE', 'SAVE_AS_CREATED', 'FINAL_SAVED']) job = jobs.transition(job.jobId, status);
+  job = jobs.transition(job.jobId, 'POST_SAVE_VERIFIED', { patch: { target: { ...job.target, nid: targetNid, workId: 'target-work-1' } } });
+  if (!completed) return job;
   return jobs.transition(job.jobId, 'SUCCEEDED', { patch: { target: { ...job.target, nid: targetNid, workId: 'target-work-1' } } });
 }
 
@@ -51,10 +53,16 @@ class FakeAdapter {
     this.targetInfo = { nid: targetNid, gid: 0, memberType: 3, workId: 'target-work-1', extra: { ver: 2 }, ntype: 90, previewDomain: 'preview.example' };
     this.targetAllowed = true;
     this.secretConfig = { apiCredentialValue: 'must-not-be-persisted' };
+    this.caseInfoCalls = [];
+    this.targetPreflightCalls = 0;
   }
   async getCurrentUser() { return { id: 1 }; }
-  async getCaseInfo(nid) { return structuredClone(nid === sourceNid ? this.sourceInfo : this.targetInfo); }
+  async getCaseInfo(nid) {
+    this.caseInfoCalls.push(nid);
+    return structuredClone(nid === sourceNid ? this.sourceInfo : this.targetInfo);
+  }
   async preflightTargetUpdate() {
+    this.targetPreflightCalls += 1;
     return { allowed: this.targetAllowed, decision: this.targetAllowed ? 'ALLOWED' : 'DENIED', reason: this.targetAllowed ? 'TEST' : 'TARGET_ROLE_NOT_EDITABLE', target: structuredClone(this.targetInfo) };
   }
   async loadWork({ nid }) { return structuredClone(nid === sourceNid ? v4 : targetV5); }
@@ -79,7 +87,7 @@ function fixture({ lineageGid = null } = {}) {
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'ivx-refresh-prepare-'));
   const paths = createAppPaths(path.join(temporary, 'home'));
   const jobs = new JobStore(paths);
-  const lineage = completedLineage(jobs, lineageGid);
+  const lineage = lineageJob(jobs, lineageGid);
   const refreshes = new RefreshStore(paths, { now: () => new Date(NOW), randomBytes: () => Buffer.from('1234567890', 'hex') });
   const adapter = new FakeAdapter();
   const converter = new FakeConverter();
@@ -113,7 +121,10 @@ test('Refresh prepare blocks before conversion when target edit permission is de
   try {
     await assert.rejects(context.orchestrator.prepare({ sourceNid, targetNid }), { code: 'TARGET_PERMISSION_DENIED' });
     assert.equal(context.converter.calls, 0);
-    assert.equal(context.refreshes.list({ targetNid })[0].status, 'REFRESH_BLOCKED');
+    const blocked = context.refreshes.load(context.refreshes.list({ targetNid })[0].refreshId);
+    assert.equal(blocked.status, 'REFRESH_BLOCKED');
+    assert.deepEqual(blocked.plan, { planId: null, planSha256: null, artifact: null, authorizationId: null });
+    assert.deepEqual(blocked.result, { targetWorkId: null, targetSha256: null, newReviewId: null, supersededReviewIds: [] });
   } finally {
     fs.rmSync(context.temporary, { recursive: true, force: true });
   }
@@ -125,6 +136,7 @@ test('Refresh prepare requires an explicit gid for a Group source', async () => 
   try {
     await assert.rejects(context.orchestrator.prepare({ sourceNid, targetNid }), { code: 'SOURCE_GID_REQUIRED' });
     assert.equal(context.converter.calls, 0);
+    assert.deepEqual(context.refreshes.list({ targetNid }), []);
   } finally {
     fs.rmSync(context.temporary, { recursive: true, force: true });
   }
@@ -138,6 +150,155 @@ test('Refresh prepare accepts a Group source only when the trusted lineage has t
     assert.equal(prepared.plan.source.gid, 99);
     assert.equal(prepared.plan.target.lineageJobId, context.lineage.jobId);
     assert.equal(context.converter.calls, 1);
+  } finally {
+    fs.rmSync(context.temporary, { recursive: true, force: true });
+  }
+});
+
+test('Refresh prepare proves a legacy Group lineage with current platform gid without mutating the old Job', async () => {
+  const context = fixture({ lineageGid: null });
+  context.adapter.sourceInfo.gid = 99;
+  const legacyBefore = context.jobs.load(context.lineage.jobId);
+  try {
+    const prepared = await context.orchestrator.prepare({
+      sourceNid,
+      targetNid,
+      gid: 99,
+      lineageJobId: context.lineage.jobId,
+    });
+    assert.equal(prepared.refresh.source.gid, 99);
+    assert.equal(prepared.plan.source.gid, 99);
+    assert.equal(prepared.plan.target.lineageJobId, context.lineage.jobId);
+    assert.equal(prepared.plan.source.workId, 'source-work-2');
+    assert.equal(prepared.plan.target.workId, 'target-work-1');
+    assert.equal(prepared.plan.createdAt, NOW.toISOString());
+    assert.equal(prepared.plan.expiresAt, '2026-08-14T12:00:00.000Z');
+    for (const digest of [
+      prepared.plan.source.sha256,
+      prepared.plan.target.sha256,
+      prepared.plan.target.configSha256,
+      prepared.plan.target.settingsSha256,
+      prepared.plan.target.routingSha256,
+      prepared.plan.candidate.sha256,
+      prepared.plan.diagnostics.sha256,
+    ]) assert.match(digest, /^[0-9a-f]{64}$/);
+    assert.deepEqual(context.jobs.load(context.lineage.jobId), legacyBefore);
+    assert.equal(context.converter.calls, 1);
+  } finally {
+    fs.rmSync(context.temporary, { recursive: true, force: true });
+  }
+});
+
+test('Refresh prepare rejects a legacy Group gid mismatch before creating a Refresh', async () => {
+  const context = fixture({ lineageGid: null });
+  context.adapter.sourceInfo.gid = 99;
+  try {
+    await assert.rejects(context.orchestrator.prepare({
+      sourceNid,
+      targetNid,
+      gid: 100,
+      lineageJobId: context.lineage.jobId,
+    }), { code: 'SOURCE_GID_MISMATCH' });
+    assert.deepEqual(context.refreshes.list({ targetNid }), []);
+    assert.equal(context.adapter.targetPreflightCalls, 0);
+    assert.equal(context.converter.calls, 0);
+  } finally {
+    fs.rmSync(context.temporary, { recursive: true, force: true });
+  }
+});
+
+test('Refresh prepare does not rebind a historical non-null gid to a different current Group', async () => {
+  const context = fixture({ lineageGid: 98 });
+  context.adapter.sourceInfo.gid = 99;
+  try {
+    await assert.rejects(context.orchestrator.prepare({
+      sourceNid,
+      targetNid,
+      gid: 99,
+      lineageJobId: context.lineage.jobId,
+    }), { code: 'REFRESH_LINEAGE_NOT_FOUND' });
+    assert.deepEqual(context.refreshes.list({ targetNid }), []);
+    assert.equal(context.adapter.targetPreflightCalls, 0);
+    assert.equal(context.converter.calls, 0);
+  } finally {
+    fs.rmSync(context.temporary, { recursive: true, force: true });
+  }
+});
+
+test('Refresh prepare rejects a gid for a personal source before creating a Refresh', async () => {
+  const context = fixture({ lineageGid: null });
+  try {
+    await assert.rejects(context.orchestrator.prepare({
+      sourceNid,
+      targetNid,
+      gid: 99,
+      lineageJobId: context.lineage.jobId,
+    }), { code: 'SOURCE_GID_MISMATCH' });
+    assert.deepEqual(context.refreshes.list({ targetNid }), []);
+    assert.equal(context.adapter.targetPreflightCalls, 0);
+    assert.equal(context.converter.calls, 0);
+  } finally {
+    fs.rmSync(context.temporary, { recursive: true, force: true });
+  }
+});
+
+test('Refresh prepare keeps invalid and incomplete source-target lineage as not found', async () => {
+  const context = fixture({ lineageGid: null });
+  const incomplete = lineageJob(context.jobs, null, { completed: false });
+  try {
+    await assert.rejects(context.orchestrator.prepare({
+      sourceNid,
+      targetNid,
+      lineageJobId: incomplete.jobId,
+    }), { code: 'REFRESH_LINEAGE_NOT_FOUND' });
+    await assert.rejects(context.orchestrator.prepare({
+      sourceNid,
+      targetNid: targetNid + 1,
+      lineageJobId: context.lineage.jobId,
+    }), { code: 'REFRESH_LINEAGE_NOT_FOUND' });
+    assert.deepEqual(context.refreshes.list({ sourceNid }), []);
+    assert.deepEqual(context.adapter.caseInfoCalls, []);
+  } finally {
+    fs.rmSync(context.temporary, { recursive: true, force: true });
+  }
+});
+
+test('Refresh prepare keeps multiple compatible legacy Group lineages ambiguous', async () => {
+  const context = fixture({ lineageGid: null });
+  lineageJob(context.jobs, null);
+  context.adapter.sourceInfo.gid = 99;
+  try {
+    await assert.rejects(context.orchestrator.prepare({ sourceNid, targetNid, gid: 99 }), { code: 'REFRESH_LINEAGE_AMBIGUOUS' });
+    assert.deepEqual(context.refreshes.list({ targetNid }), []);
+    assert.equal(context.adapter.targetPreflightCalls, 0);
+    assert.equal(context.converter.calls, 0);
+  } finally {
+    fs.rmSync(context.temporary, { recursive: true, force: true });
+  }
+});
+
+test('Refresh prepare blocks if the source Group identity changes after compatibility proof', async () => {
+  const context = fixture({ lineageGid: null });
+  context.adapter.sourceInfo.gid = 99;
+  const originalGetCaseInfo = context.adapter.getCaseInfo.bind(context.adapter);
+  let sourceReads = 0;
+  context.adapter.getCaseInfo = async (nid) => {
+    const info = await originalGetCaseInfo(nid);
+    if (nid === sourceNid && ++sourceReads > 1) info.gid = 100;
+    return info;
+  };
+  try {
+    await assert.rejects(context.orchestrator.prepare({
+      sourceNid,
+      targetNid,
+      gid: 99,
+      lineageJobId: context.lineage.jobId,
+    }), { code: 'REFRESH_SOURCE_CHANGED' });
+    const blocked = context.refreshes.load(context.refreshes.list({ targetNid })[0].refreshId);
+    assert.equal(blocked.status, 'REFRESH_BLOCKED');
+    assert.deepEqual(blocked.plan, { planId: null, planSha256: null, artifact: null, authorizationId: null });
+    assert.deepEqual(blocked.result, { targetWorkId: null, targetSha256: null, newReviewId: null, supersededReviewIds: [] });
+    assert.equal(context.converter.calls, 0);
   } finally {
     fs.rmSync(context.temporary, { recursive: true, force: true });
   }

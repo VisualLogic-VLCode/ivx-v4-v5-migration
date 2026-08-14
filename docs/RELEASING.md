@@ -44,11 +44,11 @@ The rules intentionally permit ordinary fast-forward source pushes and the signe
 
 The recommended first installation is Agent-first. The user gives their local Codex or Claude Code the copyable [general-user starter prompt](templates/AI-AGENT-STARTER-PROMPT.md), which points to the immutable tagged [bootstrap procedure](AI-AGENT-BOOTSTRAP.md). The Agent executes every command, while the user only types the Token into the visible native macOS secure-input dialog opened by the Launcher. After setup, the installed managed Skill becomes authoritative. The separate [acceptance prompt](templates/AI-AGENT-ACCEPTANCE-PROMPT.md) is maintainer QA and must not be presented as the ordinary onboarding path.
 
-The bootstrap procedure uses the stable `0.6.0` Launcher asset. Workflow `0.3.4` and later Releases are immutable at the repository level:
+The bootstrap procedure uses the stable `0.6.1` Launcher asset. Workflow `0.3.4` and later Releases are immutable at the repository level:
 
 ```bash
 npm install --global \
-  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.6.0/ivx-v4-v5-migration-0.6.0.tgz
+  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.6.1/ivx-v4-v5-migration-0.6.1.tgz
 ivx-migrate setup --prompt-token
 ```
 
@@ -91,6 +91,8 @@ Public Workflow `0.3.5` introduced Agent protocol 3 because the managed procedur
 Workflow `0.5.0` raises Agent protocol to 6 because Agents must distinguish USER semantic-equivalence assertions from separately authorized environment-risk diagnostic execution, construct only exact-scoped short-lived acceptance artifacts, keep side-effect authorization independent, and never turn risk-cycle observations into parity, Converter attribution, Diagnosis v2, or automatic repair. Knowledge Runtime `0.1.3` is the first public Knowledge release whose Agent protocol range includes 6. Workflow `0.5.1` keeps protocol 6 and makes Workflow rollback synchronize the managed Codex/Claude adapters to the rolled-back runtime; the compatible Knowledge Runtime must be active before a new Job or Review begins. Workflow `0.5.2` also keeps protocol 6 and reconciles a post-Save source revision only when the complete current V4 snapshot canonically matches the immutable Job input; substantive change remains blocked and the existing V5 is reused without another Save As.
 
 Workflow `0.6.0` raises Agent protocol to 7 for three explicit target-identity intents: resume the original operation, create an Additional V5, or refresh one trusted existing V5 target. Protocol 7 requires Agents to use an immutable Refresh Plan and exact authorization, preserve target configuration, stop on unknown write outcome, reconcile without replay, and continue from the new Review after old write-capable Reviews are superseded. Knowledge Runtime `0.1.4` is the compatibility-only release that first admits protocol 7; its knowledge content digest and all content-file hashes remain identical to `0.1.3`. Publish and activate Knowledge `0.1.4` before Workflow `0.6.0`.
+
+Workflow `0.6.1` keeps Agent protocol 7 and repairs legacy Group lineage compatibility. A completed historical Job whose stored gid is null may prove the same source-to-target lineage only when the caller supplies a gid and current authoritative source metadata reports that exact Group. The old Job remains immutable; the verified gid is stored only in the new Refresh and immutable Plan. Missing/mismatched gid, personal source with gid, invalid or ambiguous lineage, and historical non-null gid mismatch still fail before a new Refresh is created.
 
 If a pre-`0.4.1` managed Workflow cannot download the current Release, install the current immutable Launcher with npm and invoke exactly one recovery command: `ivx-migrate setup --force --launcher-recovery RECOVER_SIGNED_RUNTIME`. Coordinated setup preserves the existing Token path and installs a compatible Workflow/Converter/Knowledge/Agent set; a Workflow-only update can be rejected correctly when the old home does not yet contain Knowledge. Recovery uses the bundled signed-channel client only for setup/update/rollback/Agent synchronization and refuses a bundled version older than the active managed Workflow. It does not read or replace the Token. Normal delegation resumes after the successful setup.
 
