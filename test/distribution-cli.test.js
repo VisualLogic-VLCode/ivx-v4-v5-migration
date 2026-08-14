@@ -238,6 +238,32 @@ test('setup, managed converter updates, Agent protocol sync, and rollback work i
     assert.equal(workflowUpdate.agents.protocolVersion.installed, 2);
     assert.equal(fs.readFileSync(path.join(claudeHome, 'skills', 'v4-to-v5-workflow', 'SKILL.md'), 'utf8'), 'claude protocol 2\n');
 
+    fs.appendFileSync(path.join(codexHome, 'skills', 'v4-to-v5-workflow', 'SKILL.md'), 'local customization\n');
+    const conflictedRollback = runFailure(['rollback', '--kind', 'workflow'], env);
+    assert.equal(conflictedRollback.code, 'AGENT_FILE_CONFLICT');
+    assert.equal(run(['doctor'], env).workflow.version, '1.1.0');
+    fs.writeFileSync(path.join(codexHome, 'skills', 'v4-to-v5-workflow', 'SKILL.md'), 'codex protocol 2\n');
+
+    const workflowRollback = run(['rollback', '--kind', 'workflow'], env);
+    assert.equal(workflowRollback.current.workflow.version, '1.0.0');
+    assert.equal(workflowRollback.restartRequired, true);
+    assert.equal(workflowRollback.agents.protocolVersion.desired, 1);
+    assert.equal(workflowRollback.agents.protocolVersion.installed, 1);
+    assert.equal(workflowRollback.agents.current, true);
+    assert.equal(fs.readFileSync(path.join(codexHome, 'skills', 'v4-to-v5-workflow', 'SKILL.md'), 'utf8'), 'codex protocol 1\n');
+    const rollbackDoctor = run(['doctor'], env);
+    assert.equal(rollbackDoctor.workflow.version, '1.0.0');
+    assert.equal(rollbackDoctor.agents.protocolVersion.installed, 1);
+    assert.equal(rollbackDoctor.agents.current, true);
+
+    const repeatedWorkflowUpdate = run(['update', 'apply', '--kind', 'workflow'], env);
+    assert.equal(repeatedWorkflowUpdate.runtimes.current.workflow.version, '1.1.0');
+    assert.equal(repeatedWorkflowUpdate.agents.protocolVersion.installed, 2);
+    const releaseWorkflowRollback = run(['release', 'rollback', '--kind', 'workflow'], env);
+    assert.equal(releaseWorkflowRollback.current.workflow.version, '1.0.0');
+    assert.equal(releaseWorkflowRollback.agents.protocolVersion.installed, 1);
+    assert.equal(releaseWorkflowRollback.agents.current, true);
+
     const rollback = run(['rollback', '--kind', 'converter'], env);
     assert.equal(rollback.current.converter.version, '1.0.0');
   } finally {

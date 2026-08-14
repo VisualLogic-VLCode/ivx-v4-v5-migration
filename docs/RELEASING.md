@@ -44,11 +44,11 @@ The rules intentionally permit ordinary fast-forward source pushes and the signe
 
 The recommended first installation is Agent-first. The user gives their local Codex or Claude Code the copyable [general-user starter prompt](templates/AI-AGENT-STARTER-PROMPT.md), which points to the immutable tagged [bootstrap procedure](AI-AGENT-BOOTSTRAP.md). The Agent executes every command, while the user only types the Token into the visible native macOS secure-input dialog opened by the Launcher. After setup, the installed managed Skill becomes authoritative. The separate [acceptance prompt](templates/AI-AGENT-ACCEPTANCE-PROMPT.md) is maintainer QA and must not be presented as the ordinary onboarding path.
 
-The bootstrap procedure uses the stable `0.5.0` Launcher asset. Workflow `0.3.4` and later Releases are immutable at the repository level:
+The bootstrap procedure uses the stable `0.5.1` Launcher asset. Workflow `0.3.4` and later Releases are immutable at the repository level:
 
 ```bash
 npm install --global \
-  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.5.0/ivx-v4-v5-migration-0.5.0.tgz
+  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.5.1/ivx-v4-v5-migration-0.5.1.tgz
 ivx-migrate setup --prompt-token
 ```
 
@@ -88,11 +88,11 @@ Workflow `0.3.4` introduced Agent protocol 2 because the managed procedure forbi
 
 Public Workflow `0.3.5` introduced Agent protocol 3 because the managed procedure added the separately authorized known-issues diagnostic-copy path and requires Agents to distinguish `DIAGNOSTIC_COPY_CREATED` from normal success. Workflow `0.3.6` and `0.3.7` kept protocol 3. Workflow `0.3.8` raised the protocol to 4 because both first-install and post-install missing/expired Token handling use `setup --prompt-token`, warn before opening the native dialog, and forbid background PTY/chat/plaintext fallbacks. Workflow `0.4.0` raised the protocol to 5 for platform-backed Runtime Review creation, revision-pinned Environment Gates and preview URLs, per-origin browser authentication, evidence-backed diagnosis, bounded `3+2`/`10+5` target repair, and Human Finding continuation. Workflow `0.4.1` keeps protocol 5 and hardens public runtime download transport; `0.4.2` adds confirmed, non-downgrading Launcher recovery; `0.4.3` corrects the recovery SOP to coordinated setup so Knowledge is installed atomically; and `0.4.4` keeps protocol 5 while separating ordinary AI-first onboarding from maintainer acceptance and clarifying that personal and Group cases share one migration flow.
 
-Workflow `0.5.0` raises Agent protocol to 6 because Agents must distinguish USER semantic-equivalence assertions from separately authorized environment-risk diagnostic execution, construct only exact-scoped short-lived acceptance artifacts, keep side-effect authorization independent, and never turn risk-cycle observations into parity, Converter attribution, Diagnosis v2, or automatic repair. Knowledge Runtime `0.1.3` is the first public Knowledge release whose Agent protocol range includes 6; it must be installed with Workflow `0.5.0` before a new Job or Review begins.
+Workflow `0.5.0` raises Agent protocol to 6 because Agents must distinguish USER semantic-equivalence assertions from separately authorized environment-risk diagnostic execution, construct only exact-scoped short-lived acceptance artifacts, keep side-effect authorization independent, and never turn risk-cycle observations into parity, Converter attribution, Diagnosis v2, or automatic repair. Knowledge Runtime `0.1.3` is the first public Knowledge release whose Agent protocol range includes 6. Workflow `0.5.1` keeps protocol 6 and makes Workflow rollback synchronize the managed Codex/Claude adapters to the rolled-back runtime; the compatible Knowledge Runtime must be active before a new Job or Review begins.
 
 If a pre-`0.4.1` managed Workflow cannot download the current Release, install the current immutable Launcher with npm and invoke exactly one recovery command: `ivx-migrate setup --force --launcher-recovery RECOVER_SIGNED_RUNTIME`. Coordinated setup preserves the existing Token path and installs a compatible Workflow/Converter/Knowledge/Agent set; a Workflow-only update can be rejected correctly when the old home does not yet contain Knowledge. Recovery uses the bundled signed-channel client only for setup/update/rollback/Agent synchronization and refuses a bundled version older than the active managed Workflow. It does not read or replace the Token. Normal delegation resumes after the successful setup.
 
-`update apply` synchronizes adapters from the activated Workflow. Unmodified managed files update automatically. A manually modified file causes `AGENT_FILE_CONFLICT`; `--force` backs it up before replacement.
+`update apply` and Workflow rollback synchronize adapters from the activated Workflow. Unmodified managed files update automatically. A manually modified file causes `AGENT_FILE_CONFLICT`; `--force` backs it up before replacement.
 
 ## Prepare a Workflow release
 

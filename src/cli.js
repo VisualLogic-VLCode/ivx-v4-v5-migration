@@ -985,6 +985,37 @@ async function handleSetup(options, context) {
   };
 }
 
+async function rollbackRuntime(kind, options, context) {
+  const forceAgents = optionBoolean(options.force, false);
+  let agentSync = null;
+  if (kind === 'workflow') {
+    const { target } = context.registry.rollbackTarget(kind);
+    const protocolVersion = agentProtocolVersion(target);
+    const installer = runtimeAgentInstaller(context, target);
+    const status = installer.status({ protocolVersion });
+    if (status.conflicts.length > 0 && !forceAgents) {
+      throw new WorkflowError('AGENT_FILE_CONFLICT', 'Refusing to roll back Workflow while managed Agent adapters contain local modifications', {
+        targets: status.conflicts,
+        hint: 'Re-run rollback with --force to back up and replace the modified adapters.',
+      });
+    }
+    agentSync = { installer, protocolVersion };
+  }
+  const current = await createUpdateManager(context).rollback(kind);
+  const result = { kind, current, restartRequired: kind === 'workflow' };
+  if (kind === 'workflow') {
+    const files = agentSync.installer.sync({
+      force: forceAgents,
+      protocolVersion: agentSync.protocolVersion,
+    });
+    result.agents = {
+      ...agentSync.installer.status({ protocolVersion: agentSync.protocolVersion }),
+      filesChanged: files,
+    };
+  }
+  return result;
+}
+
 async function handleUpdate(positionals, options, context) {
   const action = positionals[1] || 'check';
   if (action === 'check') {
@@ -1011,8 +1042,7 @@ async function handleUpdate(positionals, options, context) {
   if (action === 'rollback') {
     const kinds = selectedRuntimeKinds(options);
     invariant(kinds.length === 1, 'CLI_ARGUMENT_INVALID', 'update rollback requires exactly one --kind');
-    const current = await createUpdateManager(context).rollback(kinds[0]);
-    return { kind: kinds[0], current, restartRequired: kinds[0] === 'workflow' };
+    return rollbackRuntime(kinds[0], options, context);
   }
   throw new WorkflowError('CLI_COMMAND_UNKNOWN', `Unknown update action: ${action}`);
 }
@@ -1045,7 +1075,7 @@ async function handleRelease(positionals, options, context) {
     assertRuntimeSet(runtimeSetFromCurrent(context.registry.readCurrent(), { [kind]: descriptor }));
     return context.registry.activate(kind, options.version);
   }
-  if (action === 'rollback') return createUpdateManager(context).rollback(kind);
+  if (action === 'rollback') return rollbackRuntime(kind, options, context);
   const location = options.manifest || context.config.releaseManifests?.[kind] || context.config.releaseManifestUrl;
   const envelope = await loadReleaseEnvelope(location, {
     publicKeyPem: context.config.releasePublicKeys?.[kind] || context.config.releasePublicKeyPem,
