@@ -40,6 +40,8 @@
 
 这同时授权一个 WRITE Runtime Review 和初始修复预算。默认优先使用无人值守的 `READ_ONLY` Playwright 场景；需要登录时，Agent 会打开可见浏览器让用户完成登录，并且不会读取 Cookie 或浏览器认证文件。
 
+如果 Save As 后平台只推进了源案例 revision，而完整源 JSON 与本次转换输入一致，Workflow 会在创建 Review 或首次环境检查时自动协调并记录审计证据，不需要再迁移或再创建一个 V5。若源内容确实变化，工作流会保留已创建的 V5 并以 `REVIEW_SOURCE_CONTENT_CHANGED` 停止；用户应审阅源变化，不能通过重复 Save As 绕过。
+
 只有工作流判定为高置信、修复目标为 V5 产物的 `SOURCE_DATA` / `TARGET_CASE` 问题才允许自动修复。`CONVERTER`、`PLATFORM_RUNTIME`、`KNOWLEDGE_GAP`、`AUTHORIZATION` 和 `UNKNOWN` 只报告，不自动修改。环境严格或经用户声明语义等价时，运行结果才能作为归因和修复证据。
 
 如果环境检查仍有差异，默认会停止浏览器。用户可以先解决绑定并声明其业务语义等价；也可以在 Agent 列出全部未解决路径和将要执行的场景后，明确接受这些差异带来的风险，仅继续一次有时限、精确范围的诊断运行。后者不会把环境改写为“等价”，不会归因 Converter，也不会自动修复目标；它只是帮助用户打开运行态继续观察。

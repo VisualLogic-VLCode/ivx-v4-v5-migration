@@ -1,6 +1,6 @@
 # V4→V5 工作流：运行时验证、问题诊断与 AI 修复设计
 
-> 状态：阶段 0–8 已全部完成；Workflow `0.5.1`、Converter `1.2.2` 与 Knowledge Runtime `0.1.3` 构成当前公开运行时集合。环境风险下诊断运行、全新安装、旧用户协调更新、Agent 同步与回滚均已纳入发布验收
+> 状态：阶段 0–9 已全部完成；Workflow `0.5.2`、Converter `1.2.2` 与 Knowledge Runtime `0.1.3` 构成当前公开运行时集合。环境风险下诊断运行、Save As 后源 revision 安全协调、全新安装、旧用户协调更新、Agent 同步与回滚均已纳入发布验收
 > 初稿：2026-08-12；本次修订：2026-08-14
 > 适用项目：`ivx-v4-v5-migration` 及其独立分发的 Workflow、Agent 适配器和知识运行时
 > 不修改：`tov5parser` 的转换规则；转换器继续由维护者在独立仓库中维护
@@ -631,6 +631,8 @@ Agent 应定位关联 Job/Review Session，并通过 CLI 创建 Human Finding。
 
 ### 13.2 Runtime Review Session
 
+创建平台 Review 前必须读取当前完整源案例，并与 Migration Job 的不可变 V4 输入计算相同的规范化内容摘要。若 `workId` 在 Save As 后推进但摘要相同，Workflow 可把新 Review 固定到当前 revision，并写入包含原/新 workId、期望/当前摘要和原因的私有协调记录；若 Review 已由旧版创建但仍是没有任何环境证据的 `REVIEW_OPEN`，首次环境检查可执行同一协调。摘要不同、读取不完整、已有环境/运行时证据或活动 cycle 时必须阻断，保留既有 target，且不得通过新 Job 或重复 Save As 绕过。
+
 ```mermaid
 stateDiagram-v2
     [*] --> REVIEW_OPEN
@@ -926,8 +928,8 @@ Converter 修复后由维护者发布新 Converter；用户更新后可以对原
 
 ## 20. 当前状态与后续维护
 
-代码改造阶段 0–8 已全部完成。Knowledge Runtime `0.1.3`、Workflow `0.5.1` 和兼容的独立 Converter `1.2.2` 均已公开发布；受控真实案例已完成另存、环境门禁和无人值守运行时一致性验收。Workflow `0.4.0` 公共全新安装暴露的 GitHub Release 正文下载超时，已由 `0.4.1` 的受校验系统下载路径、`0.4.2` 的显式防降级 Launcher 恢复，以及 `0.4.3` 的协调式 setup 依次修复。`0.4.3` 的全新安装、旧用户恢复、Agent 同步和回滚验收均通过；`0.4.4` 仅重构普通用户入口、授权说明与维护者验收信息架构，不改变运行时行为。
+代码改造阶段 0–9 已全部完成。Knowledge Runtime `0.1.3`、Workflow `0.5.2` 和兼容的独立 Converter `1.2.2` 均已公开发布；受控真实案例已完成另存、环境门禁和无人值守运行时一致性验收。Workflow `0.4.0` 公共全新安装暴露的 GitHub Release 正文下载超时，已由 `0.4.1` 的受校验系统下载路径、`0.4.2` 的显式防降级 Launcher 恢复，以及 `0.4.3` 的协调式 setup 依次修复。`0.4.3` 的全新安装、旧用户恢复、Agent 同步和回滚验收均通过；`0.4.4` 仅重构普通用户入口、授权说明与维护者验收信息架构，不改变运行时行为。
 
-Workflow `0.5.0` 在此基础上增加 `/config/name` 的明确字段政策、精确范围的环境风险接受、诊断专用运行状态和 Agent 报告边界。Agent protocol 已提升到 6，Knowledge Runtime `0.1.3` 提供对应兼容范围。`0.5.1` 补齐 Workflow 回滚后的 Agent Skill 协调同步；签名 Release、稳定通道、全新安装、协调更新和回滚共同构成发布验收。
+Workflow `0.5.0` 在此基础上增加 `/config/name` 的明确字段政策、精确范围的环境风险接受、诊断专用运行状态和 Agent 报告边界。Agent protocol 已提升到 6，Knowledge Runtime `0.1.3` 提供对应兼容范围。`0.5.1` 补齐 Workflow 回滚后的 Agent Skill 协调同步；`0.5.2` 增加以完整 V4 输入摘要为证据的 post-Save source revision 协调，并明确禁止通过重复 Save As 处理内容变化。签名 Release、稳定通道、全新安装、协调更新、回滚和既有 Review 恢复共同构成发布验收。
 
-后续工作属于持续维护和扩大真实案例覆盖，不是本轮功能缺口：继续收集稳定、可回滚的真实场景校准 Diagnosis/Repair 政策；按真实试点数据评估预算；为 Windows 建立原生 Token 文件 ACL 合同。任何尚未由真实稳定场景覆盖的能力都必须明确标注为 mock、校准夹具或故障注入结果，不以静态结果替代运行时等价结论。Converter 的后续修复继续独立发布；只要版本仍满足 Workflow `0.5.1` 的 `>=1.2.0 <2.0.0` 兼容范围，就不要求同步发布新的 Workflow。
+后续工作属于持续维护和扩大真实案例覆盖，不是本轮功能缺口：继续收集稳定、可回滚的真实场景校准 Diagnosis/Repair 政策；按真实试点数据评估预算；为 Windows 建立原生 Token 文件 ACL 合同。任何尚未由真实稳定场景覆盖的能力都必须明确标注为 mock、校准夹具或故障注入结果，不以静态结果替代运行时等价结论。Converter 的后续修复继续独立发布；只要版本仍满足 Workflow `0.5.2` 的 `>=1.2.0 <2.0.0` 兼容范围，就不要求同步发布新的 Workflow。

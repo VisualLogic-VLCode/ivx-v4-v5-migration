@@ -78,6 +78,9 @@ test('platform-backed review creation and Environment Gate never expose case sec
   const secret = 'environment-secret-never-output';
   let targetSecret = secret;
   const { job, target } = completedJob(home);
+  const source = JSON.parse(fs.readFileSync(path.join(home, 'jobs', job.jobId, 'v4', 'app.json'), 'utf8'));
+  let sourceWorkId = 'source-work-after-save-2';
+  let sourceSnapshot = source;
   let targetWorkId = 'target-work-1';
   let targetSnapshot = target;
   const server = http.createServer(async (request, response) => {
@@ -89,14 +92,15 @@ test('platform-backed review creation and Environment Gate never expose case sec
         const isSource = body.nid === 100;
         return sendJson(response, {
           nid: body.nid,
-          workId: isSource ? 'source-work-1' : targetWorkId,
+          workId: isSource ? sourceWorkId : targetWorkId,
           extra: isSource ? { ver: 4 } : { ver: 2 },
           previewUrl: `http://127.0.0.1:${server.address().port}/preview/${body.nid}`,
         });
       }
       if (url.pathname.startsWith('/work/load/')) {
+        const workId = decodeURIComponent(url.pathname.slice('/work/load/'.length));
         response.writeHead(200, { 'Content-Type': 'application/octet-stream' });
-        return response.end(encodePlatformWork(targetSnapshot));
+        return response.end(encodePlatformWork(workId.startsWith('source-work-') ? sourceSnapshot : targetSnapshot));
       }
       if (url.pathname === '/ih5/editor/work/getConfig') {
         const body = JSON.parse((await readBody(request)).toString('utf8'));
@@ -123,15 +127,37 @@ test('platform-backed review creation and Environment Gate never expose case sec
     const review = JSON.parse(created.stdout).result;
     assert.equal(review.target.nid, 200);
     assert.equal(review.baseline.targetWorkId, 'target-work-1');
+    assert.equal(review.baseline.sourceWorkId, 'source-work-after-save-2');
     assert.equal(created.stdout.includes(token), false);
+    sourceWorkId = 'source-work-before-environment-3';
 
     const checked = await runCli(home, token, ['review', 'environment-check', '--review', review.reviewId]);
     assert.equal(checked.code, 0, checked.stderr || checked.stdout);
     const evaluation = JSON.parse(checked.stdout).result;
     assert.equal(['ENVIRONMENT_EQUIVALENT', 'NORMALIZED_EQUIVALENT'].includes(evaluation.comparison.status), true);
+    assert.equal(evaluation.comparison.sourceRevision.workId, 'source-work-before-environment-3');
     assert.equal(evaluation.comparison.targetRevision.workId, 'target-work-1');
+    assert.equal(evaluation.sourceReconciliation.fromWorkId, 'source-work-after-save-2');
+    assert.equal(evaluation.sourceReconciliation.toWorkId, 'source-work-before-environment-3');
+    assert.equal(evaluation.sourceReconciliation.outcome, 'CONTENT_EQUIVALENT');
+    assert.match(evaluation.sourceReconciliation.expectedContentSha256, /^[a-f0-9]{64}$/);
+    assert.match(evaluation.sourceReconciliation.currentContentSha256, /^[a-f0-9]{64}$/);
+    assert.equal(evaluation.sourceReconciliation.expectedContentSha256, evaluation.sourceReconciliation.currentContentSha256);
     assert.equal(checked.stdout.includes(secret), false);
     assert.equal(checked.stdout.includes(token), false);
+
+    const reconciliations = fs.readdirSync(path.join(home, 'reviews', review.reviewId, 'source-reconciliations')).filter((file) => file.endsWith('.json'));
+    assert.equal(reconciliations.length, 2);
+    assert.equal(reconciliations.every((file) => (fs.statSync(path.join(home, 'reviews', review.reviewId, 'source-reconciliations', file)).mode & 0o777) === 0o600), true);
+    assert.equal(reconciliations.every((file) => {
+      const artifact = JSON.parse(fs.readFileSync(path.join(home, 'reviews', review.reviewId, 'source-reconciliations', file), 'utf8'));
+      return /^[a-f0-9]{64}$/.test(artifact.expectedContentSha256)
+        && artifact.expectedContentSha256 === artifact.currentContentSha256;
+    }), true);
+    const reconciledStatus = await runCli(home, token, ['review', 'status', '--review', review.reviewId]);
+    assert.equal(reconciledStatus.code, 0, reconciledStatus.stderr || reconciledStatus.stdout);
+    assert.equal(JSON.parse(reconciledStatus.stdout).result.baseline.sourceWorkId, 'source-work-before-environment-3');
+    assert.equal(JSON.parse(fs.readFileSync(path.join(home, 'config.json'), 'utf8')).platform.writeMode, 'disabled');
 
     const environmentFiles = fs.readdirSync(path.join(home, 'reviews', review.reviewId, 'environment')).filter((file) => file.endsWith('.json'));
     assert.equal(environmentFiles.length, 3);
@@ -209,6 +235,58 @@ test('platform-backed review creation and Environment Gate never expose case sec
     assert.equal(JSON.parse(observed.stdout).result.review.status, 'TARGET_EXTERNALLY_MODIFIED');
     assert.equal(observed.stdout.includes(secret), false);
     assert.equal(observed.stdout.includes(token), false);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    fs.rmSync(temporary, { recursive: true, force: true });
+  }
+});
+
+test('platform-backed review creation rejects substantive source changes before persisting a Review', async () => {
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'ivx-review-platform-source-change-'));
+  const home = path.join(temporary, 'home');
+  const token = 'review-token-source-change';
+  const { job, target } = completedJob(home);
+  const changedSource = JSON.parse(fs.readFileSync(path.join(home, 'jobs', job.jobId, 'v4', 'app.json'), 'utf8'));
+  changedSource.case.changedAfterConversion = true;
+  const server = http.createServer(async (request, response) => {
+    try {
+      assert.equal(request.headers.authorization, `Bearer ${token}`);
+      const url = new URL(request.url, 'http://127.0.0.1');
+      if (url.pathname === '/ih5/editor/work/get') {
+        const body = JSON.parse((await readBody(request)).toString('utf8'));
+        return sendJson(response, {
+          nid: body.nid,
+          workId: body.nid === 100 ? 'source-work-changed-2' : 'target-work-1',
+          extra: { ver: body.nid === 100 ? 4 : 2 },
+        });
+      }
+      if (url.pathname.startsWith('/work/load/')) {
+        const workId = decodeURIComponent(url.pathname.slice('/work/load/'.length));
+        response.writeHead(200, { 'Content-Type': 'application/octet-stream' });
+        return response.end(encodePlatformWork(workId.startsWith('source-work-') ? changedSource : target));
+      }
+      return sendJson(response, { error: `unexpected ${url.pathname}` }, 404);
+    } catch (error) {
+      return sendJson(response, { error: error.message }, 500);
+    }
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  fs.writeFileSync(path.join(home, 'config.json'), JSON.stringify({
+    platform: {
+      baseUrl: `http://127.0.0.1:${server.address().port}`,
+      tokenEnv: 'TEST_REVIEW_TOKEN',
+      writeMode: 'disabled',
+      allowInsecureLocalhost: true,
+    },
+  }), { mode: 0o600 });
+  try {
+    const created = await runCli(home, token, ['review', 'create-platform', '--job', job.jobId, '--capability', 'READ_ONLY']);
+    assert.equal(created.code, 1);
+    assert.equal(JSON.parse(created.stderr).code, 'REVIEW_SOURCE_CONTENT_CHANGED');
+    assert.equal(created.stderr.includes(token), false);
+    const reviews = await runCli(home, token, ['review', 'list', '--job', job.jobId]);
+    assert.equal(reviews.code, 0, reviews.stderr || reviews.stdout);
+    assert.deepEqual(JSON.parse(reviews.stdout).result.reviews, []);
   } finally {
     await new Promise((resolve) => server.close(resolve));
     fs.rmSync(temporary, { recursive: true, force: true });

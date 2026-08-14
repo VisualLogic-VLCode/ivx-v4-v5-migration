@@ -4,7 +4,7 @@ This project is the distributable local workflow used by Codex or Claude Code. I
 
 ## Current status
 
-The current stable runtime set is Workflow `0.5.1` with Agent protocol 6, Converter `1.2.2`, and Knowledge Runtime `0.1.3`. It provides:
+The current stable runtime set is Workflow `0.5.2` with Agent protocol 6, Converter `1.2.2`, and Knowledge Runtime `0.1.3`. It provides:
 
 - private global Job storage with atomic state writes and per-Job locks;
 - metadata + physical work version classification;
@@ -17,7 +17,7 @@ The current stable runtime set is Workflow `0.5.1` with Agent protocol 6, Conver
 - one-time public-channel setup plus unified Workflow/Converter/Knowledge/Agent updates;
 - an editor-compatible binary work codec;
 - bearer-token metadata/load/config adapters with token redaction and strict `0600` Token-file support;
-- permission preflight, source revision checks, resumable Save As checkpoints, final nid rewrite, and post-save read-back verification;
+- permission preflight, source revision checks, resumable Save As checkpoints, final nid rewrite, post-save read-back verification, and content-guarded source-revision reconciliation before Runtime Review;
 - a separately authorized diagnostic Save As path that creates an editor-openable V5 copy for any classified issue after independent write hard gates pass, without reporting normal success;
 - independent private Runtime Review Session persistence, one-writer-per-target-revision leases, Human Finding evidence, and external-revision baseline reconciliation;
 - a locked Playwright Runtime Driver with closed declarative scenarios, isolated V4/V5 contexts, private browser authentication state, redacted traces, reviewed normalization, side-effect gates, and report-only parity comparison;
@@ -88,7 +88,7 @@ The commands below document what the Agent executes and remain available as a ma
 
 ```bash
 npm install --global \
-  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.5.1/ivx-v4-v5-migration-0.5.1.tgz
+  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.5.2/ivx-v4-v5-migration-0.5.2.tgz
 ```
 
 ```bash
@@ -119,7 +119,7 @@ ivx-migrate job classify --job <jobId> --file ./classification.json
 ivx-migrate job apply-patch --job <jobId> --file ./repair.patch.json
 ```
 
-After a completed Job has an existing V5 target, Workflow `0.5.1` can create and recover an independent Runtime Review Session from the Job's runtime pins and a revision-checked platform read-back:
+After a completed Job has an existing V5 target, Workflow `0.5.2` can create and recover an independent Runtime Review Session from the Job's runtime pins and a revision-checked platform read-back:
 
 ```bash
 ivx-migrate review create-platform \
@@ -132,6 +132,8 @@ ivx-migrate review list --job <jobId>
 ivx-migrate review finding-add --review <reviewId> --file ./finding.json
 ivx-migrate review finding-list --review <reviewId>
 ```
+
+`create-platform` reads the current source as well as the confirmed target. If Save As advanced only the source `workId`, the Workflow compares the complete current source snapshot with the immutable Job `v4/app.json` by canonical digest; equal content is pinned to the newer revision and recorded in a private `source-reconciliations` audit artifact. The first `environment-check` applies the same repair to an already-created, still-open Review before any environment or runtime evidence exists. Different source content fails as `REVIEW_SOURCE_CONTENT_CHANGED`, creates no new Review, and must reuse the existing target rather than repeating migration or Save As. A baseline is never changed after environment/runtime evidence exists.
 
 `finding-add` records USER evidence only. If the target may have been edited, `observe-platform-revision` reads it through the Platform Adapter, creates a bounded redacted diff, and pauses the review as `TARGET_EXTERNALLY_MODIFIED`. `accept-baseline` requires both that observation and a matching USER Human Finding that requested `ACCEPT_TARGET_REVISION`; it adopts the snapshot locally and returns to `LOCAL_VALIDATING`.
 

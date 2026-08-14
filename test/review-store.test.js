@@ -90,6 +90,75 @@ test('only one write-capable review owns a target revision while read-only revie
   });
 });
 
+test('source revision reconciliation is content-guarded, auditable, and idempotent before environment evidence', () => {
+  withHome('ivx-review-source-reconcile-', (temporary) => {
+    const paths = createAppPaths(temporary);
+    const jobs = new JobStore(paths);
+    const job = createCompletedJob(jobs);
+    const source = { case: { id: 'source-root', value: 1 }, stage: {}, server: {} };
+    jobs.writeArtifact(job.jobId, 'v4/app.json', source, { pretty: false });
+    const reviews = new RuntimeReviewStore(paths, { jobs });
+    const created = reviews.create({
+      jobId: job.jobId,
+      capability: 'READ_ONLY',
+      runtime: runtimePins(),
+      targetSnapshot: { value: 'target' },
+    });
+
+    const first = reviews.reconcileSourceRevision(created.reviewId, {
+      currentWorkId: 'source-work-2',
+      sourceSnapshot: structuredClone(source),
+    });
+    assert.equal(first.reconciled, true);
+    assert.equal(first.review.baseline.sourceWorkId, 'source-work-2');
+    assert.equal(first.reconciliation.fromWorkId, 'source-work-1');
+    assert.equal(first.reconciliation.toWorkId, 'source-work-2');
+    assert.equal(first.reconciliation.outcome, 'CONTENT_EQUIVALENT');
+    assert.match(first.reconciliation.expectedContentSha256, /^[a-f0-9]{64}$/);
+    assert.match(first.reconciliation.currentContentSha256, /^[a-f0-9]{64}$/);
+    assert.equal(first.reconciliation.expectedContentSha256, first.reconciliation.currentContentSha256);
+    assert.equal(reviews.listSourceReconciliations(created.reviewId).length, 1);
+
+    const repeated = reviews.reconcileSourceRevision(created.reviewId, {
+      currentWorkId: 'source-work-2',
+      sourceSnapshot: structuredClone(source),
+    });
+    assert.equal(repeated.reconciled, false);
+    assert.equal(reviews.listSourceReconciliations(created.reviewId).length, 1);
+
+    assert.throws(() => reviews.reconcileSourceRevision(created.reviewId, {
+      currentWorkId: 'source-work-3',
+      sourceSnapshot: { ...source, case: { ...source.case, value: 2 } },
+    }), { code: 'REVIEW_SOURCE_CONTENT_CHANGED' });
+    assert.equal(reviews.load(created.reviewId).baseline.sourceWorkId, 'source-work-2');
+    assert.equal(reviews.listSourceReconciliations(created.reviewId).length, 1);
+    assert.equal(reviews.recover(created.reviewId).sourceReconciliations.length, 1);
+  });
+});
+
+test('source revision reconciliation refuses to mutate a Review after environment evidence exists', () => {
+  withHome('ivx-review-source-reconcile-late-', (temporary) => {
+    const paths = createAppPaths(temporary);
+    const jobs = new JobStore(paths);
+    const job = createCompletedJob(jobs);
+    const source = { case: { id: 'source-root', value: 1 }, stage: {}, server: {} };
+    jobs.writeArtifact(job.jobId, 'v4/app.json', source, { pretty: false });
+    const reviews = new RuntimeReviewStore(paths, { jobs });
+    const created = reviews.create({
+      jobId: job.jobId,
+      capability: 'READ_ONLY',
+      runtime: runtimePins(),
+      targetSnapshot: { value: 'target' },
+    });
+    fs.writeFileSync(path.join(reviews.reviewDir(created.reviewId), 'environment', 'existing.json'), '{}', { mode: 0o600 });
+    assert.throws(() => reviews.reconcileSourceRevision(created.reviewId, {
+      currentWorkId: 'source-work-2',
+      sourceSnapshot: structuredClone(source),
+    }), { code: 'REVIEW_SOURCE_RECONCILIATION_UNSAFE' });
+    assert.equal(reviews.load(created.reviewId).baseline.sourceWorkId, 'source-work-1');
+  });
+});
+
 test('review registry lock reclaims a dead owner and rejects a live owner', () => {
   withHome('ivx-review-lock-', (temporary) => {
     const paths = createAppPaths(temporary);

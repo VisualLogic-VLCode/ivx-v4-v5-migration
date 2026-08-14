@@ -58,6 +58,7 @@ Classified known issues have one explicit exception for diagnosis. The Job must 
 - Before final save, the expected final-work hash and current target revision are journaled.
 - If the final-save response is lost, resume first loads the known target. Matching content closes the save without another write.
 - Post-save content mismatch becomes reconciliation-required and is not overwritten again automatically.
+- Before a platform Runtime Review is created, the current complete source snapshot is compared by canonical digest with the immutable Job V4 input. A newer `workId` with equal content is accepted only into a private source-reconciliation audit checkpoint; different content returns `REVIEW_SOURCE_CONTENT_CHANGED` before Review persistence. The first Environment Gate can perform the same idempotent repair for an existing evidence-free `REVIEW_OPEN`, but no baseline changes after environment/runtime evidence exists. This path is read-only, retains the existing target, and never replays Save As.
 
 ## Live-write gate
 

@@ -92,7 +92,7 @@ export class RuntimeReviewStore {
     for (const directory of [appPaths.home, appPaths.reviews, appPaths.locks]) ensurePrivateDir(directory);
   }
 
-  create({ jobId, capability = 'READ_ONLY', runtime, targetSnapshot, createdBy = 'CLI' } = {}) {
+  create({ jobId, capability = 'READ_ONLY', runtime, targetSnapshot, sourceWorkId = undefined, sourceSnapshot = undefined, createdBy = 'CLI' } = {}) {
     return this.#withRegistryLock(() => {
       const job = this.jobs.load(jobId);
       invariant(REVIEWABLE_JOB_STATES.has(job.status), 'JOB_NOT_REVIEWABLE', 'Runtime review requires a completed V5 target Job', {
@@ -101,8 +101,30 @@ export class RuntimeReviewStore {
       });
       const targetNid = positiveInteger(job.target?.nid, 'job.target.nid');
       const targetWorkId = nonEmptyString(job.target?.workId, 'job.target.workId');
-      const sourceWorkId = nonEmptyString(job.source?.workId, 'job.source.workId');
+      const pinnedSourceWorkId = nonEmptyString(job.source?.workId, 'job.source.workId');
+      const resolvedSourceWorkId = sourceWorkId === undefined
+        ? pinnedSourceWorkId
+        : nonEmptyString(sourceWorkId, 'sourceWorkId');
       assertSnapshot(targetSnapshot);
+      const sourceCase = readJson(path.join(this.jobs.jobDir(jobId), 'v4', 'app.json'), null);
+      let expectedSourceContentSha256 = null;
+      let currentSourceContentSha256 = null;
+      if (sourceSnapshot !== undefined) {
+        assertSnapshot(sourceSnapshot, 'sourceSnapshot');
+        invariant(sourceCase, 'REVIEW_SOURCE_SNAPSHOT_MISSING', 'Runtime Review cannot verify the platform source without the immutable Job V4 snapshot');
+        expectedSourceContentSha256 = revisionValueDigest(sourceCase);
+        currentSourceContentSha256 = revisionValueDigest(sourceSnapshot);
+        invariant(currentSourceContentSha256 === expectedSourceContentSha256, 'REVIEW_SOURCE_CONTENT_CHANGED', 'Platform source content differs from the immutable V4 snapshot used by the Migration Job; reuse the existing V5 target and do not repeat Save As automatically', {
+          jobId,
+          existingTargetNid: targetNid,
+          expectedWorkId: pinnedSourceWorkId,
+          currentWorkId: resolvedSourceWorkId,
+          expectedContentSha256: expectedSourceContentSha256,
+          currentContentSha256: currentSourceContentSha256,
+        });
+      } else {
+        invariant(resolvedSourceWorkId === pinnedSourceWorkId, 'REVIEW_SOURCE_SNAPSHOT_REQUIRED', 'A different platform source revision requires a source snapshot for content-equivalence verification');
+      }
       invariant(['READ_ONLY', 'WRITE'].includes(capability), 'INVALID_REVIEW_CAPABILITY', 'capability must be READ_ONLY or WRITE');
       if (job.runtime?.knowledge) {
         invariant(
@@ -127,13 +149,13 @@ export class RuntimeReviewStore {
         capability,
         status: 'REVIEW_OPEN',
         runtime,
-        baseline: { sourceWorkId, targetWorkId },
+        baseline: { sourceWorkId: resolvedSourceWorkId, targetWorkId },
         activeCycleId: null,
         issueClusterIds: [],
         scenarioIds: [],
         humanFindingIds: [],
         repairBudgetIds: [],
-        history: [{ status: 'REVIEW_OPEN', at, reason: 'review-created' }],
+        history: [{ status: 'REVIEW_OPEN', at, reason: resolvedSourceWorkId === pinnedSourceWorkId ? 'review-created' : 'review-created-after-source-revision-reconciliation' }],
         createdAt: at,
         updatedAt: at,
         createdBy,
@@ -141,11 +163,37 @@ export class RuntimeReviewStore {
       };
       validateRuntimeReviewSession(review);
       const directory = ensurePrivateDir(this.reviewDir(reviewId));
-      for (const child of ['baselines', 'findings', 'revision-observations', 'observed-targets', 'baseline-acceptances', 'knowledge', 'environment', 'environment-risk-acceptances', 'scenarios', 'cycles', 'runtime-authorizations', 'repair-authorizations', 'reports', 'issues', 'issues/diagnoses', 'issues/clusters', 'issues/budgets', 'issues/decisions', 'issues/eligibility', 'repairs', 'repairs/proposals', 'repairs/attempts', 'repairs/batches', 'repairs/candidates', 'checkpoints', 'checkpoints/artifacts']) {
+      for (const child of ['baselines', 'findings', 'revision-observations', 'observed-targets', 'baseline-acceptances', 'source-reconciliations', 'knowledge', 'environment', 'environment-risk-acceptances', 'scenarios', 'cycles', 'runtime-authorizations', 'repair-authorizations', 'reports', 'issues', 'issues/diagnoses', 'issues/clusters', 'issues/budgets', 'issues/decisions', 'issues/eligibility', 'repairs', 'repairs/proposals', 'repairs/attempts', 'repairs/batches', 'repairs/candidates', 'checkpoints', 'checkpoints/artifacts']) {
         ensurePrivateDir(path.join(directory, child));
       }
+      if (resolvedSourceWorkId !== pinnedSourceWorkId) {
+        const reconciliationId = `source-reconciliation-${revisionValueDigest({
+          reviewId,
+          fromWorkId: pinnedSourceWorkId,
+          toWorkId: resolvedSourceWorkId,
+          expectedContentSha256: expectedSourceContentSha256,
+          currentContentSha256: currentSourceContentSha256,
+        }).slice(0, 20)}`;
+        this.#writeImmutableJson(this.#artifactPath(reviewId, relativeArtifactPath('source-reconciliations', `${reconciliationId}.json`)), {
+          schemaVersion: 1,
+          kind: 'source-revision-reconciliation',
+          reconciliationId,
+          reviewId,
+          jobId,
+          sourceNid: Number(job.input.sourceNid),
+          fromWorkId: pinnedSourceWorkId,
+          toWorkId: resolvedSourceWorkId,
+          sourceContentSha256: currentSourceContentSha256,
+          expectedContentSha256: expectedSourceContentSha256,
+          currentContentSha256: currentSourceContentSha256,
+          outcome: 'CONTENT_EQUIVALENT',
+          reason: 'SOURCE_REVISION_ADVANCED_BEFORE_REVIEW_CREATION',
+          createdAt: at,
+          createdBy: 'CLI',
+          sensitivity: 'PRIVATE',
+        }, 'SOURCE_RECONCILIATION_CONFLICT');
+      }
       const baselinePath = this.#writeBaselineSnapshot(reviewId, targetWorkId, targetSnapshot);
-      const sourceCase = readJson(path.join(this.jobs.jobDir(jobId), 'v4', 'app.json'), null);
       const converterOutput = job.target?.artifact
         ? readJson(path.join(this.jobs.jobDir(jobId), job.target.artifact), null)
         : null;
@@ -787,6 +835,81 @@ export class RuntimeReviewStore {
     });
   }
 
+  reconcileSourceRevision(reviewId, { currentWorkId, sourceSnapshot } = {}) {
+    return this.#mutate(reviewId, (review) => {
+      const resolvedSourceWorkId = nonEmptyString(currentWorkId, 'currentWorkId');
+      assertSnapshot(sourceSnapshot, 'sourceSnapshot');
+      const job = this.jobs.load(review.jobId);
+      const sourceCase = readJson(path.join(this.jobs.jobDir(review.jobId), 'v4', 'app.json'), null);
+      invariant(sourceCase, 'REVIEW_SOURCE_SNAPSHOT_MISSING', 'Runtime Review cannot reconcile the platform source without the immutable Job V4 snapshot');
+      const expectedContentSha256 = revisionValueDigest(sourceCase);
+      const currentContentSha256 = revisionValueDigest(sourceSnapshot);
+      invariant(currentContentSha256 === expectedContentSha256, 'REVIEW_SOURCE_CONTENT_CHANGED', 'Platform source content differs from the immutable V4 snapshot used by the Migration Job; reuse the existing V5 target and do not repeat Save As automatically', {
+        jobId: review.jobId,
+        existingTargetNid: review.target.nid,
+        expectedWorkId: review.baseline.sourceWorkId,
+        currentWorkId: resolvedSourceWorkId,
+        expectedContentSha256,
+        currentContentSha256,
+      });
+      if (resolvedSourceWorkId === review.baseline.sourceWorkId) {
+        return { review, reconciled: false, reconciliation: null };
+      }
+      const environmentDirectory = this.#artifactPath(reviewId, 'environment');
+      const hasEnvironmentEvidence = fs.existsSync(environmentDirectory)
+        && fs.readdirSync(environmentDirectory).some((file) => file.endsWith('.json'));
+      invariant(
+        review.status === 'REVIEW_OPEN' && review.activeCycleId === null && !hasEnvironmentEvidence,
+        'REVIEW_SOURCE_RECONCILIATION_UNSAFE',
+        'Source revision can be reconciled only before environment or runtime evidence exists',
+        { status: review.status, activeCycleId: review.activeCycleId, hasEnvironmentEvidence },
+      );
+      const createdAt = this.now().toISOString();
+      const fromWorkId = review.baseline.sourceWorkId;
+      const reconciliationId = `source-reconciliation-${revisionValueDigest({
+        reviewId,
+        fromWorkId,
+        toWorkId: resolvedSourceWorkId,
+        expectedContentSha256,
+        currentContentSha256,
+      }).slice(0, 20)}`;
+      const reconciliation = {
+        schemaVersion: 1,
+        kind: 'source-revision-reconciliation',
+        reconciliationId,
+        reviewId,
+        jobId: review.jobId,
+        sourceNid: Number(job.input.sourceNid),
+        fromWorkId,
+        toWorkId: resolvedSourceWorkId,
+        sourceContentSha256: currentContentSha256,
+        expectedContentSha256,
+        currentContentSha256,
+        outcome: 'CONTENT_EQUIVALENT',
+        reason: 'SOURCE_REVISION_ADVANCED_BEFORE_FIRST_ENVIRONMENT_CHECK',
+        createdAt,
+        createdBy: 'CLI',
+        sensitivity: 'PRIVATE',
+      };
+      ensurePrivateDir(this.#artifactPath(reviewId, 'source-reconciliations'));
+      this.#writeImmutableJson(this.#artifactPath(reviewId, relativeArtifactPath('source-reconciliations', `${reconciliationId}.json`)), reconciliation, 'SOURCE_RECONCILIATION_CONFLICT');
+      review.baseline.sourceWorkId = resolvedSourceWorkId;
+      review.updatedAt = createdAt;
+      review.history.push({ status: review.status, at: createdAt, reason: `source-revision-reconciled:${reconciliationId}` });
+      return { review, reconciled: true, reconciliation };
+    });
+  }
+
+  listSourceReconciliations(reviewId) {
+    this.load(reviewId);
+    const directory = this.#artifactPath(reviewId, 'source-reconciliations');
+    if (!fs.existsSync(directory)) return [];
+    return fs.readdirSync(directory)
+      .filter((file) => file.endsWith('.json'))
+      .map((file) => readJson(path.join(directory, file)))
+      .sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.reconciliationId.localeCompare(right.reconciliationId));
+  }
+
   acceptExternalRevision(reviewId, { observationId, findingId } = {}) {
     return this.#mutate(reviewId, (review, registry) => {
       invariant(review.status === 'TARGET_EXTERNALLY_MODIFIED', 'REVIEW_STATE_MISMATCH', 'Review must be paused for an externally modified target');
@@ -848,6 +971,7 @@ export class RuntimeReviewStore {
     return {
       review,
       humanFindings: this.listHumanFindings(reviewId),
+      sourceReconciliations: this.listSourceReconciliations(reviewId),
       latestObservation,
       activeCycle,
       diagnoses: this.listDiagnoses(reviewId),

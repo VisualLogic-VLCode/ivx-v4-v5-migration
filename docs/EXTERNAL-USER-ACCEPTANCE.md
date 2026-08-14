@@ -4,8 +4,8 @@
 
 本轮公开基线（2026-08-14）：
 
-- 首次引导使用的稳定 Launcher：`0.5.1`
-- 本文发布后签名通道安装的 Workflow：`0.5.1`
+- 首次引导使用的稳定 Launcher：`0.5.2`
+- 本文发布后签名通道安装的 Workflow：`0.5.2`
 - Converter：`1.2.2`
 - Knowledge Runtime：`0.1.3`
 - Agent protocol：`6`
@@ -35,7 +35,7 @@
 维护者让测试用户打开本机 Codex 或 Claude Code，把[外部测试 Agent 启动提示](templates/AI-AGENT-ACCEPTANCE-PROMPT.md)整段交给 Agent，并只替换两个 `nid`。提示中的不可变引导地址必须是：
 
 ```text
-https://raw.githubusercontent.com/VisualLogic-VLCode/ivx-v4-v5-migration/v0.5.1/docs/AI-AGENT-BOOTSTRAP.md
+https://raw.githubusercontent.com/VisualLogic-VLCode/ivx-v4-v5-migration/v0.5.2/docs/AI-AGENT-BOOTSTRAP.md
 ```
 
 测试用户不需要复制任何 `ivx-migrate` 命令。Agent 必须自行检查环境、执行安装、初始化、更新、预检、转换、诊断、验证和结果整理。下列命令仅用于验收者核对 Agent 的动作；应由 Agent 在测试用户本机执行：
@@ -43,7 +43,7 @@ https://raw.githubusercontent.com/VisualLogic-VLCode/ivx-v4-v5-migration/v0.5.1/
 ```bash
 node --version
 npm install --global \
-  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.5.1/ivx-v4-v5-migration-0.5.1.tgz
+  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.5.2/ivx-v4-v5-migration-0.5.2.tgz
 ivx-migrate version
 ```
 

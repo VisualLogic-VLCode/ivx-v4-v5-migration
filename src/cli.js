@@ -606,14 +606,23 @@ async function handleReview(positionals, options, context) {
     invariant(['SUCCEEDED', 'DIAGNOSTIC_COPY_CREATED'].includes(job.status), 'REVIEW_JOB_NOT_COMPLETE', 'Runtime Review requires a completed platform target');
     invariant(job.target?.nid && job.target?.workId, 'REVIEW_TARGET_MISSING', 'Completed Job has no confirmed target revision');
     const adapter = createPlatformAdapter(options, context);
-    const metadata = await adapter.getCaseInfo(job.target.nid);
-    invariant(metadata?.workId === job.target.workId, 'REVIEW_TARGET_REVISION_CHANGED', 'Target revision changed after the Migration Job completed; reconcile it before creating a Review');
-    const targetSnapshot = await adapter.loadWork({ nid: job.target.nid, workId: job.target.workId });
+    const [targetMetadata, sourceMetadata] = await Promise.all([
+      adapter.getCaseInfo(job.target.nid),
+      adapter.getCaseInfo(job.input.sourceNid),
+    ]);
+    invariant(targetMetadata?.workId === job.target.workId, 'REVIEW_TARGET_REVISION_CHANGED', 'Target revision changed after the Migration Job completed; reconcile it before creating a Review');
+    invariant(typeof sourceMetadata?.workId === 'string' && sourceMetadata.workId, 'PLATFORM_RESPONSE_INVALID', 'Source metadata has no workId');
+    const [targetSnapshot, sourceSnapshot] = await Promise.all([
+      adapter.loadWork({ nid: job.target.nid, workId: job.target.workId }),
+      adapter.loadWork({ nid: job.input.sourceNid, workId: sourceMetadata.workId }),
+    ]);
     return context.reviews.create({
       jobId: options.job,
       capability: options.capability || 'READ_ONLY',
       runtime: reviewRuntimePins(job, context),
       targetSnapshot,
+      sourceWorkId: sourceMetadata.workId,
+      sourceSnapshot,
     });
   }
   if (action === 'status') {
@@ -672,9 +681,21 @@ async function handleReview(positionals, options, context) {
   }
   if (action === 'environment-check') {
     invariant(options.review, 'CLI_ARGUMENT_REQUIRED', '--review is required');
-    const review = context.reviews.load(options.review);
+    let review = context.reviews.load(options.review);
     const job = context.jobs.load(review.jobId);
     const adapter = createPlatformAdapter(options, context);
+    let sourceReconciliation = null;
+    const currentSource = await adapter.getCaseInfo(job.input.sourceNid);
+    invariant(typeof currentSource?.workId === 'string' && currentSource.workId, 'PLATFORM_RESPONSE_INVALID', 'Source metadata has no workId');
+    if (currentSource.workId !== review.baseline.sourceWorkId) {
+      const currentSourceSnapshot = await adapter.loadWork({ nid: job.input.sourceNid, workId: currentSource.workId });
+      const reconciled = context.reviews.reconcileSourceRevision(review.reviewId, {
+        currentWorkId: currentSource.workId,
+        sourceSnapshot: currentSourceSnapshot,
+      });
+      review = reconciled.review;
+      sourceReconciliation = reconciled.reconciliation;
+    }
     const [source, target] = await Promise.all([
       adapter.getWorkEnvironment({ nid: job.input.sourceNid, workId: review.baseline.sourceWorkId }),
       adapter.getWorkEnvironment({ nid: review.target.nid, workId: review.baseline.targetWorkId }),
@@ -690,7 +711,8 @@ async function handleReview(positionals, options, context) {
       bindingAssertions: options['binding-assertions-file'] ? readRequiredJson(options['binding-assertions-file'], 'environment binding assertions') : {},
       evaluatedAt,
     });
-    return context.reviews.recordEnvironmentEvaluation(review.reviewId, evaluation);
+    const recorded = context.reviews.recordEnvironmentEvaluation(review.reviewId, evaluation);
+    return { ...recorded, sourceReconciliation };
   }
   if (action === 'diagnosis-candidates') {
     invariant(options.review, 'CLI_ARGUMENT_REQUIRED', '--review is required');
