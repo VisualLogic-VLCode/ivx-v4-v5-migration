@@ -22,35 +22,50 @@ function walkObjectGraph(root, visitor, initialPath = []) {
   }
 }
 
-function pathContainsSequence(path, sequence) {
-  return path.some((segment, index) => sequence.every((expected, offset) => {
-    const actual = path[index + offset];
-    return expected === Number ? Number.isInteger(actual) : actual === expected;
-  }));
-}
-
-function isNonOwningNodePath(path) {
-  return pathContainsSequence(path, ['events', 'list', Number, 'tree'])
-    || pathContainsSequence(path, ['uis', 'modConfigs']);
-}
-
 function collectNodeIds(work) {
   const counts = new Map();
-  const realmCounts = new Map();
-  for (const realm of ['case', 'stage', 'server']) {
-    if (!work?.[realm] || typeof work[realm] !== 'object') continue;
-    const realmNodeCounts = new Map();
-    realmCounts.set(realm, realmNodeCounts);
-    walkObjectGraph(work[realm], (value, path) => {
-      if (isNonOwningNodePath(path)) return false;
-      if (!Array.isArray(value) && typeof value.id === 'string' && typeof value.type === 'string') {
-        counts.set(value.id, (counts.get(value.id) || 0) + 1);
-        realmNodeCounts.set(value.id, (realmNodeCounts.get(value.id) || 0) + 1);
-      }
-      return true;
-    }, [realm]);
+  const realmPaths = new Map();
+
+  function recordNode(realmNodePaths, node, path) {
+    if (Array.isArray(node) || typeof node.id !== 'string' || typeof node.type !== 'string') return;
+    counts.set(node.id, (counts.get(node.id) || 0) + 1);
+    const paths = realmNodePaths.get(node.id) || [];
+    paths.push(formatPath(path));
+    realmNodePaths.set(node.id, paths);
   }
-  return { counts, realmCounts };
+
+  function walkOwnedTree(root, initialPath, realmNodePaths) {
+    const stack = [{ node: root, path: initialPath, ancestors: new Set() }];
+    while (stack.length) {
+      const { node, path, ancestors } = stack.pop();
+      if (!node || typeof node !== 'object' || Array.isArray(node) || ancestors.has(node)) continue;
+      recordNode(realmNodePaths, node, path);
+      if (!Array.isArray(node.children)) continue;
+      const nextAncestors = new Set(ancestors);
+      nextAncestors.add(node);
+      for (let index = node.children.length - 1; index >= 0; index -= 1) {
+        stack.push({
+          node: node.children[index],
+          path: [...path, 'children', index],
+          ancestors: nextAncestors,
+        });
+      }
+    }
+  }
+
+  for (const realm of ['case', 'stage', 'server']) {
+    const root = work?.[realm];
+    if (!root || typeof root !== 'object' || Array.isArray(root)) continue;
+    const realmNodePaths = new Map();
+    realmPaths.set(realm, realmNodePaths);
+    walkOwnedTree(root, [realm], realmNodePaths);
+    if (realm !== 'case' && Array.isArray(root.classes)) {
+      for (let index = 0; index < root.classes.length; index += 1) {
+        walkOwnedTree(root.classes[index], [realm, 'classes', index], realmNodePaths);
+      }
+    }
+  }
+  return { counts, realmPaths };
 }
 
 function formatPath(path) {
@@ -107,11 +122,13 @@ function validateJsfn(value, path, jsfnCount, issues) {
   }
 }
 
-function collectDuplicateNodeIdsByRealm(realmCounts) {
+function collectDuplicateNodeIdsByRealm(realmPaths) {
   const duplicates = [];
-  for (const [realm, counts] of realmCounts) {
-    for (const [id, count] of counts) {
-      if (count > 1) duplicates.push({ realm, id, count });
+  for (const [realm, nodePaths] of realmPaths) {
+    for (const [id, paths] of nodePaths) {
+      if (paths.length > 1) {
+        duplicates.push({ realm, id, count: paths.length, paths: paths.slice(0, 50) });
+      }
     }
   }
   return duplicates;
@@ -178,7 +195,7 @@ export function validateConvertedCase({ v4CaseJson, v5CaseJson } = {}) {
       sample: missingSourceIds.slice(0, 50),
     }));
   }
-  const duplicateTargetIds = collectDuplicateNodeIdsByRealm(targetNodes.realmCounts);
+  const duplicateTargetIds = collectDuplicateNodeIdsByRealm(targetNodes.realmPaths);
   if (duplicateTargetIds.length > 0) {
     issues.push(createIssue('TARGET_NODE_ID_DUPLICATE', 'ERROR', 'Converted output contains duplicate node ids', {
       count: duplicateTargetIds.length,

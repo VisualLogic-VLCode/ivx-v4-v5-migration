@@ -44,11 +44,11 @@ The rules intentionally permit ordinary fast-forward source pushes and the signe
 
 The recommended first installation is Agent-first. The user gives their local Codex or Claude Code the copyable [general-user starter prompt](templates/AI-AGENT-STARTER-PROMPT.md), which points to the immutable tagged [bootstrap procedure](AI-AGENT-BOOTSTRAP.md). The Agent executes every command, while the user only types the Token into the visible native macOS secure-input dialog opened by the Launcher. After setup, the installed managed Skill becomes authoritative. The separate [acceptance prompt](templates/AI-AGENT-ACCEPTANCE-PROMPT.md) is maintainer QA and must not be presented as the ordinary onboarding path.
 
-The bootstrap procedure uses the stable `0.6.1` Launcher asset. Workflow `0.3.4` and later Releases are immutable at the repository level:
+The bootstrap procedure uses the stable `0.6.2` Launcher asset. Workflow `0.3.4` and later Releases are immutable at the repository level:
 
 ```bash
 npm install --global \
-  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.6.1/ivx-v4-v5-migration-0.6.1.tgz
+  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.6.2/ivx-v4-v5-migration-0.6.2.tgz
 ivx-migrate setup --prompt-token
 ```
 
@@ -93,6 +93,8 @@ Workflow `0.5.0` raises Agent protocol to 6 because Agents must distinguish USER
 Workflow `0.6.0` raises Agent protocol to 7 for three explicit target-identity intents: resume the original operation, create an Additional V5, or refresh one trusted existing V5 target. Protocol 7 requires Agents to use an immutable Refresh Plan and exact authorization, preserve target configuration, stop on unknown write outcome, reconcile without replay, and continue from the new Review after old write-capable Reviews are superseded. Knowledge Runtime `0.1.4` is the compatibility-only release that first admits protocol 7; its knowledge content digest and all content-file hashes remain identical to `0.1.3`. Publish and activate Knowledge `0.1.4` before Workflow `0.6.0`.
 
 Workflow `0.6.1` keeps Agent protocol 7 and repairs legacy Group lineage compatibility. A completed historical Job whose stored gid is null may prove the same source-to-target lineage only when the caller supplies a gid and current authoritative source metadata reports that exact Group. The old Job remains immutable; the verified gid is stored only in the new Refresh and immutable Plan. Missing/mismatched gid, personal source with gid, invalid or ambiguous lineage, and historical non-null gid mismatch still fail before a new Refresh is created.
+
+Workflow `0.6.2` keeps Agent protocol 7 and makes baseline component validation follow authoritative ownership edges: realm roots, node `children`, and stage/server root-level `classes`. Arbitrary serialized business objects under component `props` no longer become component nodes merely because they contain string `id` and `type` fields. Genuine duplicate owned component IDs remain blocking errors and now include their JSON Pointer ownership paths.
 
 If a pre-`0.4.1` managed Workflow cannot download the current Release, install the current immutable Launcher with npm and invoke exactly one recovery command: `ivx-migrate setup --force --launcher-recovery RECOVER_SIGNED_RUNTIME`. Coordinated setup preserves the existing Token path and installs a compatible Workflow/Converter/Knowledge/Agent set; a Workflow-only update can be rejected correctly when the old home does not yet contain Knowledge. Recovery uses the bundled signed-channel client only for setup/update/rollback/Agent synchronization and refuses a bundled version older than the active managed Workflow. It does not read or replace the Token. Normal delegation resumes after the successful setup.
 

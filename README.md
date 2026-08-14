@@ -4,13 +4,13 @@ This project is the distributable local workflow used by Codex or Claude Code. I
 
 ## Current status
 
-The current public stable runtime set is Workflow `0.6.1` with Agent protocol 7, Converter `1.2.2`, and Knowledge Runtime `0.1.4`. Its capabilities are:
+The current public stable runtime set is Workflow `0.6.2` with Agent protocol 7, Converter `1.2.2`, and Knowledge Runtime `0.1.4`. Its capabilities are:
 
 - private global Job storage with atomic state writes and per-Job locks;
 - metadata + physical work version classification;
 - a version-pinned local converter provider;
 - versioned converter-process diagnostics with conservative save gating;
-- deterministic baseline validation and structured issue files;
+- deterministic baseline validation with schema-aware component ownership, plus structured issue files;
 - bounded AI issue-classification and JSON Patch contracts;
 - signed Workflow/Converter and optional independent Knowledge Runtime manifests, hash verification, installation, activation, and rollback foundations;
 - managed Codex and Claude Code Skill installation;
@@ -92,7 +92,7 @@ The commands below document what the Agent executes and remain available as a ma
 
 ```bash
 npm install --global \
-  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.6.1/ivx-v4-v5-migration-0.6.1.tgz
+  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.6.2/ivx-v4-v5-migration-0.6.2.tgz
 ```
 
 ```bash
