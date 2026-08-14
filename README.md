@@ -4,7 +4,7 @@ This project is the distributable local workflow used by Codex or Claude Code. I
 
 ## Current status
 
-The current public stable runtime set remains Workflow `0.5.2` with Agent protocol 6, Converter `1.2.2`, and Knowledge Runtime `0.1.3`. This source tree is the unreleased Workflow `0.6.0` / Agent protocol 7 candidate; it additionally requires a signed Knowledge Runtime whose compatibility includes protocol 7 before publication. The stable capabilities plus this candidate's additions are:
+The current public stable runtime set is Workflow `0.6.0` with Agent protocol 7, Converter `1.2.2`, and Knowledge Runtime `0.1.4`. Its capabilities are:
 
 - private global Job storage with atomic state writes and per-Job locks;
 - metadata + physical work version classification;
@@ -92,7 +92,7 @@ The commands below document what the Agent executes and remain available as a ma
 
 ```bash
 npm install --global \
-  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.5.2/ivx-v4-v5-migration-0.5.2.tgz
+  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.6.0/ivx-v4-v5-migration-0.6.0.tgz
 ```
 
 ```bash
@@ -139,7 +139,7 @@ ivx-migrate review finding-list --review <reviewId>
 
 `create-platform` reads the current source as well as the confirmed target. If Save As advanced only the source `workId`, the Workflow compares the complete current source snapshot with the immutable Job `v4/app.json` by canonical digest; equal content is pinned to the newer revision and recorded in a private `source-reconciliations` audit artifact. The first `environment-check` applies the same repair to an already-created, still-open Review before any environment or runtime evidence exists. Different source content fails as `REVIEW_SOURCE_CONTENT_CHANGED`, creates no new Review, and must reuse the existing target rather than repeating migration or Save As. A baseline is never changed after environment/runtime evidence exists.
 
-The unreleased `0.6.0` candidate also exposes separate Additional V5 and Existing Target Refresh operations. The Agent normally owns these commands:
+Workflow `0.6.0` also exposes separate Additional V5 and Existing Target Refresh operations. The Agent normally owns these commands:
 
 ```bash
 ivx-migrate migrate --nid <sourceNid> --intent create-additional-v5
