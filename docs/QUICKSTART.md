@@ -22,7 +22,7 @@
 
 ```bash
 npm install --global \
-  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.7.4/ivx-v4-v5-migration-0.7.4.tgz
+  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.8.0/ivx-v4-v5-migration-0.8.0.tgz
 ```
 
 ## 2. 命令行参考：安全录入 Token 并初始化
@@ -190,21 +190,21 @@ ivx-migrate review runtime-run-platform \
   --environment-id <comparisonId>
 ```
 
-Agent protocol 8 的自主无副作用探索使用另一条独立证据链。用户确认一次精确范围后，Agent 可读取完整选定 Job、生成计划并自主遍历，不逐动作询问；Token/Cookie 始终只由驱动使用：
+Agent protocol 9 的 Agent Direct Test 把测试执行完整交给本地 AI Agent。用户确认一次精确范围后，Workflow 只冻结 Review、完整 Job、两端 revision/origin、等价环境、只读能力与过期时间，并返回 Agent 私有工作区；它不再提供浏览器驱动、爬虫、动作规划器、就绪判断或测试程序。Agent 可直接使用自己的浏览器工具、JavaScript、CSS/XPath、循环、动态点击、截图/像素比较和业务状态断言：
 
 ```bash
-ivx-migrate review exploration-authorize-platform \
+ivx-migrate review agent-test-authorize-platform \
   --review <reviewId> \
   --environment-id <comparisonId> \
-  --profile STANDARD \
-  --confirm RUN_AUTONOMOUS_READ_ONLY_EXPLORATION
+  --capability AGENT_DIRECT_READ_ONLY \
+  --confirm RUN_AGENT_DIRECT_READ_ONLY_TEST
 
-ivx-migrate review exploration-context --review <reviewId> --authorization <authorizationId>
-ivx-migrate review exploration-prepare --review <reviewId> --authorization <authorizationId> --file <plan.json>
-ivx-migrate review exploration-run-platform --review <reviewId> --exploration <explorationId>
+ivx-migrate review agent-test-context-platform --review <reviewId> --authorization <authorizationId>
+# Agent 在返回的 workspace 中自主测试并生成 attestation
+ivx-migrate review agent-test-submit-platform --review <reviewId> --session <sessionId> --file <attestation.json>
 ```
 
-中断后只可对同一个 `<explorationId>` 使用 `exploration-resume-platform`。动态报告必须同时说明覆盖目标、实际状态/路径/控件、被跳过或门禁阻止的操作、截图/像素差异以及是否耗尽预算；它不会修改 Review parity、应用 Patch 或更新平台案例。
+Agent 可以使用本地已授权的认证/浏览器会话，但 Token、Cookie 和 session 值不得进入命令、聊天、截图、报告或证据。只读授权下，Agent 自己负责避免提交、保存、创建、更新、删除、支付、发布等副作用；无法安全继续时必须停止该路径。提交结果属于 `AGENT_ATTESTED` 证据，不能声称严格 parity，也不会自动修改 Review parity、应用 Patch 或更新平台案例。`AGENT_DIRECT_SIDE_EFFECT` 已建模但在 0.8.0 中尚未开放。
 
 另存成功后平台可能只推进源案例的 `workId`。`create-platform` 会在创建 Review 前读取当前完整源 JSON，并与 Job 中不可变的转换输入做规范化摘要比较；内容完全相同时，自动把 Review 固定到新 revision 并留下私有审计记录。对于 Workflow 0.5.1 已创建但尚未产生环境证据的 Review，首次 `environment-check` 会执行相同协调。若内容确实变化，则返回 `REVIEW_SOURCE_CONTENT_CHANGED` 并保留已有 V5；不要重新迁移或再次 Save As。已有环境或运行时证据后不会自动改写 source baseline。
 
@@ -213,6 +213,8 @@ Workflow 0.7.2 起，普通另存、Additional V5 和诊断副本都会在创建
 Workflow 0.7.3 修复平台默认值省略导致的误报：当平台没有返回默认的 `pubRoot:false` / `preRoot:false` 时，根据对应非根路径推断为 `false`；根路径的 `""` 与 `"/"` 也按同一语义比较。域名、预览域名、非根路径、`customDomain` 或互相矛盾的显式根标志仍必须一致，否则继续安全阻断。错误报告只列出不一致字段名，不保存或显示实际域名、路径值。已有 `SAVE_INCOMPLETE` Job 会先读回确认；状态已经等价时不重复创建目标或重放域名路由写入。
 
 Workflow 0.7.4 修复旧 Job 创建 Runtime Review 时缺少 Workflow SHA-256 的兼容缺口。只有已安装的精确 Workflow 版本、包名和摘要证据一致时，才把真实摘要派生到新 Review；缺失、无效或互相矛盾的证据会在访问平台前安全停止，不修改旧 Job。新建 Job 会直接持久化完整的 Workflow 版本、包名和摘要，避免升级后再次丢失谱系。
+
+Workflow 0.8.0 将新运行时测试切换到 Agent Direct Test。Protocol-8 的 Exploration/Scenario 命令和历史证据仍可读取与恢复，但新测试不再经过 Workflow 浏览器驱动。Agent 获得完整受权 Job 与私有工作区后自主执行测试，再把脱敏证明交回 Workflow 做 revision/manifest 复核和不可变归档。
 
 Workflow 会先对 V4/V5 的配置、设置、域名、路由和绑定做脱敏环境比较。`ENVIRONMENT_EQUIVALENT` 或 `NORMALIZED_EQUIVALENT` 可进入正常浏览器对照；需用户绑定或环境阻塞时默认停止，也不会把差异归因给 Converter。`/config/name` 是已确认不进入平台运行时的保存配置预设名称，因此明确按 `IGNORE_FOR_PARITY` 处理；其他未知字段仍默认阻塞。预览 URL 来自平台当前元数据并与源/目标 `workId` 复核，不需要用户手填。
 
@@ -250,7 +252,7 @@ ivx-migrate rollback --kind converter
 
 工作流和转换器独立发布。转换器问题必须等待维护者发布新 Converter；普通用户和 Agent 不应修改已安装 Converter。
 
-若旧版运行时在更新 Workflow 时返回 `RUNTIME_DOWNLOAD_FAILED`，Agent 可执行一次受限恢复，不需要用户重新输入 Token：先从上面的不可变 `0.7.4` Release 重新安装 Launcher，再执行 `ivx-migrate setup --force --launcher-recovery RECOVER_SIGNED_RUNTIME`。协调式 setup 会保留现有 Token 路径，并一次补齐 Workflow、Converter、Knowledge 和 Agent 配置；不要只更新 Workflow，因为旧环境可能尚未安装所需 Knowledge Runtime。该确认只允许新版或同版 Launcher 接管 setup/update/rollback/Agent 同步，旧 Launcher 不能借此覆盖更高版本。成功后恢复正常的 `update apply` 流程。
+若旧版运行时在更新 Workflow 时返回 `RUNTIME_DOWNLOAD_FAILED`，Agent 可执行一次受限恢复，不需要用户重新输入 Token：先从上面的不可变 `0.8.0` Release 重新安装 Launcher，再执行 `ivx-migrate setup --force --launcher-recovery RECOVER_SIGNED_RUNTIME`。协调式 setup 会保留现有 Token 路径，并一次补齐 Workflow、Converter、Knowledge 和 Agent 配置；不要只更新 Workflow，因为旧环境可能尚未安装所需 Knowledge Runtime。该确认只允许新版或同版 Launcher 接管 setup/update/rollback/Agent 同步，旧 Launcher 不能借此覆盖更高版本。成功后恢复正常的 `update apply` 流程。
 
 维护者首次在其他用户电脑上验证公开安装、普通参与者权限与默认不保存边界时，才使用单独的[验收专用 Agent 提示](templates/AI-AGENT-ACCEPTANCE-PROMPT.md)和[外部普通用户验收清单](EXTERNAL-USER-ACCEPTANCE.md)。该流程不是普通用户快速入门；它的第一阶段故意禁止保存，并使用独立的[无保存结果模板](templates/EXTERNAL-USER-ACCEPTANCE-RESULT.md)和[另存结果模板](templates/EXTERNAL-USER-SAVE-AS-RESULT.md)。
 

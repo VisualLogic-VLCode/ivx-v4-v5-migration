@@ -83,7 +83,7 @@ test('maintainer preparation builds, hashes, signs, and plans a GitHub Release w
   }
 });
 
-test('Workflow release descriptor advertises autonomous exploration under Agent protocol 8', async () => {
+test('Workflow release descriptor advertises Agent Direct read-only testing under Agent protocol 9', async () => {
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'ivx-workflow-release-'));
   const packageDir = path.join(temporary, 'workflow');
   const output = path.join(temporary, 'output');
@@ -91,11 +91,11 @@ test('Workflow release descriptor advertises autonomous exploration under Agent 
   fs.mkdirSync(packageDir);
   fs.writeFileSync(path.join(packageDir, 'package.json'), JSON.stringify({
     name: '@test/workflow',
-    version: '0.7.0',
+    version: '0.8.0',
     type: 'module',
     files: ['index.js'],
   }));
-  fs.writeFileSync(path.join(packageDir, 'index.js'), 'export const version = "0.7.0";\n');
+  fs.writeFileSync(path.join(packageDir, 'index.js'), 'export const version = "0.8.0";\n');
   const { publicKey, privateKey } = crypto.generateKeyPairSync('ed25519');
   fs.writeFileSync(privateKeyFile, privateKey.export({ type: 'pkcs8', format: 'pem' }), { mode: 0o600 });
   try {
@@ -110,10 +110,12 @@ test('Workflow release descriptor advertises autonomous exploration under Agent 
     const verified = await loadReleaseEnvelope(prepared.manifest.file, {
       publicKeyPem: publicKey.export({ type: 'spki', format: 'pem' }),
     });
-    const descriptor = verified.payload.versions['0.7.0'];
-    assert.equal(descriptor.agentProtocolVersion, 8);
+    const descriptor = verified.payload.versions['0.8.0'];
+    assert.equal(descriptor.agentProtocolVersion, 9);
     assert.equal(descriptor.compatibleConverter, '>=1.2.0 <2.0.0');
     assert.equal(descriptor.capabilities.autonomousReadOnlyExploration, true);
+    assert.equal(descriptor.capabilities.agentDirectReadOnlyTest, true);
+    assert.equal(descriptor.capabilities.agentDirectSideEffectTest, false);
   } finally {
     fs.rmSync(temporary, { recursive: true, force: true });
   }

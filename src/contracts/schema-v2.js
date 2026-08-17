@@ -169,6 +169,15 @@ export const EXPLORATION_REPORT_STATUSES = Object.freeze([
   'INCONCLUSIVE',
   'INTERRUPTED',
 ]);
+export const AGENT_DIRECT_TEST_CAPABILITIES = Object.freeze([
+  'AGENT_DIRECT_READ_ONLY',
+  'AGENT_DIRECT_SIDE_EFFECT',
+]);
+export const AGENT_DIRECT_TEST_OUTCOMES = Object.freeze([
+  'AGENT_ATTESTED_PARITY_OBSERVED',
+  'AGENT_ATTESTED_MISMATCH',
+  'AGENT_ATTESTED_INCONCLUSIVE',
+]);
 const PREREQUISITE_STATES = new Set(['SATISFIED', 'MISSING', 'UNAVAILABLE', 'UNKNOWN']);
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
@@ -745,6 +754,148 @@ export function validateRuntimeExplorationReport(document) {
   if (Date.parse(document.completedAt) < Date.parse(document.startedAt)) fail('completedAt must not precede startedAt');
   if (document.createdAt !== document.completedAt) fail('Runtime Exploration Report createdAt must equal completedAt');
   if (document.createdBy !== 'CLI' || document.sensitivity !== 'REDACTED') fail('Runtime Exploration Report must be a redacted CLI artifact');
+  return document;
+}
+
+function validateAgentDirectTestSubject(subject, path) {
+  exactKeys(subject, ['nid', 'workId'], ['nid', 'workId'], path);
+  integer(subject.nid, `${path}.nid`, { min: 1 });
+  string(subject.workId, `${path}.workId`, { max: 256 });
+}
+
+function validateAgentDirectTestEnvironment(environment, path) {
+  exactKeys(environment, ['comparisonId', 'status', 'mode'], ['comparisonId', 'status', 'mode'], path);
+  id(environment.comparisonId, `${path}.comparisonId`);
+  enumValue(environment.status, ENVIRONMENT_GATE_STATUSES, `${path}.status`);
+  enumValue(environment.mode, EXPLORATION_ENVIRONMENT_MODES, `${path}.mode`);
+}
+
+function validateAgentDirectSideEffectScope(scope, path, capability) {
+  exactKeys(scope,
+    ['enabled', 'systems', 'objectTypes', 'actionClasses', 'maxOperations', 'testDataPrefix', 'nonRecoverabilityAccepted'],
+    ['enabled', 'systems', 'objectTypes', 'actionClasses', 'maxOperations', 'testDataPrefix', 'nonRecoverabilityAccepted'],
+    path);
+  boolean(scope.enabled, `${path}.enabled`);
+  const systems = uniqueStrings(scope.systems, `${path}.systems`, { max: 100 });
+  const objectTypes = uniqueStrings(scope.objectTypes, `${path}.objectTypes`, { max: 100 });
+  const actionClasses = uniqueStrings(scope.actionClasses, `${path}.actionClasses`, { max: 100 });
+  integer(scope.maxOperations, `${path}.maxOperations`, { min: 0, max: 10000 });
+  nullableString(scope.testDataPrefix, `${path}.testDataPrefix`, { max: 128 });
+  boolean(scope.nonRecoverabilityAccepted, `${path}.nonRecoverabilityAccepted`);
+  if (capability === 'AGENT_DIRECT_READ_ONLY') {
+    if (scope.enabled || systems.length || objectTypes.length || actionClasses.length || scope.maxOperations !== 0 || scope.testDataPrefix !== null || scope.nonRecoverabilityAccepted) {
+      fail(`${path} must be an empty disabled scope for AGENT_DIRECT_READ_ONLY`);
+    }
+  } else if (!scope.enabled || systems.length === 0 || objectTypes.length === 0 || actionClasses.length === 0 || scope.maxOperations < 1 || !scope.nonRecoverabilityAccepted) {
+    fail(`${path} must explicitly bound and acknowledge AGENT_DIRECT_SIDE_EFFECT`);
+  }
+}
+
+export function validateAgentDirectTestAuthorization(document) {
+  schemaHeader(document, 'agent-direct-test-authorization');
+  exactKeys(document,
+    ['schemaVersion', 'kind', 'authorizationId', 'reviewId', 'jobId', 'jobManifestSha256', 'source', 'target', 'origins', 'environment', 'capability', 'scope', 'sideEffectScope', 'confirmation', 'expiresAt', 'createdAt', 'createdBy', 'sensitivity'],
+    ['schemaVersion', 'kind', 'authorizationId', 'reviewId', 'jobId', 'jobManifestSha256', 'source', 'target', 'origins', 'environment', 'capability', 'scope', 'sideEffectScope', 'confirmation', 'expiresAt', 'createdAt', 'createdBy', 'sensitivity'],
+    '$');
+  id(document.authorizationId, '$.authorizationId');
+  reviewId(document.reviewId);
+  jobId(document.jobId);
+  sha256(document.jobManifestSha256, '$.jobManifestSha256');
+  validateAgentDirectTestSubject(document.source, '$.source');
+  validateAgentDirectTestSubject(document.target, '$.target');
+  exactKeys(document.origins, ['source', 'target'], ['source', 'target'], '$.origins');
+  for (const key of ['source', 'target']) {
+    string(document.origins[key], `$.origins.${key}`, { max: 2048 });
+    let origin;
+    try { origin = new URL(document.origins[key]); } catch { fail(`$.origins.${key} must be an absolute URL origin`); }
+    const loopback = origin && ['localhost', '127.0.0.1', '::1'].includes(origin.hostname);
+    if (!origin || (origin.protocol !== 'https:' && !(origin.protocol === 'http:' && loopback)) || origin.origin !== document.origins[key] || origin.username || origin.password) {
+      fail(`$.origins.${key} must be an HTTPS origin without credentials, except HTTP loopback tests`);
+    }
+  }
+  validateAgentDirectTestEnvironment(document.environment, '$.environment');
+  enumValue(document.capability, AGENT_DIRECT_TEST_CAPABILITIES, '$.capability');
+  exactKeys(document.scope,
+    ['jobArtifacts', 'browserControl', 'toolChoice', 'codeExecution', 'credentialAccess', 'workflowDriver'],
+    ['jobArtifacts', 'browserControl', 'toolChoice', 'codeExecution', 'credentialAccess', 'workflowDriver'],
+    '$.scope');
+  enumValue(document.scope.jobArtifacts, ['COMPLETE_READ_ONLY'], '$.scope.jobArtifacts');
+  enumValue(document.scope.browserControl, ['AGENT_DIRECT'], '$.scope.browserControl');
+  enumValue(document.scope.toolChoice, ['AGENT_CONTROLLED'], '$.scope.toolChoice');
+  enumValue(document.scope.codeExecution, ['AGENT_CONTROLLED'], '$.scope.codeExecution');
+  enumValue(document.scope.credentialAccess, ['AGENT_LOCAL_USE'], '$.scope.credentialAccess');
+  enumValue(document.scope.workflowDriver, ['NOT_PROVIDED'], '$.scope.workflowDriver');
+  validateAgentDirectSideEffectScope(document.sideEffectScope, '$.sideEffectScope', document.capability);
+  const expectedConfirmation = document.capability === 'AGENT_DIRECT_READ_ONLY'
+    ? 'RUN_AGENT_DIRECT_READ_ONLY_TEST'
+    : 'RUN_AGENT_DIRECT_SIDE_EFFECT_TEST';
+  enumValue(document.confirmation, [expectedConfirmation], '$.confirmation');
+  isoDate(document.expiresAt, '$.expiresAt');
+  validateArtifactMetadata(document);
+  if (document.createdBy !== 'USER' || document.sensitivity !== 'PRIVATE') fail('Agent Direct Test Authorization must be private USER evidence');
+  const lifetime = Date.parse(document.expiresAt) - Date.parse(document.createdAt);
+  if (lifetime <= 0 || lifetime > 8 * 60 * 60 * 1000) fail('Agent Direct Test Authorization must expire within 8 hours after creation');
+  return document;
+}
+
+export function validateAgentTestAttestation(document) {
+  schemaHeader(document, 'agent-test-attestation');
+  exactKeys(document,
+    ['schemaVersion', 'kind', 'attestationId', 'sessionId', 'authorizationId', 'reviewId', 'jobId', 'sourceRevision', 'targetRevision', 'environment', 'capability', 'executor', 'outcome', 'coverage', 'effects', 'findings', 'evidenceRefs', 'claims', 'completedAt', 'createdAt', 'createdBy', 'sensitivity'],
+    ['schemaVersion', 'kind', 'attestationId', 'sessionId', 'authorizationId', 'reviewId', 'jobId', 'sourceRevision', 'targetRevision', 'environment', 'capability', 'executor', 'outcome', 'coverage', 'effects', 'findings', 'evidenceRefs', 'claims', 'completedAt', 'createdAt', 'createdBy', 'sensitivity'],
+    '$');
+  id(document.attestationId, '$.attestationId');
+  id(document.sessionId, '$.sessionId');
+  id(document.authorizationId, '$.authorizationId');
+  reviewId(document.reviewId);
+  jobId(document.jobId);
+  validateAgentDirectTestSubject(document.sourceRevision, '$.sourceRevision');
+  validateAgentDirectTestSubject(document.targetRevision, '$.targetRevision');
+  validateAgentDirectTestEnvironment(document.environment, '$.environment');
+  enumValue(document.capability, AGENT_DIRECT_TEST_CAPABILITIES, '$.capability');
+  exactKeys(document.executor, ['kind', 'product', 'tools'], ['kind', 'product', 'tools'], '$.executor');
+  enumValue(document.executor.kind, ['LOCAL_AI_AGENT'], '$.executor.kind');
+  string(document.executor.product, '$.executor.product', { max: 128 });
+  uniqueStrings(document.executor.tools, '$.executor.tools', { max: 100 });
+  enumValue(document.outcome, AGENT_DIRECT_TEST_OUTCOMES, '$.outcome');
+  exactKeys(document.coverage,
+    ['businessFlows', 'states', 'actions', 'assertions', 'screenshots', 'networkObservations'],
+    ['businessFlows', 'states', 'actions', 'assertions', 'screenshots', 'networkObservations'],
+    '$.coverage');
+  for (const key of ['businessFlows', 'states', 'actions', 'assertions', 'screenshots', 'networkObservations']) {
+    integer(document.coverage[key], `$.coverage.${key}`, { min: 0, max: 1000000 });
+  }
+  exactKeys(document.effects, ['attempted', 'operationCount', 'systems', 'objectTypes', 'actionClasses'], ['attempted', 'operationCount', 'systems', 'objectTypes', 'actionClasses'], '$.effects');
+  boolean(document.effects.attempted, '$.effects.attempted');
+  integer(document.effects.operationCount, '$.effects.operationCount', { min: 0, max: 10000 });
+  uniqueStrings(document.effects.systems, '$.effects.systems', { max: 100 });
+  uniqueStrings(document.effects.objectTypes, '$.effects.objectTypes', { max: 100 });
+  uniqueStrings(document.effects.actionClasses, '$.effects.actionClasses', { max: 100 });
+  if (document.capability === 'AGENT_DIRECT_READ_ONLY' && (document.effects.attempted || document.effects.operationCount !== 0 || document.effects.systems.length || document.effects.objectTypes.length || document.effects.actionClasses.length)) {
+    fail('Read-only Agent Test Attestation cannot record intended side effects');
+  }
+  const findings = array(document.findings, '$.findings', { max: 500 });
+  findings.forEach((finding, index) => {
+    const path = `$.findings[${index}]`;
+    exactKeys(finding, ['findingId', 'severity', 'summary', 'cause', 'evidenceRefs'], ['findingId', 'severity', 'summary', 'cause', 'evidenceRefs'], path);
+    id(finding.findingId, `${path}.findingId`);
+    enumValue(finding.severity, ['INFO', 'WARNING', 'ERROR'], `${path}.severity`);
+    string(finding.summary, `${path}.summary`, { max: 2048 });
+    enumValue(finding.cause, ISSUE_CAUSES, `${path}.cause`);
+    const refs = uniqueStrings(finding.evidenceRefs, `${path}.evidenceRefs`, { max: 100 });
+    refs.forEach((ref, refIndex) => safeArtifactPath(ref, `${path}.evidenceRefs[${refIndex}]`));
+  });
+  const evidenceRefs = uniqueStrings(document.evidenceRefs, '$.evidenceRefs', { max: 1000 });
+  evidenceRefs.forEach((ref, index) => safeArtifactPath(ref, `$.evidenceRefs[${index}]`));
+  exactKeys(document.claims, ['parityObserved', 'strictParityClaimed', 'workflowDriverUsed', 'targetModifiedByTest'], ['parityObserved', 'strictParityClaimed', 'workflowDriverUsed', 'targetModifiedByTest'], '$.claims');
+  for (const key of Object.keys(document.claims)) boolean(document.claims[key], `$.claims.${key}`);
+  if (document.claims.strictParityClaimed || document.claims.workflowDriverUsed) fail('Agent Test Attestation cannot claim strict parity or Workflow-driver execution');
+  if (document.outcome !== 'AGENT_ATTESTED_PARITY_OBSERVED' && document.claims.parityObserved) fail('Only AGENT_ATTESTED_PARITY_OBSERVED may attest observed parity');
+  if (document.capability === 'AGENT_DIRECT_READ_ONLY' && document.claims.targetModifiedByTest) fail('Read-only Agent Direct Test cannot attest target modification');
+  isoDate(document.completedAt, '$.completedAt');
+  validateArtifactMetadata(document);
+  if (document.createdAt !== document.completedAt) fail('Agent Test Attestation createdAt must equal completedAt');
+  if (document.createdBy !== 'AGENT' || document.sensitivity !== 'REDACTED') fail('Agent Test Attestation must be a redacted AGENT artifact');
   return document;
 }
 
@@ -1638,6 +1789,8 @@ export const SCHEMA_V2_VALIDATORS = Object.freeze({
   'runtime-exploration-authorization': validateRuntimeExplorationAuthorization,
   'runtime-exploration-plan': validateRuntimeExplorationPlan,
   'runtime-exploration-report': validateRuntimeExplorationReport,
+  'agent-direct-test-authorization': validateAgentDirectTestAuthorization,
+  'agent-test-attestation': validateAgentTestAttestation,
   'environment-manifest': validateEnvironmentManifest,
   'environment-comparison': validateEnvironmentComparison,
   'environment-risk-acceptance': validateEnvironmentRiskAcceptance,

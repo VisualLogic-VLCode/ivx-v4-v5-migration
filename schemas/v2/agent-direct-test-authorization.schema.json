@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.ivx.local/migration/v2/agent-direct-test-authorization.schema.json",
+  "title": "iVX Agent Direct Test Authorization v2",
+  "type": "object",
+  "required": ["schemaVersion", "kind", "authorizationId", "reviewId", "jobId", "jobManifestSha256", "source", "target", "origins", "environment", "capability", "scope", "sideEffectScope", "confirmation", "expiresAt", "createdAt", "createdBy", "sensitivity"],
+  "properties": {
+    "schemaVersion": { "const": 2 },
+    "kind": { "const": "agent-direct-test-authorization" },
+    "authorizationId": { "$ref": "common.schema.json#/$defs/id" },
+    "reviewId": { "$ref": "common.schema.json#/$defs/reviewId" },
+    "jobId": { "$ref": "common.schema.json#/$defs/jobId" },
+    "jobManifestSha256": { "$ref": "common.schema.json#/$defs/sha256" },
+    "source": { "$ref": "#/$defs/subject" },
+    "target": { "$ref": "#/$defs/subject" },
+    "origins": {
+      "type": "object",
+      "required": ["source", "target"],
+      "properties": { "source": { "type": "string", "format": "uri" }, "target": { "type": "string", "format": "uri" } },
+      "additionalProperties": false
+    },
+    "environment": {
+      "type": "object",
+      "required": ["comparisonId", "status", "mode"],
+      "properties": {
+        "comparisonId": { "$ref": "common.schema.json#/$defs/id" },
+        "status": { "enum": ["ENVIRONMENT_EQUIVALENT", "NORMALIZED_EQUIVALENT", "REQUIRES_USER_BINDING", "BLOCKED_ENVIRONMENT"] },
+        "mode": { "enum": ["EQUIVALENT_ONLY", "ALLOW_DIAGNOSTIC"] }
+      },
+      "additionalProperties": false
+    },
+    "capability": { "enum": ["AGENT_DIRECT_READ_ONLY", "AGENT_DIRECT_SIDE_EFFECT"] },
+    "scope": {
+      "type": "object",
+      "required": ["jobArtifacts", "browserControl", "toolChoice", "codeExecution", "credentialAccess", "workflowDriver"],
+      "properties": {
+        "jobArtifacts": { "const": "COMPLETE_READ_ONLY" },
+        "browserControl": { "const": "AGENT_DIRECT" },
+        "toolChoice": { "const": "AGENT_CONTROLLED" },
+        "codeExecution": { "const": "AGENT_CONTROLLED" },
+        "credentialAccess": { "const": "AGENT_LOCAL_USE" },
+        "workflowDriver": { "const": "NOT_PROVIDED" }
+      },
+      "additionalProperties": false
+    },
+    "sideEffectScope": { "$ref": "#/$defs/sideEffectScope" },
+    "confirmation": { "enum": ["RUN_AGENT_DIRECT_READ_ONLY_TEST", "RUN_AGENT_DIRECT_SIDE_EFFECT_TEST"] },
+    "expiresAt": { "$ref": "common.schema.json#/$defs/dateTime" },
+    "createdAt": { "$ref": "common.schema.json#/$defs/dateTime" },
+    "createdBy": { "const": "USER" },
+    "sensitivity": { "const": "PRIVATE" }
+  },
+  "$defs": {
+    "subject": {
+      "type": "object",
+      "required": ["nid", "workId"],
+      "properties": { "nid": { "type": "integer", "minimum": 1 }, "workId": { "type": "string", "minLength": 1, "maxLength": 256 } },
+      "additionalProperties": false
+    },
+    "sideEffectScope": {
+      "type": "object",
+      "required": ["enabled", "systems", "objectTypes", "actionClasses", "maxOperations", "testDataPrefix", "nonRecoverabilityAccepted"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "systems": { "type": "array", "maxItems": 100, "uniqueItems": true, "items": { "type": "string", "minLength": 1, "maxLength": 512 } },
+        "objectTypes": { "type": "array", "maxItems": 100, "uniqueItems": true, "items": { "type": "string", "minLength": 1, "maxLength": 512 } },
+        "actionClasses": { "type": "array", "maxItems": 100, "uniqueItems": true, "items": { "type": "string", "minLength": 1, "maxLength": 512 } },
+        "maxOperations": { "type": "integer", "minimum": 0, "maximum": 10000 },
+        "testDataPrefix": { "type": ["string", "null"], "maxLength": 128 },
+        "nonRecoverabilityAccepted": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

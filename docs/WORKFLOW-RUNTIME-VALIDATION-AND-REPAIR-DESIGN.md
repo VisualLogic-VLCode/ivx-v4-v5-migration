@@ -1,6 +1,6 @@
 # V4→V5 工作流：运行时验证、问题诊断与 AI 修复设计
 
-> 状态：阶段 0–10 及自主无副作用探索已全部实现；Workflow `0.7.4` 是当前候选，兼容 Converter `1.2.5` 与 Knowledge Runtime `0.1.5`，Agent protocol 保持 8。阶段 10“Additional V5 Creation 与 Existing Target Refresh”已通过本地合同、模拟平台、故障注入和公开分发验收；Existing Target Refresh 的真实平台写入试点仍需单独授权，未以模拟结果替代真实平台结论
+> 状态：阶段 0–10、历史自主探索及 Agent Direct Test 已实现；Workflow `0.8.0` 是当前候选，兼容 Converter `1.2.5` 与 Knowledge Runtime `0.1.6`，Agent protocol 为 9。新运行时测试由本地 AI Agent 独立执行，Workflow 不再提供浏览器驱动；有副作用能力已建模但尚未启用。阶段 10“Additional V5 Creation 与 Existing Target Refresh”已通过本地合同、模拟平台、故障注入和公开分发验收；Existing Target Refresh 的真实平台写入试点仍需单独授权，未以模拟结果替代真实平台结论
 > 初稿：2026-08-12；本次修订：2026-08-17
 > 适用项目：`ivx-v4-v5-migration` 及其独立分发的 Workflow、Agent 适配器和知识运行时
 > 不修改：`tov5parser` 的转换规则；转换器继续由维护者在独立仓库中维护
@@ -965,7 +965,7 @@ Converter 修复后由维护者发布新 Converter；用户更新后可以对原
 2. **自动修复范围：**首版只允许明确的 `SOURCE_DATA` 和 `TARGET_CASE` 修改目标 V5；`TEST_HARNESS`/`ENVIRONMENT_CONFIGURATION` 只修测试或环境；`CONVERTER`、`PLATFORM_RUNTIME`、`KNOWLEDGE_GAP`、`AUTHORIZATION`、`UNKNOWN` 不自动改目标。
 3. **诊断副本：**所有根因分类均可独立评估并创建/保留 V5 诊断案例；分类本身不否决另存。认证、服务器权限、平台写入可用性、revision 安全、Saveable Checkpoint 和用户授权作为独立硬前提。
 4. **知识分发：**Workflow 只从 `ivx-v4-v5-knowledge` 的签名稳定通道安装不可变 Knowledge Release，不读取维护源、候选或仓库分支。
-5. **运行时首版：**Playwright 无人值守是正式 Runtime Driver，用户可见模式负责登录、复杂交互和人工接管；先做结构化 Trace 与“只报告”试点，验证稳定后再接自动修复。
+5. **运行时当前架构：**协议 9 的新测试由本地 AI Agent 直接控制其浏览器与测试工具，可执行 JavaScript、CSS/XPath、循环和自适应业务探测；Workflow 只冻结授权/上下文并复核、归档 Agent 证明。旧 Playwright Runtime Driver 与 Exploration 仅保留历史证据和兼容命令，不参与新 Agent Direct Test。
 6. **配置策略：**不完整复制；使用字段政策注册表，目标身份重映射、`customVars` 语义保留、secret 用户绑定、`/config/name` 作为已证明的预设名称元数据忽略、其他未知字段阻塞。用户可精确授权环境风险下诊断，但不能借此产生等价、归因或修复结论。
 7. **持久化：**完整 Job/Review 数据留在 `~/.ivx-v4-v5/jobs`；当前工作目录只保留可选的轻量引用。
 8. **人工续接：**用户后续反馈通过 Human Finding 进入同一 Review Session；用户手工修改目标后必须显式接纳新 revision。
@@ -974,11 +974,11 @@ Converter 修复后由维护者发布新 Converter；用户更新后可以对原
 
 ## 20. 当前状态与后续维护
 
-代码改造阶段 0–10 及自主无副作用探索已全部实现。Knowledge Runtime `0.1.5`、Workflow `0.7.3` 和兼容的独立 Converter `1.2.5` 已公开发布；Workflow `0.7.4` 旧 Job Review 运行时钉定兼容补丁已形成候选，等待提交与签名发布。受控真实案例已完成普通另存、环境门禁和无人值守运行时一致性验收，自主探索的安全遍历与隔离边界已通过本地真实 Chromium 验收。Workflow `0.4.0` 公共全新安装暴露的 GitHub Release 正文下载超时，已由 `0.4.1` 的受校验系统下载路径、`0.4.2` 的显式防降级 Launcher 恢复，以及 `0.4.3` 的协调式 setup 依次修复。`0.4.3` 的全新安装、旧用户恢复、Agent 同步和回滚验收均通过；`0.4.4` 仅重构普通用户入口、授权说明与维护者验收信息架构，不改变运行时行为。
+代码改造阶段 0–10 及自主无副作用探索已全部实现。Knowledge Runtime `0.1.5`、Workflow `0.7.4` 和兼容的独立 Converter `1.2.5` 已公开发布；Workflow `0.8.0` / Knowledge `0.1.6` 正在形成协议 9 候选，把新运行时测试完整移交本地 Agent，并保留旧探索证据的读取兼容。受控真实案例已完成普通另存、环境门禁和历史无人值守运行时验收；protocol-9 Agent Direct Test 的本地合同、模拟平台和跨进程 CLI 边界已通过，真实案例验收必须在签名发布后由新 Agent 进行，不以模拟结果替代。Workflow `0.4.0` 公共全新安装暴露的 GitHub Release 正文下载超时，已由 `0.4.1` 的受校验系统下载路径、`0.4.2` 的显式防降级 Launcher 恢复，以及 `0.4.3` 的协调式 setup 依次修复。`0.4.3` 的全新安装、旧用户恢复、Agent 同步和回滚验收均通过；`0.4.4` 仅重构普通用户入口、授权说明与维护者验收信息架构，不改变运行时行为。
 
 Workflow `0.5.0` 在此基础上增加 `/config/name` 的明确字段政策、精确范围的环境风险接受、诊断专用运行状态和 Agent 报告边界。Agent protocol 已提升到 6，Knowledge Runtime `0.1.3` 提供对应兼容范围。`0.5.1` 补齐 Workflow 回滚后的 Agent Skill 协调同步；`0.5.2` 增加以完整 V4 输入摘要为证据的 post-Save source revision 协调，并明确禁止通过重复 Save As 处理内容变化。签名 Release、稳定通道、全新安装、协调更新、回滚和既有 Review 恢复共同构成发布验收。
 
-阶段 0–10 的后续工作属于持续维护和扩大真实案例覆盖：继续收集稳定、可回滚的真实场景校准 Diagnosis/Repair 政策；按真实试点数据评估预算；为 Windows 建立原生 Token 文件 ACL 合同。阶段 10 的领域合同、CLI、Agent SOP、协议兼容和模拟平台故障分支已经随签名 Knowledge `0.1.4` 与 Workflow `0.6.0` 按依赖顺序公开发布；`0.6.1` 在不改变协议的前提下补齐旧 Group Job 的 null-gid 谱系兼容，`0.6.2` 继续保持协议 7，并将组件静态校验收窄到权威拥有边，避免把 `props` 用户业务数据误判为组件；`0.7.0` 与内容不变的 Knowledge `0.1.5` 按依赖顺序增加协议 8 的自主无副作用探索，`0.7.1` 仅校正已独立升级到 `1.2.5` 的 Converter 当前稳定基线文档，`0.7.2` 增加源 Domain Binding/目标 Route Allocation 分权的可恢复另存检查点，`0.7.3` 修复平台省略默认根标志时的语义读回误报，并保留真实漂移阻断和未知写不重放边界，`0.7.4` 继续保持协议 8，以精确已安装版本证据恢复旧 Job 缺失的 Workflow 摘要，并让新 Job 直接保存完整运行时钉定。Additional V5、Existing Target Refresh 与自主探索的公开安装/更新路径可以使用，但 Existing Target Refresh 的真实平台写入仍应作为单独授权的试点逐步扩大覆盖。任何尚未由真实稳定场景覆盖的能力都必须明确标注为 mock、校准夹具或故障注入结果，不以静态结果替代运行时等价结论。Converter 的后续修复继续独立发布；只要版本仍满足 Workflow `0.7.4` 的 `>=1.2.0 <2.0.0` 兼容范围，就不要求同步发布新的 Workflow。
+阶段 0–10 的后续工作属于持续维护和扩大真实案例覆盖：继续收集稳定、可回滚的真实场景校准 Diagnosis/Repair 政策；按真实试点数据评估预算；为 Windows 建立原生 Token 文件 ACL 合同。阶段 10 的领域合同、CLI、Agent SOP、协议兼容和模拟平台故障分支已经随签名 Knowledge `0.1.4` 与 Workflow `0.6.0` 按依赖顺序公开发布；`0.6.1` 在不改变协议的前提下补齐旧 Group Job 的 null-gid 谱系兼容，`0.6.2` 继续保持协议 7，并将组件静态校验收窄到权威拥有边，避免把 `props` 用户业务数据误判为组件；`0.7.0` 与内容不变的 Knowledge `0.1.5` 按依赖顺序增加协议 8 的自主无副作用探索，`0.7.1`–`0.7.4` 保持协议 8 并依次校正 Converter 基线、增加域名配置检查点、修复域名语义读回及旧 Job Review 摘要恢复；`0.8.0` 与内容不变的 Knowledge `0.1.6` 按依赖顺序提升至协议 9，让新运行时测试完全由本地 Agent 执行并只向 Workflow 返回证明，旧 Exploration 保持兼容。Additional V5、Existing Target Refresh 与历史自主探索的公开安装/更新路径仍可使用，但 Existing Target Refresh 的真实平台写入仍应作为单独授权的试点逐步扩大覆盖。任何尚未由真实稳定场景覆盖的能力都必须明确标注为 mock、校准夹具或故障注入结果，不以静态结果替代运行时等价结论。Converter 的后续修复继续独立发布；只要版本仍满足 Workflow `0.8.0` 的 `>=1.2.0 <2.0.0` 兼容范围，就不要求同步发布新的 Workflow。
 
 ## 21. Additional V5 Creation 与 Existing Target Refresh（阶段 10 已实现并发布）
 

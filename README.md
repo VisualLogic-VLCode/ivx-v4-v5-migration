@@ -4,7 +4,7 @@ This project is the distributable local workflow used by Codex or Claude Code. I
 
 ## Current status
 
-The current release candidate is Workflow `0.7.4` with Agent protocol 8, Converter `1.2.5`, and Knowledge Runtime `0.1.5`. Its capabilities are:
+The current release candidate is Workflow `0.8.0` with Agent protocol 9, Converter `1.2.5`, and Knowledge Runtime `0.1.6`. Its capabilities are:
 
 - private global Job storage with atomic state writes and per-Job locks;
 - metadata + physical work version classification;
@@ -24,7 +24,8 @@ The current release candidate is Workflow `0.7.4` with Agent protocol 8, Convert
 - independent private Runtime Review Session persistence, one-writer-per-target-revision leases, Human Finding evidence, and external-revision baseline reconciliation;
 - exact-version legacy Workflow-pin recovery for Runtime Review, with complete forward Job pins and local-before-platform failure on missing or contradictory provenance;
 - a locked Playwright Runtime Driver with closed declarative scenarios, isolated V4/V5 contexts, private browser authentication state, redacted traces, reviewed normalization, side-effect gates, and report-only parity comparison;
-- explicitly authorized autonomous read-only exploration with immutable Job scope, trusted dynamic `SAFE_BFS`, same-origin/read-only gates, resumable checkpoints, masked screenshots, pixel/structure/accessibility evidence, and coverage-bounded—not strict—parity claims;
+- explicitly authorized Agent Direct read-only testing: the Workflow freezes revisions/environment/full Job scope and archives evidence, while the local AI Agent exclusively controls its own browser, JavaScript, CSS/XPath, loops, screenshots, business assertions, and adaptive decisions without any Workflow browser driver or action planner;
+- backward-compatible reading and recovery of protocol-8 autonomous-exploration artifacts and commands, while new tests use Agent Direct sessions; the separately modeled side-effect capability remains explicitly disabled in 0.8.0;
 - an exact-scoped, short-lived USER environment-risk acceptance for diagnostic runtime observation without rewriting environment equivalence, Converter attribution, or target-repair authority;
 - Diagnosis v2 with evidence-backed Issue Clusters, policy-computed automatic-repair decisions, independent diagnostic-save eligibility, calibration fixtures, and redacted owner-specific maintainer reports;
 - bounded target repair with private authorization leases, per-cluster `3+2` attempts, per-review `10+5` confirmed revisions, V5-only Patch policy, static regression gates, Saveable Checkpoints, target CAS, unknown-write reconciliation, verified read-back, and affected-scenario retesting;
@@ -94,7 +95,7 @@ The commands below document what the Agent executes and remain available as a ma
 
 ```bash
 npm install --global \
-  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.7.4/ivx-v4-v5-migration-0.7.4.tgz
+  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.8.0/ivx-v4-v5-migration-0.8.0.tgz
 ```
 
 ```bash
@@ -206,30 +207,26 @@ ivx-migrate review runtime-resume-platform \
 
 Runtime Scenario actions use only the published action/semantic-locator vocabulary; arbitrary JavaScript, CSS/XPath, credential entry, and native Playwright traces are rejected. `READ_ONLY` blocks non-idempotent requests. `REVERSIBLE` requires cleanup and a single-use USER authorization; `EXTERNAL_SIDE_EFFECT` additionally requires a visible takeover. Browser storage state is kept in separate private `0600` files per preview origin and is never returned. Runtime cycles remain evidence-only: they never apply a Patch or invoke a platform write. A later, separately authorized repair operation may consume their redacted evidence.
 
-The unreleased Agent-protocol-8 candidate adds a separate autonomous read-only exploration chain without weakening Runtime Scenario semantics. One exact user grant binds the Review, immutable Job manifest, source/target revisions and preview origins, Environment Comparison/mode, profile limits, and expiry. After authorization the local Agent may read the complete selected Job and submit a bounded `SAFE_BFS` plan; credentials remain driver-only. The trusted driver discovers only same-origin navigation, tabs, disclosures, and non-secret filter inputs, replays each paired path in fresh contexts, and records redacted structure/accessibility digests plus masked screenshots and pixel diffs. Unsafe methods, external navigation, WebSockets, popups, downloads, dialogs, action-window storage mutation, revision drift, or enabled write mode quarantine the path.
+Agent protocol 9 makes the local AI Agent the sole runtime-test executor. One exact user authorization binds the Review, immutable complete Job manifest, source/target revisions and preview origins, equivalent Environment Comparison, read-only capability, and expiry. `agent-test-context-platform` returns the authorized Job root, Agent workspace, and exact subjects; it supplies no browser driver, crawler, action planner, readiness gate, or test program. The Agent directly chooses and controls its browser/testing tools, JavaScript, semantic locators, CSS/XPath, loops, visual comparisons, and business assertions. Authentication may be used only through authorized local Agent/browser facilities and must never enter reports or evidence.
 
 ```bash
-ivx-migrate review exploration-authorize-platform \
+ivx-migrate review agent-test-authorize-platform \
   --review <reviewId> \
   --environment-id <comparisonId> \
-  --profile STANDARD \
-  --confirm RUN_AUTONOMOUS_READ_ONLY_EXPLORATION
+  --capability AGENT_DIRECT_READ_ONLY \
+  --confirm RUN_AGENT_DIRECT_READ_ONLY_TEST
 
-ivx-migrate review exploration-context \
+ivx-migrate review agent-test-context-platform \
   --review <reviewId> \
   --authorization <authorizationId>
 
-ivx-migrate review exploration-prepare \
+ivx-migrate review agent-test-submit-platform \
   --review <reviewId> \
-  --authorization <authorizationId> \
-  --file ./runtime-exploration-plan.json
-
-ivx-migrate review exploration-run-platform \
-  --review <reviewId> \
-  --exploration <explorationId>
+  --session <sessionId> \
+  --file ./agent-test-attestation.json
 ```
 
-Exploration reports include state/path/control/screenshot coverage, queue/budget exhaustion, blocked actions, and per-path evidence. Even `EXPLORATION_PARITY_PASSED` is coverage-bounded (`strictParityClaimed:false`) and does not change legacy Review state. `ALLOW_DIAGNOSTIC` may collect evidence under explicitly accepted environment risk but cannot claim parity, Converter attribution, automatic repair, or a platform write. An interrupted run resumes only the same Exploration id and immutable authorization.
+The Agent writes redacted evidence only inside the returned workspace and submits an `AGENT_ATTESTED_PARITY_OBSERVED`, `AGENT_ATTESTED_MISMATCH`, or `AGENT_ATTESTED_INCONCLUSIVE` attestation. `strictParityClaimed` and `workflowDriverUsed` must remain false; the attestation does not silently promote legacy Review parity or authorize diagnosis, repair, Save As, or a write. Under `AGENT_DIRECT_READ_ONLY`, avoiding intended external effects is the Agent's responsibility because no Workflow driver is interposed. `AGENT_DIRECT_SIDE_EFFECT` has an explicit future scope schema but is rejected before platform access in 0.8.0.
 
 An unresolved Environment Gate still blocks by default. A user may separately accept exactly the current Review, source/target revisions, unresolved paths, and selected scenarios for at most eight hours. Such a cycle remains labeled `USER_ACCEPTED_RISK`: its Environment Comparison is not changed, its comparisons are excluded from Diagnosis v2, and its result cannot claim parity, attribute a Converter defect, or enable automatic repair. Environment-risk acceptance never substitutes for browser authentication, platform/revision checks, side-effect authorization, or a write confirmation. `/config/name` is the only newly ignored config field: it is a saved-preset display label absent from the platform runtime config contract; unknown fields remain fail-closed.
 

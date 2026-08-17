@@ -72,8 +72,32 @@ _Avoid_: Runtime Cycle, exhaustive proof, click-all script
 The redacted coverage-and-difference result of one Runtime Exploration, including executed/skipped/blocked controls and per-path evidence; it cannot by itself promote legacy Runtime Parity or authorize repair.
 _Avoid_: Runtime Comparison Report, strict parity proof, root-cause classification
 
+**Agent Direct Test Authorization**:
+A private, expiring user grant binding one Review, exact revisions, origins, environment decision, immutable Job manifest, Agent credential-use policy, test capability, and any permitted side-effect scope.
+_Avoid_: Runtime Exploration Authorization, browser-driver permission, global test consent
+
+**Agent Direct Test Session**:
+A test stage executed and adaptively controlled entirely by the local AI Agent using its chosen browser and code tools; Workflow supplies no browser driver, action planner, readiness detector, or test-time decision logic.
+_Avoid_: Runtime Exploration, Runtime Scenario, Workflow-driven test
+
+**Agent Test Context**:
+The private immutable handoff for one Agent Direct Test Session containing exact V4/V5 revisions and preview entry points, environment evidence, complete selected-Job read scope, an Agent-owned evidence workspace, and the authorization boundary.
+_Avoid_: Browser driver configuration, test plan, raw credential export
+
+**Agent Test Attestation**:
+A redacted Agent-authored statement of tested business flows, observations, effects, evidence references, and outcome that Workflow scope-checks and archives without presenting it as driver-verified Runtime Parity.
+_Avoid_: Runtime Comparison Report, strict parity proof, Workflow verdict
+
+**Agent Direct Read-Only Test**:
+An Agent Direct Test Session whose authorization permits adaptive local browser/code execution but no intended business-data or external-system mutation.
+_Avoid_: Fixed safe crawl, technically enforced sandbox
+
+**Agent Direct Side-Effect Test**:
+An Agent Direct Test Session separately authorized for exact affected systems, object classes, action classes, operation budgets, credential policy, and acknowledged non-recoverability.
+_Avoid_: Read-only test extension, implicit write permission, unrestricted browser session
+
 **Runtime Driver**:
-An executor of Runtime Scenarios, whether unattended or visibly user-assisted.
+A legacy Workflow executor of Runtime Scenarios, whether unattended or visibly user-assisted; it is never part of an Agent Direct Test Session.
 _Avoid_: AI browser
 
 **Behavior Trace**:

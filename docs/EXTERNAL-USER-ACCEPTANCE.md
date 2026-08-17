@@ -4,11 +4,11 @@
 
 本轮公开基线（2026-08-17）：
 
-- 首次引导使用的稳定 Launcher：`0.7.4`
-- 本文发布后签名通道安装的 Workflow：`0.7.4`
+- 首次引导使用的稳定 Launcher：`0.8.0`
+- 本文发布后签名通道安装的 Workflow：`0.8.0`
 - Converter：`1.2.5`
-- Knowledge Runtime：`0.1.5`
-- Agent protocol：`8`
+- Knowledge Runtime：`0.1.6`
+- Agent protocol：`9`
 - 默认平台：`https://dev.ivx.cn`
 
 后续如稳定通道已经发布新版本，以签名通道和 `ivx-migrate doctor` 显示的当前版本为准，并在结果中记录实际版本。
@@ -35,7 +35,7 @@
 维护者让测试用户打开本机 Codex 或 Claude Code，把[外部测试 Agent 启动提示](templates/AI-AGENT-ACCEPTANCE-PROMPT.md)整段交给 Agent，并只替换两个 `nid`。提示中的不可变引导地址必须是：
 
 ```text
-https://raw.githubusercontent.com/VisualLogic-VLCode/ivx-v4-v5-migration/v0.7.4/docs/AI-AGENT-BOOTSTRAP.md
+https://raw.githubusercontent.com/VisualLogic-VLCode/ivx-v4-v5-migration/v0.8.0/docs/AI-AGENT-BOOTSTRAP.md
 ```
 
 测试用户不需要复制任何 `ivx-migrate` 命令。Agent 必须自行检查环境、执行安装、初始化、更新、预检、转换、诊断、验证和结果整理。下列命令仅用于验收者核对 Agent 的动作；应由 Agent 在测试用户本机执行：
@@ -43,7 +43,7 @@ https://raw.githubusercontent.com/VisualLogic-VLCode/ivx-v4-v5-migration/v0.7.4/
 ```bash
 node --version
 npm install --global \
-  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.7.4/ivx-v4-v5-migration-0.7.4.tgz
+  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.8.0/ivx-v4-v5-migration-0.8.0.tgz
 ivx-migrate version
 ```
 
@@ -205,22 +205,24 @@ Agent 可以读取 Job 的 `state.json` 和 `reports/`，但不得读取 Token �
 
 前两阶段已经足以验证安装、静态转换和普通另存。维护者需要验证高级能力时，再执行本阶段；普通用户无需把它当作必经步骤。运行时与 Group 使用独立 Job/Review 和独立结论，不能用一项成功替代另一项。
 
-### 11.1 Playwright 运行时对照与自动修复
+### 11.1 Agent Direct 运行时对照与自动修复
 
 只使用第二阶段已正常返回 `SUCCEEDED` 的 Job 创建 Runtime Review。把实际 Job ID 写进提示，不依赖“刚才那个案例”等聊天记忆：
 
-> 请使用 v4-to-v5-workflow，对迁移 Job `<JOB_ID>` 创建 Runtime Review，对源 V4 和已创建的目标 V5 执行无副作用的 Playwright 运行时对照。默认只运行 READ_ONLY 场景；需要登录时打开可见浏览器让我登录，不要读取 Cookie 或浏览器认证文件。发现差异后先按工作流完成证据分类；只对工作流明确允许的高置信非转换器问题使用初始预算自动修复并复测，不扩大预算，不执行副作用场景。只有达到 RUNTIME_PARITY_PASSED 才汇报运行时一致。
+> 请使用 v4-to-v5-workflow，对迁移 Job `<JOB_ID>` 创建 Runtime Review 并完成 Environment Gate。先展示 Agent Direct Test 的精确只读授权范围，等我确认后，由你直接使用自己的浏览器与测试工具读取完整 Job、编写 JavaScript、使用 CSS/XPath/循环和动态决策，对源 V4 与目标 V5 做充分的无副作用业务对照。Workflow 不得提供浏览器驱动或动作规划器。可以使用本机已授权会话，但不要把 Token/Cookie/session 值写入命令、聊天、截图、报告或证据。发现差异后先提交 Agent 证明并按工作流完成证据分类；只对明确允许的高置信非转换器问题使用初始预算自动修复并复测，不扩大预算，不执行副作用测试。只能按 Agent-attested 范围汇报，不能声称 Workflow 严格 parity。
 
 至少核对：
 
 - Review 绑定原 Job 的源/目标 nid、workId、revision 和固定 Workflow/Converter/Knowledge 版本；
 - Environment Gate 通过或明确安全停止，环境差异不会被错误归因给 Converter；
-- V4/V5 使用隔离浏览器上下文，认证内容没有进入 Agent、Trace 或报告；
+- Workflow 的 Agent Direct 进程未实例化或提供 Runtime/Exploration Driver；V4/V5 的工具和浏览器操作由 Agent 自己决定；
+- Agent 可读取精确 Job 全部文件并把新证据只写入返回的私有 workspace；认证值没有进入命令、聊天、截图、报告或证据；
+- 证明明确报告业务流、状态、动作、断言、截图、网络观察和所有差异，并保持 `strictParityClaimed:false`、`workflowDriverUsed:false`；
 - `CONVERTER`、`PLATFORM_RUNTIME`、`KNOWLEDGE_GAP`、`AUTHORIZATION`、`UNKNOWN` 不触发自动目标修改；
 - 每次允许的目标修复都执行 revision CAS、静态全量验证、写后回读和受影响场景复测；
 - 写入结果未知、目标漂移、重复 Patch、振荡、范围扩大或预算暂停时不会重放或绕过。
 
-如果案例没有运行时差异，只能记为“运行时对照通过，自动修复分支未触发”。要声称自动修复通过，还需要一个已知、可安全复现且根因属于允许修复类别的专用案例。
+如果案例没有运行时差异，只能记为“Agent 在本次覆盖中观察到一致，自动修复分支未触发”，不能记为严格全业务 parity。要声称自动修复通过，还需要一个已知、可安全复现且根因属于允许修复类别的专用案例。
 
 ### 11.2 Group 普通参与者完整权限
 

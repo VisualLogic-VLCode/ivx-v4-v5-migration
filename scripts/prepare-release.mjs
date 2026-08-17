@@ -75,6 +75,8 @@ function releaseDescriptor({ kind, packageJson, artifactUrl, artifactSha256, opt
         structuredConverterDiagnostics: true,
         resumablePlatformSaveAs: true,
         autonomousReadOnlyExploration: true,
+        agentDirectReadOnlyTest: true,
+        agentDirectSideEffectTest: false,
       },
       artifact: { url: artifactUrl, sha256: artifactSha256 },
     };
