@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.ivx.local/migration/v2/runtime-exploration-report.schema.json",
+  "title": "iVX Runtime Exploration Report v2",
+  "type": "object",
+  "required": ["schemaVersion", "kind", "explorationId", "reviewId", "jobId", "authorizationId", "planSha256", "jobManifestSha256", "status", "environment", "coverage", "pathResults", "stopReason", "claims", "startedAt", "completedAt", "createdAt", "createdBy", "sensitivity"],
+  "properties": {
+    "schemaVersion": { "const": 2 },
+    "kind": { "const": "runtime-exploration-report" },
+    "explorationId": { "$ref": "common.schema.json#/$defs/id" },
+    "reviewId": { "$ref": "common.schema.json#/$defs/reviewId" },
+    "jobId": { "$ref": "common.schema.json#/$defs/jobId" },
+    "authorizationId": { "$ref": "common.schema.json#/$defs/id" },
+    "planSha256": { "$ref": "common.schema.json#/$defs/sha256" },
+    "jobManifestSha256": { "$ref": "common.schema.json#/$defs/sha256" },
+    "status": { "enum": ["EXPLORATION_PARITY_PASSED", "PARTIAL_PARITY_PASSED", "MISMATCH_DETECTED", "INCONCLUSIVE", "INTERRUPTED"] },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["comparisonId", "status", "mode"],
+      "properties": {
+        "comparisonId": { "$ref": "common.schema.json#/$defs/id" },
+        "status": { "enum": ["ENVIRONMENT_EQUIVALENT", "NORMALIZED_EQUIVALENT", "REQUIRES_USER_BINDING", "BLOCKED_ENVIRONMENT"] },
+        "mode": { "enum": ["EQUIVALENT_ONLY", "ALLOW_DIAGNOSTIC"] }
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["states", "paths", "discoveredControls", "eligibleControls", "executedControls", "skippedControls", "blockedActions", "visualCheckpoints", "mismatches", "goalSatisfied", "queueExhausted", "budgetExhausted"],
+      "properties": {
+        "states": { "$ref": "#/$defs/count" },
+        "paths": { "$ref": "#/$defs/count" },
+        "discoveredControls": { "$ref": "#/$defs/count" },
+        "eligibleControls": { "$ref": "#/$defs/count" },
+        "executedControls": { "$ref": "#/$defs/count" },
+        "skippedControls": { "$ref": "#/$defs/count" },
+        "blockedActions": { "$ref": "#/$defs/count" },
+        "visualCheckpoints": { "$ref": "#/$defs/count" },
+        "mismatches": { "$ref": "#/$defs/count" },
+        "goalSatisfied": { "type": "boolean" },
+        "queueExhausted": { "type": "boolean" },
+        "budgetExhausted": { "type": "boolean" }
+      }
+    },
+    "pathResults": {
+      "type": "array",
+      "maxItems": 500,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["pathId", "depth", "status", "sourceFingerprint", "targetFingerprint", "visualStatus", "evidenceRef"],
+        "properties": {
+          "pathId": { "$ref": "common.schema.json#/$defs/id" },
+          "depth": { "type": "integer", "minimum": 0, "maximum": 16 },
+          "status": { "enum": ["MATCHED", "DIVERGED", "BLOCKED", "INCONCLUSIVE"] },
+          "sourceFingerprint": { "anyOf": [{ "$ref": "common.schema.json#/$defs/sha256" }, { "type": "null" }] },
+          "targetFingerprint": { "anyOf": [{ "$ref": "common.schema.json#/$defs/sha256" }, { "type": "null" }] },
+          "visualStatus": { "enum": ["MATCHED", "DIFFERENT", "INCONCLUSIVE"] },
+          "evidenceRef": { "type": "string", "minLength": 1, "maxLength": 1024 }
+        }
+      }
+    },
+    "stopReason": { "type": ["string", "null"], "maxLength": 1024 },
+    "claims": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["parityClaimed", "strictParityClaimed", "converterAttributionAllowed", "automaticRepairAllowed", "targetRepairAttempted", "platformWriteAttempted"],
+      "properties": {
+        "parityClaimed": { "type": "boolean" },
+        "strictParityClaimed": { "type": "boolean" },
+        "converterAttributionAllowed": { "type": "boolean" },
+        "automaticRepairAllowed": { "type": "boolean" },
+        "targetRepairAttempted": { "const": false },
+        "platformWriteAttempted": { "const": false }
+      }
+    },
+    "startedAt": { "$ref": "common.schema.json#/$defs/dateTime" },
+    "completedAt": { "$ref": "common.schema.json#/$defs/dateTime" },
+    "createdAt": { "$ref": "common.schema.json#/$defs/dateTime" },
+    "createdBy": { "const": "CLI" },
+    "sensitivity": { "const": "REDACTED" }
+  },
+  "$defs": {
+    "count": { "type": "integer", "minimum": 0, "maximum": 100000 }
+  },
+  "additionalProperties": false
+}

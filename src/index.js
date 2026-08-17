@@ -38,6 +38,11 @@ export {
   REFRESH_JOURNAL_PHASES,
   REFRESH_STATUSES,
   RUNTIME_ACTION_TYPES,
+  EXPLORATION_ACTION_TYPES,
+  EXPLORATION_ENVIRONMENT_MODES,
+  EXPLORATION_LOCATOR_STRATEGIES,
+  EXPLORATION_PROFILES,
+  EXPLORATION_REPORT_STATUSES,
   RUNTIME_LOCATOR_STRATEGIES,
   RUNTIME_OBSERVATION_CAPTURES,
   SCHEMA_V2_VALIDATORS,
@@ -45,6 +50,9 @@ export {
   validateBehaviorTrace,
   validateDiagnosisReport,
   validateRuntimeComparison,
+  validateRuntimeExplorationAuthorization,
+  validateRuntimeExplorationPlan,
+  validateRuntimeExplorationReport,
   validateDiagnosticSaveEligibility,
   validateEnvironmentComparison,
   validateEnvironmentManifest,
@@ -95,6 +103,11 @@ export { createKnowledgePin, KnowledgeRuntime } from './knowledge/runtime.js';
 export { compareRuntimeScenario } from './runtime/comparator.js';
 export { PlaywrightRuntimeDriver } from './runtime/playwright-driver.js';
 export { RuntimeReviewRunner } from './runtime/review-runner.js';
+export { createJobArtifactManifest } from './runtime/job-artifact-manifest.js';
+export { RuntimeExplorationStore } from './runtime/exploration-store.js';
+export { compareVisualArtifacts } from './runtime/visual-comparator.js';
+export { PlaywrightExplorationDriver, classifyExplorationControl } from './runtime/playwright-exploration-driver.js';
+export { AutonomousExplorationRunner } from './runtime/autonomous-exploration-runner.js';
 export { resolvePlatformPreviewUrl } from './runtime/platform-preview.js';
 export { normalizeCapturedTrace, normalizeRuntimeValue } from './runtime/trace-normalizer.js';
 export { redactedUrl, redactRuntimeText, runtimeValueDigest, runtimeValueShape, runtimeValueSummary, runtimeValueType } from './runtime/trace-redaction.js';

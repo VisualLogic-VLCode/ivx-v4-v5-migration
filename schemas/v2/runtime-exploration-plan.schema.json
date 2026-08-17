@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.ivx.local/migration/v2/runtime-exploration-plan.schema.json",
+  "title": "iVX Runtime Exploration Plan v2",
+  "type": "object",
+  "required": ["schemaVersion", "kind", "explorationId", "reviewId", "jobId", "profile", "startPath", "strategy", "limits", "coverageGoal", "seedPaths", "knowledgeRuleIds", "createdAt", "createdBy", "sensitivity"],
+  "properties": {
+    "schemaVersion": { "const": 2 },
+    "kind": { "const": "runtime-exploration-plan" },
+    "explorationId": { "$ref": "common.schema.json#/$defs/id" },
+    "reviewId": { "$ref": "common.schema.json#/$defs/reviewId" },
+    "jobId": { "$ref": "common.schema.json#/$defs/jobId" },
+    "profile": { "enum": ["QUICK", "STANDARD", "DEEP"] },
+    "startPath": { "type": "string", "minLength": 1, "maxLength": 2048 },
+    "strategy": { "const": "SAFE_BFS" },
+    "limits": { "$ref": "runtime-exploration-authorization.schema.json#/$defs/limits" },
+    "coverageGoal": {
+      "type": "object",
+      "required": ["minStates", "minExecutedControls", "requireVisual"],
+      "properties": {
+        "minStates": { "type": "integer", "minimum": 1, "maximum": 500 },
+        "minExecutedControls": { "type": "integer", "minimum": 0, "maximum": 3000 },
+        "requireVisual": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "seedPaths": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "required": ["pathId", "name", "actions"],
+        "properties": {
+          "pathId": { "$ref": "common.schema.json#/$defs/id" },
+          "name": { "type": "string", "minLength": 1, "maxLength": 256 },
+          "actions": { "type": "array", "maxItems": 50, "items": { "$ref": "#/$defs/action" } }
+        },
+        "additionalProperties": false
+      }
+    },
+    "knowledgeRuleIds": { "$ref": "common.schema.json#/$defs/stringArray" },
+    "createdAt": { "$ref": "common.schema.json#/$defs/dateTime" },
+    "createdBy": { "const": "AGENT" },
+    "sensitivity": { "const": "REDACTED" }
+  },
+  "$defs": {
+    "locator": {
+      "type": "object",
+      "required": ["strategy", "value"],
+      "properties": {
+        "strategy": { "enum": ["ROLE", "LABEL", "PLACEHOLDER", "TEXT", "TEST_ID", "CSS", "XPATH"] },
+        "value": { "type": "string", "minLength": 1, "maxLength": 1024 },
+        "role": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "exact": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "action": {
+      "type": "object",
+      "required": ["actionId", "type"],
+      "properties": {
+        "actionId": { "$ref": "common.schema.json#/$defs/id" },
+        "type": { "enum": ["OPEN_PAGE", "CLICK", "FILL", "HOVER", "FOCUS", "SCROLL"] },
+        "target": { "$ref": "#/$defs/locator" },
+        "input": { "type": ["string", "integer"] },
+        "timeoutMs": { "type": "integer", "minimum": 1, "maximum": 120000 }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

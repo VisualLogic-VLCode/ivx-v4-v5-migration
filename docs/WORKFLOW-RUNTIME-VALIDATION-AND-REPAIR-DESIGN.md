@@ -862,6 +862,8 @@ Converter 修复后由维护者发布新 Converter；用户更新后可以对原
 
 **本地实现记录（2026-08-13）：**Workflow 已锁定 Playwright 1.62.1，并将 Playwright/Playwright Core 打入签名 Workflow 包；Chromium 由该锁定 CLI 单独安装。Scenario 仅接受封闭动作和语义定位器；V4/V5 使用隔离 Context；原始捕获值只在进程内参与归一化和哈希，不落盘；原生 Playwright trace 因可能包含认证与响应数据而禁用。当前 Runtime Cycle 只能产出 `targetRepairAttempted:false`、`platformWriteAttempted:false` 的报告，不能调用目标修复或平台保存。真实本机 Chromium 的无副作用双服务冒烟已通过；公开案例验收仍归阶段 8。
 
+**自主探索实现记录（2026-08-17，待发布）：**Agent protocol 8 新增独立 Runtime Exploration Authorization/Plan/Report，不改变固定 Runtime Scenario 或 Review `activeCycleId`。一次 USER 授权锁定精确 Job manifest、Review、两端 revision/origin、Environment Comparison/mode、QUICK/STANDARD/DEEP 上限与过期时间；Agent 可读取该 Job 完整树并提交 `SAFE_BFS` 计划，但 Token/browser storage state 仅由驱动消费。可信控制器通过固定 DOM JavaScript 发现同源链接、tab、disclosure 和非 secret filter，支持声明式语义/CSS/XPath seed，在全新 Context 中逐路径重放并 checkpoint；它不执行任意 Agent JavaScript。非安全请求、跨域导航、WebSocket、popup、download、dialog、动作期 storage mutation、revision 漂移或启用写模式会隔离路径。结果联合结构、ARIA、脱敏截图和 pixel diff，必须报告覆盖与预算；即使覆盖达标也只声明 bounded exploration parity，`strictParityClaimed:false`，不提升旧 Review parity、不归因根因、不修复或写平台。
+
 ### 阶段 6：Diagnosis v2 与维护者报告
 
 - AI 基于最小证据和 Knowledge Card 提交结构化分类，CLI 校验。

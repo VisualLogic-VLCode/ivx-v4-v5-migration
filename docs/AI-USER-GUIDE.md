@@ -60,6 +60,16 @@ Agent 先执行只读 Refresh prepare：证明该目标来自相同源案例的�
 
 这同时授权一个 WRITE Runtime Review 和初始修复预算。默认优先使用无人值守的 `READ_ONLY` Playwright 场景；需要登录时，Agent 会打开可见浏览器让用户完成登录，并且不会读取 Cookie 或浏览器认证文件。
 
+若希望 Agent 在一次确认后自主遍历无副作用路径，可明确说：
+
+```text
+请在 Review <REVIEW_ID> 上进行自主无副作用运行时探索。先向我展示精确授权范围和 STANDARD 资源上限；我确认后，你可以读取该 Job 的全部文件、自主规划和执行，不需要逐个点击询问，但不得产生业务副作用、修改 V5 或执行任何平台写入。
+```
+
+Agent 会展示 Job/Review、源/目标 revision 与预览 origin、Environment Comparison、完整 Job 读取范围、运行档位/上限和到期时间。确认后它只能读取命令返回的精确 Job 根目录；Token 与 Cookie 仍只由可信驱动使用。动态探索允许受限 CSS/XPath 提示，但不执行 Agent 编写的任意浏览器 JavaScript。每条路径都用新 Context 重放，并保存结构、可访问性、脱敏截图、像素差异和覆盖率。
+
+动态探索的“通过”只表示声明的安全覆盖目标已满足，不是全业务正确性或旧版严格 Runtime Parity。环境仍有差异时可另行确认 `ALLOW_DIAGNOSTIC`，但结果不能归因 Converter 或自动修复。任何写请求、跨域跳转、WebSocket、弹窗、下载、对话框、动作造成的浏览器存储变化、revision 漂移或写模式开启都会使对应路径停止/隔离。
+
 如果 Save As 后平台只推进了源案例 revision，而完整源 JSON 与本次转换输入一致，Workflow 会在创建 Review 或首次环境检查时自动协调并记录审计证据，不需要再迁移或再创建一个 V5。若源内容确实变化，工作流会保留已创建的 V5 并以 `REVIEW_SOURCE_CONTENT_CHANGED` 停止；用户应审阅源变化，不能通过重复 Save As 绕过。
 
 只有工作流判定为高置信、修复目标为 V5 产物的 `SOURCE_DATA` / `TARGET_CASE` 问题才允许自动修复。`CONVERTER`、`PLATFORM_RUNTIME`、`KNOWLEDGE_GAP`、`AUTHORIZATION` 和 `UNKNOWN` 只报告，不自动修改。环境严格或经用户声明语义等价时，运行结果才能作为归因和修复证据。

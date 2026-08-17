@@ -6,6 +6,8 @@ import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import { JobStore } from '../src/jobs/job-store.js';
 import { createAppPaths } from '../src/paths.js';
+import { RuntimeReviewStore } from '../src/reviews/review-store.js';
+import { evaluateEnvironmentGate } from '../src/environment/environment-gate.js';
 
 const projectRoot = path.resolve(import.meta.dirname, '..');
 const cli = path.join(projectRoot, 'bin', 'ivx-migrate.js');
@@ -89,6 +91,58 @@ test('review CLI creates and recovers a local session across independent process
     }));
     assert.equal(runCli(temporary, ['review', 'scenario-add', '--review', created.reviewId, '--file', scenarioFile]).scenario.scenarioId, 'scenario-cli');
     assert.equal(runCli(temporary, ['review', 'scenario-list', '--review', created.reviewId]).scenarios[0].scenarioId, 'scenario-cli');
+
+    const reviews = new RuntimeReviewStore(paths, { jobs: new JobStore(paths) });
+    const evaluatedAt = new Date().toISOString();
+    const evaluation = evaluateEnvironmentGate({
+      reviewId: created.reviewId,
+      sourceManifestId: 'env-source-cli',
+      targetManifestId: 'env-target-cli',
+      comparisonId: 'env-comparison-cli',
+      source: { revision: { nid: 100, workId: 'source-work-1' }, workInfo: {}, config: {}, settings: {} },
+      target: { revision: { nid: 200, workId: 'target-work-1' }, workInfo: {}, config: {}, settings: {} },
+      evaluatedAt,
+    });
+    reviews.recordEnvironmentEvaluation(created.reviewId, evaluation);
+    const authorization = runCli(temporary, [
+      'review', 'exploration-authorize', '--review', created.reviewId,
+      '--environment-id', evaluation.comparison.comparisonId,
+      '--source-origin', 'https://source.example.test', '--target-origin', 'https://target.example.test',
+      '--profile', 'QUICK', '--confirm', 'RUN_AUTONOMOUS_READ_ONLY_EXPLORATION',
+    ]);
+    assert.equal(authorization.scope.authenticatedSession, 'DRIVER_USE_ONLY');
+    const explorationContext = runCli(temporary, [
+      'review', 'exploration-context', '--review', created.reviewId,
+      '--authorization', authorization.authorizationId,
+    ]);
+    assert.equal(explorationContext.authorizationState, 'AVAILABLE');
+    assert.equal(explorationContext.job.root, new JobStore(paths).jobDir(job.jobId));
+    assert.equal(JSON.stringify(explorationContext).toLowerCase().includes('platformtoken'), false);
+    const planFile = path.join(temporary, 'exploration-plan.json');
+    fs.writeFileSync(planFile, JSON.stringify({
+      schemaVersion: 2,
+      kind: 'runtime-exploration-plan',
+      explorationId: 'exploration-cli',
+      reviewId: created.reviewId,
+      jobId: job.jobId,
+      profile: authorization.profile,
+      startPath: '$SUBJECT_URL',
+      strategy: 'SAFE_BFS',
+      limits: authorization.limits,
+      coverageGoal: { minStates: 5, minExecutedControls: 3, requireVisual: true },
+      seedPaths: [],
+      knowledgeRuleIds: [],
+      createdAt: authorization.createdAt,
+      createdBy: 'AGENT',
+      sensitivity: 'REDACTED',
+    }));
+    assert.equal(runCli(temporary, [
+      'review', 'exploration-prepare', '--review', created.reviewId,
+      '--authorization', authorization.authorizationId, '--file', planFile,
+    ]).state.status, 'READY');
+    assert.equal(runCli(temporary, [
+      'review', 'exploration-status', '--review', created.reviewId, '--exploration', 'exploration-cli',
+    ]).state.status, 'READY');
 
     const runtime = runCli(temporary, ['runtime', 'status']);
     assert.equal(runtime.driver, 'playwright');

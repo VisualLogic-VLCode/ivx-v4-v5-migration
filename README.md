@@ -204,6 +204,31 @@ ivx-migrate review runtime-resume-platform \
 
 Runtime Scenario actions use only the published action/semantic-locator vocabulary; arbitrary JavaScript, CSS/XPath, credential entry, and native Playwright traces are rejected. `READ_ONLY` blocks non-idempotent requests. `REVERSIBLE` requires cleanup and a single-use USER authorization; `EXTERNAL_SIDE_EFFECT` additionally requires a visible takeover. Browser storage state is kept in separate private `0600` files per preview origin and is never returned. Runtime cycles remain evidence-only: they never apply a Patch or invoke a platform write. A later, separately authorized repair operation may consume their redacted evidence.
 
+The unreleased Agent-protocol-8 candidate adds a separate autonomous read-only exploration chain without weakening Runtime Scenario semantics. One exact user grant binds the Review, immutable Job manifest, source/target revisions and preview origins, Environment Comparison/mode, profile limits, and expiry. After authorization the local Agent may read the complete selected Job and submit a bounded `SAFE_BFS` plan; credentials remain driver-only. The trusted driver discovers only same-origin navigation, tabs, disclosures, and non-secret filter inputs, replays each paired path in fresh contexts, and records redacted structure/accessibility digests plus masked screenshots and pixel diffs. Unsafe methods, external navigation, WebSockets, popups, downloads, dialogs, action-window storage mutation, revision drift, or enabled write mode quarantine the path.
+
+```bash
+ivx-migrate review exploration-authorize-platform \
+  --review <reviewId> \
+  --environment-id <comparisonId> \
+  --profile STANDARD \
+  --confirm RUN_AUTONOMOUS_READ_ONLY_EXPLORATION
+
+ivx-migrate review exploration-context \
+  --review <reviewId> \
+  --authorization <authorizationId>
+
+ivx-migrate review exploration-prepare \
+  --review <reviewId> \
+  --authorization <authorizationId> \
+  --file ./runtime-exploration-plan.json
+
+ivx-migrate review exploration-run-platform \
+  --review <reviewId> \
+  --exploration <explorationId>
+```
+
+Exploration reports include state/path/control/screenshot coverage, queue/budget exhaustion, blocked actions, and per-path evidence. Even `EXPLORATION_PARITY_PASSED` is coverage-bounded (`strictParityClaimed:false`) and does not change legacy Review state. `ALLOW_DIAGNOSTIC` may collect evidence under explicitly accepted environment risk but cannot claim parity, Converter attribution, automatic repair, or a platform write. An interrupted run resumes only the same Exploration id and immutable authorization.
+
 An unresolved Environment Gate still blocks by default. A user may separately accept exactly the current Review, source/target revisions, unresolved paths, and selected scenarios for at most eight hours. Such a cycle remains labeled `USER_ACCEPTED_RISK`: its Environment Comparison is not changed, its comparisons are excluded from Diagnosis v2, and its result cannot claim parity, attribute a Converter defect, or enable automatic repair. Environment-risk acceptance never substitutes for browser authentication, platform/revision checks, side-effect authorization, or a write confirmation. `/config/name` is the only newly ignored config field: it is a saved-preset display label absent from the platform runtime config contract; unknown fields remain fail-closed.
 
 When a Runtime Cycle reports a mismatch, Diagnosis v2 exposes stable candidates and accepts only a complete Schema-v2 Root Cause Classification. Every issue must cite its actual local comparison artifact; Knowledge rule IDs must have been retrieved by this review. The Workflow independently computes repair and diagnostic-save decisions and produces a redacted JSON/Markdown owner report:

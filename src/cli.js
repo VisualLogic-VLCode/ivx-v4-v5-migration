@@ -20,6 +20,9 @@ import { RuntimeReviewStore } from './reviews/review-store.js';
 import { evaluateEnvironmentGate } from './environment/environment-gate.js';
 import { PlaywrightRuntimeDriver } from './runtime/playwright-driver.js';
 import { RuntimeReviewRunner } from './runtime/review-runner.js';
+import { RuntimeExplorationStore } from './runtime/exploration-store.js';
+import { PlaywrightExplorationDriver } from './runtime/playwright-exploration-driver.js';
+import { AutonomousExplorationRunner } from './runtime/autonomous-exploration-runner.js';
 import { resolvePlatformPreviewUrl } from './runtime/platform-preview.js';
 import { waitForVisibleRuntimeTakeover } from './runtime/visible-takeover.js';
 import { IvxPlatformAdapter, normalizePlatformBaseUrl } from './platform/http-adapter.js';
@@ -113,6 +116,11 @@ function agentProtocolVersion(workflow = null) {
 function assertRefreshAgentProtocol(context) {
   const protocolVersion = agentProtocolVersion(context.registry.readCurrent().workflow);
   invariant(protocolVersion >= 7, 'REFRESH_AGENT_PROTOCOL_INCOMPATIBLE', 'Existing Target Refresh requires Workflow Agent protocol 7 or newer');
+}
+
+function assertExplorationAgentProtocol(context) {
+  const protocolVersion = agentProtocolVersion(context.registry.readCurrent().workflow);
+  invariant(protocolVersion >= 8, 'EXPLORATION_AGENT_PROTOCOL_INCOMPATIBLE', 'Autonomous Runtime Exploration requires Workflow Agent protocol 8 or newer');
 }
 
 function knowledgePin(descriptor) {
@@ -809,6 +817,94 @@ async function handleReview(positionals, options, context) {
     invariant(options.review, 'CLI_ARGUMENT_REQUIRED', '--review is required');
     return { scenarios: context.reviews.listRuntimeScenarios(options.review) };
   }
+  if (['exploration-authorize', 'exploration-authorize-platform'].includes(action)) {
+    assertExplorationAgentProtocol(context);
+    invariant(options.review, 'CLI_ARGUMENT_REQUIRED', '--review is required');
+    invariant(options['environment-id'], 'CLI_ARGUMENT_REQUIRED', '--environment-id is required');
+    invariant(options.confirm === 'RUN_AUTONOMOUS_READ_ONLY_EXPLORATION', 'EXPLORATION_CONFIRMATION_REQUIRED', '--confirm RUN_AUTONOMOUS_READ_ONLY_EXPLORATION is required');
+    invariant(context.config.platform.writeMode === 'disabled', 'EXPLORATION_WRITE_MODE_MUST_BE_DISABLED', 'Autonomous read-only exploration authorization requires platform write mode to be disabled');
+    const profile = String(options.profile || 'STANDARD').toUpperCase();
+    const limits = options['limits-file'] ? readRequiredJson(options['limits-file'], 'exploration limits') : undefined;
+    let sourceOrigin = options['source-origin'];
+    let targetOrigin = options['target-origin'];
+    if (action === 'exploration-authorize-platform') {
+      const review = context.reviews.load(options.review);
+      const job = context.jobs.load(review.jobId);
+      const adapter = createPlatformAdapter(options, context);
+      const [sourceInfo, targetInfo] = await Promise.all([adapter.getCaseInfo(job.input.sourceNid), adapter.getCaseInfo(review.target.nid)]);
+      invariant(sourceInfo?.workId === review.baseline.sourceWorkId && targetInfo?.workId === review.baseline.targetWorkId, 'EXPLORATION_PLATFORM_REVISION_MISMATCH', 'Platform source or target revision changed before exploration authorization');
+      sourceOrigin = new URL(resolvePlatformPreviewUrl(sourceInfo)).origin;
+      targetOrigin = new URL(resolvePlatformPreviewUrl(targetInfo)).origin;
+    } else {
+      invariant(sourceOrigin && targetOrigin, 'CLI_ARGUMENT_REQUIRED', '--source-origin and --target-origin are required');
+    }
+    return context.explorations.authorize(options.review, {
+      environmentComparisonId: options['environment-id'],
+      environmentMode: options['environment-mode'] || 'EQUIVALENT_ONLY',
+      profile,
+      limits,
+      expiresAt: options['expires-at'],
+      sourceOrigin,
+      targetOrigin,
+    });
+  }
+  if (action === 'exploration-context') {
+    assertExplorationAgentProtocol(context);
+    invariant(options.review && options.authorization, 'CLI_ARGUMENT_REQUIRED', '--review and --authorization are required');
+    return context.explorations.context(options.review, options.authorization);
+  }
+  if (action === 'exploration-prepare') {
+    assertExplorationAgentProtocol(context);
+    invariant(options.review && options.authorization, 'CLI_ARGUMENT_REQUIRED', '--review and --authorization are required');
+    return context.explorations.prepare(options.review, {
+      authorizationId: options.authorization,
+      plan: readRequiredJson(options.file, 'runtime exploration plan'),
+    });
+  }
+  if (action === 'exploration-status') {
+    assertExplorationAgentProtocol(context);
+    invariant(options.review && options.exploration, 'CLI_ARGUMENT_REQUIRED', '--review and --exploration are required');
+    return context.explorations.load(options.review, options.exploration);
+  }
+  if (['exploration-run', 'exploration-resume'].includes(action)) {
+    assertExplorationAgentProtocol(context);
+    invariant(options.review && options.exploration, 'CLI_ARGUMENT_REQUIRED', '--review and --exploration are required');
+    invariant(options['source-url'] && options['target-url'], 'CLI_ARGUMENT_REQUIRED', '--source-url and --target-url are required');
+    invariant(context.config.platform.writeMode === 'disabled', 'EXPLORATION_WRITE_MODE_MUST_BE_DISABLED', 'Autonomous read-only exploration requires platform write mode to be disabled');
+    const loaded = context.explorations.load(options.review, options.exploration);
+    return context.explorationRunner.run({
+      reviewId: options.review,
+      explorationId: options.exploration,
+      source: { generation: 'V4', ...loaded.authorization.source, baseUrl: options['source-url'] },
+      target: { generation: 'V5', ...loaded.authorization.target, baseUrl: options['target-url'] },
+    });
+  }
+  if (['exploration-run-platform', 'exploration-resume-platform'].includes(action)) {
+    assertExplorationAgentProtocol(context);
+    invariant(options.review && options.exploration, 'CLI_ARGUMENT_REQUIRED', '--review and --exploration are required');
+    invariant(context.config.platform.writeMode === 'disabled', 'EXPLORATION_WRITE_MODE_MUST_BE_DISABLED', 'Autonomous read-only exploration requires platform write mode to be disabled');
+    const loaded = context.explorations.load(options.review, options.exploration);
+    const adapter = createPlatformAdapter(options, context);
+    const [sourceInfo, targetInfo] = await Promise.all([
+      adapter.getCaseInfo(loaded.authorization.source.nid),
+      adapter.getCaseInfo(loaded.authorization.target.nid),
+    ]);
+    invariant(sourceInfo?.workId === loaded.authorization.source.workId && targetInfo?.workId === loaded.authorization.target.workId, 'EXPLORATION_PLATFORM_REVISION_MISMATCH', 'Platform source or target revision changed after exploration authorization');
+    const revisionGuard = async () => {
+      const [currentSource, currentTarget] = await Promise.all([
+        adapter.getCaseInfo(loaded.authorization.source.nid),
+        adapter.getCaseInfo(loaded.authorization.target.nid),
+      ]);
+      invariant(currentSource?.workId === loaded.authorization.source.workId && currentTarget?.workId === loaded.authorization.target.workId, 'EXPLORATION_PLATFORM_REVISION_MISMATCH', 'Platform source or target revision changed during autonomous exploration');
+    };
+    return context.explorationRunner.run({
+      reviewId: options.review,
+      explorationId: options.exploration,
+      source: { generation: 'V4', ...loaded.authorization.source, baseUrl: resolvePlatformPreviewUrl(sourceInfo) },
+      target: { generation: 'V5', ...loaded.authorization.target, baseUrl: resolvePlatformPreviewUrl(targetInfo) },
+      revisionGuard,
+    });
+  }
   if (action === 'environment-check') {
     invariant(options.review, 'CLI_ARGUMENT_REQUIRED', '--review is required');
     let review = context.reviews.load(options.review);
@@ -1289,6 +1385,15 @@ export async function runCli(argv, dependencies = {}) {
     installer: new ArtifactInstaller({ appPaths, registry }),
     promptPlatformToken: dependencies.promptPlatformToken || promptAndPersistPlatformToken,
   };
+  context.explorations = dependencies.explorations || new RuntimeExplorationStore(appPaths, { jobs, reviews });
+  context.explorationDriver = dependencies.explorationDriver || new PlaywrightExplorationDriver({
+    appPaths,
+    allowInsecureLocalhost: config.platform.allowInsecureLocalhost === true,
+  });
+  context.explorationRunner = dependencies.explorationRunner || new AutonomousExplorationRunner({
+    store: context.explorations,
+    driver: context.explorationDriver,
+  });
   let result;
   if (command === 'version') result = {
     packageName: packageJson.name,
@@ -1401,6 +1506,15 @@ export async function runCli(argv, dependencies = {}) {
         'ivx-migrate review scenario-add --review <reviewId> --file <runtime-scenario.json>',
         'ivx-migrate review scenario-list --review <reviewId>',
         'ivx-migrate review environment-check --review <reviewId> [--binding-assertions-file <user-assertions.json>]',
+        'ivx-migrate review exploration-authorize --review <reviewId> --environment-id <id> --source-origin <origin> --target-origin <origin> [--profile QUICK|STANDARD|DEEP] [--environment-mode EQUIVALENT_ONLY|ALLOW_DIAGNOSTIC] --confirm RUN_AUTONOMOUS_READ_ONLY_EXPLORATION',
+        'ivx-migrate review exploration-authorize-platform --review <reviewId> --environment-id <id> [--profile QUICK|STANDARD|DEEP] [--environment-mode EQUIVALENT_ONLY|ALLOW_DIAGNOSTIC] --confirm RUN_AUTONOMOUS_READ_ONLY_EXPLORATION',
+        'ivx-migrate review exploration-context --review <reviewId> --authorization <authorizationId>',
+        'ivx-migrate review exploration-prepare --review <reviewId> --authorization <authorizationId> --file <runtime-exploration-plan.json>',
+        'ivx-migrate review exploration-run --review <reviewId> --exploration <explorationId> --source-url <url> --target-url <url>',
+        'ivx-migrate review exploration-run-platform --review <reviewId> --exploration <explorationId>',
+        'ivx-migrate review exploration-resume --review <reviewId> --exploration <explorationId> --source-url <url> --target-url <url>',
+        'ivx-migrate review exploration-resume-platform --review <reviewId> --exploration <explorationId>',
+        'ivx-migrate review exploration-status --review <reviewId> --exploration <explorationId>',
         'ivx-migrate review diagnosis-candidates --review <reviewId>',
         'ivx-migrate review diagnostic-checkpoint --review <reviewId>',
         'ivx-migrate review diagnose --review <reviewId> --file <classification-v2.json> [--eligibility-file <save-prerequisites.json>]',

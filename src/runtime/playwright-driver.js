@@ -18,7 +18,7 @@ function isLoopback(hostname) {
   return ['localhost', '127.0.0.1', '::1'].includes(hostname);
 }
 
-function validateBaseUrl(value, allowInsecureLocalhost) {
+export function validateRuntimeBaseUrl(value, allowInsecureLocalhost = false) {
   let url;
   try {
     url = new URL(value);
@@ -38,12 +38,14 @@ export function resolveScenarioUrl(baseUrl, route) {
   return resolved.toString();
 }
 
-function locatorFor(page, target) {
+export function runtimeLocatorFor(page, target) {
   const exact = target.exact === true;
   if (target.strategy === 'ROLE') return page.getByRole(target.role, { name: target.value, exact });
   if (target.strategy === 'LABEL') return page.getByLabel(target.value, { exact });
   if (target.strategy === 'PLACEHOLDER') return page.getByPlaceholder(target.value, { exact });
   if (target.strategy === 'TEXT') return page.getByText(target.value, { exact });
+  if (target.strategy === 'CSS') return page.locator(target.value);
+  if (target.strategy === 'XPATH') return page.locator(`xpath=${target.value}`);
   return page.getByTestId(target.value);
 }
 
@@ -76,7 +78,7 @@ function legacyStateMatchesOrigin(target, origin) {
   }
 }
 
-function privateStorageState(appPaths, origin = null) {
+export function privateStorageState(appPaths, origin = null) {
   if (origin) {
     const scoped = storageStatePath(appPaths, origin);
     if (fs.existsSync(scoped)) return assertPrivateStorageState(scoped);
@@ -142,7 +144,7 @@ export class PlaywrightRuntimeDriver {
   }
 
   async captureAuthentication({ url } = {}) {
-    const baseUrl = validateBaseUrl(url, this.allowInsecureLocalhost);
+    const baseUrl = validateRuntimeBaseUrl(url, this.allowInsecureLocalhost);
     invariant(typeof this.onTakeover === 'function', 'RUNTIME_USER_TAKEOVER_REQUIRED', 'Authentication capture requires a visible user takeover callback');
     const playwright = await this.#playwright();
     ensurePrivateDir(this.appPaths.browserProfile);
@@ -173,8 +175,8 @@ export class PlaywrightRuntimeDriver {
   async runPair({ reviewId, cycleId, scenario, source, target, artifactRoot } = {}) {
     validateRuntimeScenario(scenario);
     invariant(source?.generation === 'V4' && target?.generation === 'V5', 'RUNTIME_SUBJECT_INVALID', 'Runtime pair must contain V4 source and V5 target subjects');
-    const sourceBaseUrl = validateBaseUrl(source.baseUrl, this.allowInsecureLocalhost);
-    const targetBaseUrl = validateBaseUrl(target.baseUrl, this.allowInsecureLocalhost);
+    const sourceBaseUrl = validateRuntimeBaseUrl(source.baseUrl, this.allowInsecureLocalhost);
+    const targetBaseUrl = validateRuntimeBaseUrl(target.baseUrl, this.allowInsecureLocalhost);
     const playwright = await this.#playwright();
     const headless = scenario.executionPolicy.mode === 'UNATTENDED';
     const browser = await playwright.chromium.launch({ headless, ...this.launchOptions });
@@ -264,7 +266,7 @@ export class PlaywrightRuntimeDriver {
           const absolute = path.join(artifactRoot, relative);
           ensurePrivateDir(path.dirname(absolute));
           const mask = page.locator('input[type="password"], input[name*="token" i], input[name*="secret" i], [data-sensitive="true"]');
-          await page.screenshot({ path: absolute, fullPage: true, mask });
+          await page.screenshot({ path: absolute, fullPage: true, mask: [mask] });
           fs.chmodSync(absolute, 0o600);
           artifacts.push({ artifactId: `shot_${this.randomBytes(6).toString('hex')}`, type: 'SCREENSHOT', path: relative.split(path.sep).join('/'), sha256: sha256File(absolute) });
         } catch (screenshotError) {
@@ -315,7 +317,7 @@ export class PlaywrightRuntimeDriver {
     else if (step.type === 'RELOAD') result = await page.reload({ waitUntil: 'domcontentloaded', timeout });
     else if (step.type === 'GO_BACK') result = await page.goBack({ waitUntil: 'domcontentloaded', timeout });
     else {
-      const locator = locatorFor(page, step.target);
+      const locator = runtimeLocatorFor(page, step.target);
       if (step.type === 'CLICK') result = await locator.click({ timeout });
       else if (step.type === 'FILL') result = await locator.fill(String(step.input), { timeout });
       else if (step.type === 'SELECT_OPTION') result = await locator.selectOption(String(step.input), { timeout });
@@ -333,7 +335,7 @@ export class PlaywrightRuntimeDriver {
     if (observation.capture === 'URL') return redactedUrl(page.url());
     if (observation.category === 'CONSOLE') return [];
     if (observation.category === 'NETWORK') return [];
-    const locator = locatorFor(page, observation.target);
+    const locator = runtimeLocatorFor(page, observation.target);
     if (observation.capture === 'TEXT') return redactRuntimeText((await locator.textContent()) || '', { max: 8192 });
     if (observation.capture === 'VALUE') return redactRuntimeText(await locator.inputValue(), { max: 8192 });
     if (observation.capture === 'VISIBLE') return locator.isVisible();

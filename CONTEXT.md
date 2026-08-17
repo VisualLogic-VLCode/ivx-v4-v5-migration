@@ -48,6 +48,22 @@ _Avoid_: Save authorization, global case lock
 A repeatable set of preconditions, actions, observations, and cleanup applied to both V4 and V5.
 _Avoid_: Test script, prompt
 
+**Runtime Exploration Authorization**:
+A private, expiring user grant for one Review, exact revisions, origins, Job artifact manifest, environment mode, and resource limits; it permits complete selected-Job reading and autonomous read-only browser exploration while credentials remain driver-only.
+_Avoid_: Runtime Scenario, browser login, platform write permission
+
+**Runtime Exploration Plan**:
+A redacted Agent-authored declaration of the starting route, coverage goal, optional seed paths, and bounded semantic/CSS/XPath hints consumed by the trusted safe exploration controller.
+_Avoid_: Arbitrary browser script, Runtime Scenario, repair proposal
+
+**Runtime Exploration**:
+A resumable bounded state-graph traversal that replays safe logical paths against exact V4/V5 revisions in fresh authenticated contexts and records structural, accessibility, and visual evidence without changing Review parity state.
+_Avoid_: Runtime Cycle, exhaustive proof, click-all script
+
+**Runtime Exploration Report**:
+The redacted coverage-and-difference result of one Runtime Exploration, including executed/skipped/blocked controls and per-path evidence; it cannot by itself promote legacy Runtime Parity or authorize repair.
+_Avoid_: Runtime Comparison Report, strict parity proof, root-cause classification
+
 **Runtime Driver**:
 An executor of Runtime Scenarios, whether unattended or visibly user-assisted.
 _Avoid_: AI browser

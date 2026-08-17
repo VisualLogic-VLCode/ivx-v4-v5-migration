@@ -8,7 +8,7 @@ import test from 'node:test';
 
 const projectRoot = path.resolve(import.meta.dirname, '..');
 
-test('packed Workflow contains its locked Playwright runtime without registry fallback', async () => {
+test('packed Workflow contains its locked Playwright and visual runtimes without registry fallback', async () => {
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'ivx-runtime-bundle-'));
   try {
     const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
@@ -27,6 +27,9 @@ test('packed Workflow contains its locked Playwright runtime without registry fa
     assert.equal(status.driver, 'playwright');
     assert.equal(status.driverVersion, '1.62.1');
     assert.equal(typeof status.browserInstalled, 'boolean');
+    assert.equal(typeof runtime.compareVisualArtifacts, 'function');
+    assert.equal(typeof runtime.PlaywrightExplorationDriver, 'function');
+    assert.equal(typeof runtime.AutonomousExplorationRunner, 'function');
   } finally {
     fs.rmSync(temporary, { recursive: true, force: true });
   }

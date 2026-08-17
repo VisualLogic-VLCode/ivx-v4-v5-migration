@@ -158,6 +158,17 @@ export const RUNTIME_ACTION_TYPES = Object.freeze([
 ]);
 export const RUNTIME_LOCATOR_STRATEGIES = Object.freeze(['ROLE', 'LABEL', 'PLACEHOLDER', 'TEXT', 'TEST_ID']);
 export const RUNTIME_OBSERVATION_CAPTURES = Object.freeze(['TEXT', 'VALUE', 'VISIBLE', 'COUNT', 'URL']);
+export const EXPLORATION_PROFILES = Object.freeze(['QUICK', 'STANDARD', 'DEEP']);
+export const EXPLORATION_ENVIRONMENT_MODES = Object.freeze(['EQUIVALENT_ONLY', 'ALLOW_DIAGNOSTIC']);
+export const EXPLORATION_ACTION_TYPES = Object.freeze(['OPEN_PAGE', 'CLICK', 'FILL', 'HOVER', 'FOCUS', 'SCROLL']);
+export const EXPLORATION_LOCATOR_STRATEGIES = Object.freeze([...RUNTIME_LOCATOR_STRATEGIES, 'CSS', 'XPATH']);
+export const EXPLORATION_REPORT_STATUSES = Object.freeze([
+  'EXPLORATION_PARITY_PASSED',
+  'PARTIAL_PARITY_PASSED',
+  'MISMATCH_DETECTED',
+  'INCONCLUSIVE',
+  'INTERRUPTED',
+]);
 const PREREQUISITE_STATES = new Set(['SATISFIED', 'MISSING', 'UNAVAILABLE', 'UNKNOWN']);
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
@@ -166,6 +177,8 @@ const REVIEW_ID_PATTERN = /^rev_[A-Za-z0-9_]+$/;
 const REFRESH_ID_PATTERN = /^rfr_[A-Za-z0-9_]+$/;
 const SECRET_KEY = /^(?:token|accesstoken|refreshtoken|bearertoken|cookie|authorization|password|secret|clientsecret|secretkey|privatekey|certificatepassword|apikey|accesskey)$/i;
 const SECRET_TARGET = /(?:password|passwd|token|cookie|authorization|secret|api[-_ ]?key|密码|验证码)/iu;
+const EXPLORATION_RISKY_ROUTE = /(?:^|[\/_-])(?:delete|remove|destroy|logout|signout|submit|confirm|pay|purchase|send|publish|deploy|删除|移除|退出|提交|确认|支付|发送|发布)(?:[\/_-]|$)/iu;
+const EXPLORATION_FILTER_TARGET = /(?:search|filter|query|find|搜索|筛选|查询|查找)/iu;
 
 function fail(message, details) {
   invariant(false, 'SCHEMA_V2_INVALID', message, details);
@@ -524,6 +537,214 @@ export function validateRuntimeScenario(document) {
     }
     if (document.networkPolicy.unsafeRequests !== 'BLOCK') fail('READ_ONLY scenarios must block unsafe network requests');
   }
+  return document;
+}
+
+function validateExplorationLimits(limits, path) {
+  exactKeys(limits,
+    ['maxStates', 'maxActions', 'maxDepth', 'maxDurationMs', 'maxScreenshots'],
+    ['maxStates', 'maxActions', 'maxDepth', 'maxDurationMs', 'maxScreenshots'],
+    path);
+  integer(limits.maxStates, `${path}.maxStates`, { min: 1, max: 500 });
+  integer(limits.maxActions, `${path}.maxActions`, { min: 1, max: 3000 });
+  integer(limits.maxDepth, `${path}.maxDepth`, { min: 0, max: 16 });
+  integer(limits.maxDurationMs, `${path}.maxDurationMs`, { min: 1000, max: 7_200_000 });
+  integer(limits.maxScreenshots, `${path}.maxScreenshots`, { min: 2, max: 1000 });
+  if (limits.maxActions < limits.maxStates - 1) fail(`${path}.maxActions must allow at least one action for every non-root state`);
+  if (limits.maxScreenshots < Math.min(limits.maxStates * 2, 1000)) fail(`${path}.maxScreenshots must allow a V4 and V5 screenshot for every state`);
+  return limits;
+}
+
+function validateExplorationSubject(subject, path) {
+  exactKeys(subject, ['nid', 'workId'], ['nid', 'workId'], path);
+  integer(subject.nid, `${path}.nid`, { min: 1 });
+  string(subject.workId, `${path}.workId`, { max: 256 });
+}
+
+export function validateRuntimeExplorationAuthorization(document) {
+  schemaHeader(document, 'runtime-exploration-authorization');
+  exactKeys(document,
+    ['schemaVersion', 'kind', 'authorizationId', 'reviewId', 'jobId', 'jobManifestSha256', 'source', 'target', 'origins', 'scope', 'environment', 'environmentMode', 'profile', 'limits', 'confirmation', 'expiresAt', 'createdAt', 'createdBy', 'sensitivity'],
+    ['schemaVersion', 'kind', 'authorizationId', 'reviewId', 'jobId', 'jobManifestSha256', 'source', 'target', 'origins', 'scope', 'environment', 'environmentMode', 'profile', 'limits', 'confirmation', 'expiresAt', 'createdAt', 'createdBy', 'sensitivity'],
+    '$');
+  id(document.authorizationId, '$.authorizationId');
+  reviewId(document.reviewId);
+  jobId(document.jobId);
+  sha256(document.jobManifestSha256, '$.jobManifestSha256');
+  validateExplorationSubject(document.source, '$.source');
+  validateExplorationSubject(document.target, '$.target');
+  exactKeys(document.origins, ['source', 'target'], ['source', 'target'], '$.origins');
+  for (const key of ['source', 'target']) {
+    string(document.origins[key], `$.origins.${key}`, { max: 2048 });
+    let origin;
+    try { origin = new URL(document.origins[key]); } catch { fail(`$.origins.${key} must be an absolute URL origin`); }
+    const loopback = origin && ['localhost', '127.0.0.1', '::1'].includes(origin.hostname);
+    if (!origin || (origin.protocol !== 'https:' && !(origin.protocol === 'http:' && loopback)) || origin.origin !== document.origins[key] || origin.username || origin.password) {
+      fail(`$.origins.${key} must be an HTTPS origin without credentials, except HTTP loopback tests`);
+    }
+  }
+  exactKeys(document.scope,
+    ['jobArtifacts', 'authenticatedSession', 'execution'],
+    ['jobArtifacts', 'authenticatedSession', 'execution'],
+    '$.scope');
+  enumValue(document.scope.jobArtifacts, ['COMPLETE_READ_ONLY'], '$.scope.jobArtifacts');
+  enumValue(document.scope.authenticatedSession, ['DRIVER_USE_ONLY'], '$.scope.authenticatedSession');
+  enumValue(document.scope.execution, ['AUTONOMOUS_READ_ONLY'], '$.scope.execution');
+  exactKeys(document.environment, ['comparisonId', 'status'], ['comparisonId', 'status'], '$.environment');
+  id(document.environment.comparisonId, '$.environment.comparisonId');
+  enumValue(document.environment.status, ENVIRONMENT_GATE_STATUSES, '$.environment.status');
+  enumValue(document.environmentMode, EXPLORATION_ENVIRONMENT_MODES, '$.environmentMode');
+  enumValue(document.profile, EXPLORATION_PROFILES, '$.profile');
+  validateExplorationLimits(document.limits, '$.limits');
+  enumValue(document.confirmation, ['RUN_AUTONOMOUS_READ_ONLY_EXPLORATION'], '$.confirmation');
+  isoDate(document.expiresAt, '$.expiresAt');
+  validateArtifactMetadata(document);
+  if (document.createdBy !== 'USER' || document.sensitivity !== 'PRIVATE') fail('Runtime Exploration Authorization must be private USER evidence');
+  const lifetime = Date.parse(document.expiresAt) - Date.parse(document.createdAt);
+  if (lifetime <= 0 || lifetime > 8 * 60 * 60 * 1000) fail('Runtime Exploration Authorization must expire within 8 hours after creation');
+  return document;
+}
+
+function validateExplorationLocator(target, path) {
+  exactKeys(target, ['strategy', 'value'], ['strategy', 'value', 'role', 'exact'], path);
+  enumValue(target.strategy, EXPLORATION_LOCATOR_STRATEGIES, `${path}.strategy`);
+  string(target.value, `${path}.value`, { max: 1024 });
+  if (target.role !== undefined) string(target.role, `${path}.role`, { max: 128, pattern: ID_PATTERN });
+  if (target.exact !== undefined) boolean(target.exact, `${path}.exact`);
+  if (target.strategy === 'ROLE' && target.role === undefined) fail(`${path}.role is required for ROLE locators`);
+  if (target.strategy !== 'ROLE' && target.role !== undefined) fail(`${path}.role is allowed only for ROLE locators`);
+  if (['CSS', 'XPATH'].includes(target.strategy) && target.exact !== undefined) fail(`${path}.exact is not allowed for CSS/XPATH locators`);
+}
+
+function validateExplorationAction(action, path) {
+  exactKeys(action, ['actionId', 'type'], ['actionId', 'type', 'target', 'input', 'timeoutMs'], path);
+  id(action.actionId, `${path}.actionId`);
+  enumValue(action.type, EXPLORATION_ACTION_TYPES, `${path}.type`);
+  if (action.target !== undefined) validateExplorationLocator(action.target, `${path}.target`);
+  if (action.timeoutMs !== undefined) integer(action.timeoutMs, `${path}.timeoutMs`, { min: 1, max: 120000 });
+  const needsTarget = ['CLICK', 'FILL', 'HOVER', 'FOCUS'].includes(action.type);
+  const needsInput = ['OPEN_PAGE', 'FILL', 'SCROLL'].includes(action.type);
+  if (needsTarget && action.target === undefined) fail(`${path}.target is required for ${action.type}`);
+  if (!needsTarget && action.target !== undefined) fail(`${path}.target is not allowed for ${action.type}`);
+  if (needsInput && action.input === undefined) fail(`${path}.input is required for ${action.type}`);
+  if (!needsInput && action.input !== undefined) fail(`${path}.input is not allowed for ${action.type}`);
+  if (action.type === 'OPEN_PAGE' && (
+    typeof action.input !== 'string'
+    || (action.input !== '$SUBJECT_URL' && !action.input.startsWith('/'))
+  )) fail(`${path}.input must be $SUBJECT_URL or a same-origin absolute path for OPEN_PAGE`);
+  if (action.type === 'OPEN_PAGE' && action.input !== '$SUBJECT_URL' && EXPLORATION_RISKY_ROUTE.test(action.input)) fail(`${path}.input is not a proven read-only route`);
+  if (action.type === 'CLICK' && !(action.target.strategy === 'ROLE' && action.target.role === 'tab')) fail(`${path} Agent-authored CLICK is limited to semantic tabs; other clicks must be discovered by the trusted controller`);
+  if (action.type === 'FILL') {
+    if (typeof action.input !== 'string' || action.input.length > 512) fail(`${path}.input must be a string no longer than 512 characters for FILL`);
+    if (SECRET_TARGET.test(`${action.target.value} ${action.target.role || ''}`)) fail(`${path} cannot target an authentication or secret field`);
+    if (!EXPLORATION_FILTER_TARGET.test(`${action.target.value} ${action.target.role || ''}`)) fail(`${path} FILL must identify a search, filter, query, or find control`);
+  }
+  if (action.type === 'SCROLL') integer(action.input, `${path}.input`, { min: 1, max: 10000 });
+}
+
+export function validateRuntimeExplorationPlan(document) {
+  schemaHeader(document, 'runtime-exploration-plan');
+  exactKeys(document,
+    ['schemaVersion', 'kind', 'explorationId', 'reviewId', 'jobId', 'profile', 'startPath', 'strategy', 'limits', 'coverageGoal', 'seedPaths', 'knowledgeRuleIds', 'createdAt', 'createdBy', 'sensitivity'],
+    ['schemaVersion', 'kind', 'explorationId', 'reviewId', 'jobId', 'profile', 'startPath', 'strategy', 'limits', 'coverageGoal', 'seedPaths', 'knowledgeRuleIds', 'createdAt', 'createdBy', 'sensitivity'],
+    '$');
+  id(document.explorationId, '$.explorationId');
+  reviewId(document.reviewId);
+  jobId(document.jobId);
+  enumValue(document.profile, EXPLORATION_PROFILES, '$.profile');
+  if (typeof document.startPath !== 'string' || (document.startPath !== '$SUBJECT_URL' && !document.startPath.startsWith('/')) || document.startPath.length > 2048) {
+    fail('$.startPath must be $SUBJECT_URL or a same-origin absolute path');
+  }
+  enumValue(document.strategy, ['SAFE_BFS'], '$.strategy');
+  validateExplorationLimits(document.limits, '$.limits');
+  exactKeys(document.coverageGoal,
+    ['minStates', 'minExecutedControls', 'requireVisual'],
+    ['minStates', 'minExecutedControls', 'requireVisual'],
+    '$.coverageGoal');
+  integer(document.coverageGoal.minStates, '$.coverageGoal.minStates', { min: 1, max: document.limits.maxStates });
+  integer(document.coverageGoal.minExecutedControls, '$.coverageGoal.minExecutedControls', { min: 0, max: document.limits.maxActions });
+  boolean(document.coverageGoal.requireVisual, '$.coverageGoal.requireVisual');
+  const seedPaths = array(document.seedPaths, '$.seedPaths', { max: 20 });
+  const pathIds = new Set();
+  seedPaths.forEach((seed, seedIndex) => {
+    const path = `$.seedPaths[${seedIndex}]`;
+    exactKeys(seed, ['pathId', 'name', 'actions'], ['pathId', 'name', 'actions'], path);
+    id(seed.pathId, `${path}.pathId`);
+    if (pathIds.has(seed.pathId)) fail('$.seedPaths must not contain duplicate pathId values');
+    pathIds.add(seed.pathId);
+    string(seed.name, `${path}.name`, { max: 256 });
+    const actions = array(seed.actions, `${path}.actions`, { max: 50 });
+    const actionIds = new Set();
+    actions.forEach((action, actionIndex) => {
+      validateExplorationAction(action, `${path}.actions[${actionIndex}]`);
+      if (actionIds.has(action.actionId)) fail(`${path}.actions must not contain duplicate actionId values`);
+      actionIds.add(action.actionId);
+    });
+    if (actions.length > document.limits.maxDepth) fail(`${path}.actions exceeds the exploration maxDepth`);
+  });
+  uniqueStrings(document.knowledgeRuleIds, '$.knowledgeRuleIds', { max: 200 });
+  validateArtifactMetadata(document);
+  if (document.createdBy !== 'AGENT' || document.sensitivity !== 'REDACTED') fail('Runtime Exploration Plan must be a redacted AGENT artifact');
+  return document;
+}
+
+export function validateRuntimeExplorationReport(document) {
+  schemaHeader(document, 'runtime-exploration-report');
+  exactKeys(document,
+    ['schemaVersion', 'kind', 'explorationId', 'reviewId', 'jobId', 'authorizationId', 'planSha256', 'jobManifestSha256', 'status', 'environment', 'coverage', 'pathResults', 'stopReason', 'claims', 'startedAt', 'completedAt', 'createdAt', 'createdBy', 'sensitivity'],
+    ['schemaVersion', 'kind', 'explorationId', 'reviewId', 'jobId', 'authorizationId', 'planSha256', 'jobManifestSha256', 'status', 'environment', 'coverage', 'pathResults', 'stopReason', 'claims', 'startedAt', 'completedAt', 'createdAt', 'createdBy', 'sensitivity'],
+    '$');
+  id(document.explorationId, '$.explorationId');
+  reviewId(document.reviewId);
+  jobId(document.jobId);
+  id(document.authorizationId, '$.authorizationId');
+  sha256(document.planSha256, '$.planSha256');
+  sha256(document.jobManifestSha256, '$.jobManifestSha256');
+  enumValue(document.status, EXPLORATION_REPORT_STATUSES, '$.status');
+  exactKeys(document.environment, ['comparisonId', 'status', 'mode'], ['comparisonId', 'status', 'mode'], '$.environment');
+  id(document.environment.comparisonId, '$.environment.comparisonId');
+  enumValue(document.environment.status, ENVIRONMENT_GATE_STATUSES, '$.environment.status');
+  enumValue(document.environment.mode, EXPLORATION_ENVIRONMENT_MODES, '$.environment.mode');
+  exactKeys(document.coverage,
+    ['states', 'paths', 'discoveredControls', 'eligibleControls', 'executedControls', 'skippedControls', 'blockedActions', 'visualCheckpoints', 'mismatches', 'goalSatisfied', 'queueExhausted', 'budgetExhausted'],
+    ['states', 'paths', 'discoveredControls', 'eligibleControls', 'executedControls', 'skippedControls', 'blockedActions', 'visualCheckpoints', 'mismatches', 'goalSatisfied', 'queueExhausted', 'budgetExhausted'],
+    '$.coverage');
+  for (const key of ['states', 'paths', 'discoveredControls', 'eligibleControls', 'executedControls', 'skippedControls', 'blockedActions', 'visualCheckpoints', 'mismatches']) {
+    integer(document.coverage[key], `$.coverage.${key}`, { min: 0, max: 100000 });
+  }
+  for (const key of ['goalSatisfied', 'queueExhausted', 'budgetExhausted']) boolean(document.coverage[key], `$.coverage.${key}`);
+  const pathResults = array(document.pathResults, '$.pathResults', { max: 500 });
+  pathResults.forEach((entry, index) => {
+    const path = `$.pathResults[${index}]`;
+    exactKeys(entry,
+      ['pathId', 'depth', 'status', 'sourceFingerprint', 'targetFingerprint', 'visualStatus', 'evidenceRef'],
+      ['pathId', 'depth', 'status', 'sourceFingerprint', 'targetFingerprint', 'visualStatus', 'evidenceRef'],
+      path);
+    id(entry.pathId, `${path}.pathId`);
+    integer(entry.depth, `${path}.depth`, { min: 0, max: 16 });
+    enumValue(entry.status, ['MATCHED', 'DIVERGED', 'BLOCKED', 'INCONCLUSIVE'], `${path}.status`);
+    nullableSha256(entry.sourceFingerprint, `${path}.sourceFingerprint`);
+    nullableSha256(entry.targetFingerprint, `${path}.targetFingerprint`);
+    enumValue(entry.visualStatus, ['MATCHED', 'DIFFERENT', 'INCONCLUSIVE'], `${path}.visualStatus`);
+    safeArtifactPath(entry.evidenceRef, `${path}.evidenceRef`);
+  });
+  nullableString(document.stopReason, '$.stopReason', { max: 1024 });
+  exactKeys(document.claims,
+    ['parityClaimed', 'strictParityClaimed', 'converterAttributionAllowed', 'automaticRepairAllowed', 'targetRepairAttempted', 'platformWriteAttempted'],
+    ['parityClaimed', 'strictParityClaimed', 'converterAttributionAllowed', 'automaticRepairAllowed', 'targetRepairAttempted', 'platformWriteAttempted'],
+    '$.claims');
+  for (const key of Object.keys(document.claims)) boolean(document.claims[key], `$.claims.${key}`);
+  if (document.claims.targetRepairAttempted || document.claims.platformWriteAttempted) fail('Runtime Exploration Report cannot record repair or platform writes');
+  if (document.status !== 'EXPLORATION_PARITY_PASSED' && (document.claims.parityClaimed || document.claims.strictParityClaimed)) fail('Only EXPLORATION_PARITY_PASSED may claim parity');
+  if (document.environment.mode === 'ALLOW_DIAGNOSTIC' && (document.claims.parityClaimed || document.claims.converterAttributionAllowed || document.claims.automaticRepairAllowed)) {
+    fail('Diagnostic environment exploration cannot claim parity, Converter attribution, or automatic repair');
+  }
+  isoDate(document.startedAt, '$.startedAt');
+  isoDate(document.completedAt, '$.completedAt');
+  validateArtifactMetadata(document);
+  if (Date.parse(document.completedAt) < Date.parse(document.startedAt)) fail('completedAt must not precede startedAt');
+  if (document.createdAt !== document.completedAt) fail('Runtime Exploration Report createdAt must equal completedAt');
+  if (document.createdBy !== 'CLI' || document.sensitivity !== 'REDACTED') fail('Runtime Exploration Report must be a redacted CLI artifact');
   return document;
 }
 
@@ -1414,6 +1635,9 @@ export const SCHEMA_V2_VALIDATORS = Object.freeze({
   'runtime-scenario': validateRuntimeScenario,
   'behavior-trace': validateBehaviorTrace,
   'runtime-comparison': validateRuntimeComparison,
+  'runtime-exploration-authorization': validateRuntimeExplorationAuthorization,
+  'runtime-exploration-plan': validateRuntimeExplorationPlan,
+  'runtime-exploration-report': validateRuntimeExplorationReport,
   'environment-manifest': validateEnvironmentManifest,
   'environment-comparison': validateEnvironmentComparison,
   'environment-risk-acceptance': validateEnvironmentRiskAcceptance,

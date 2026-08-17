@@ -190,6 +190,22 @@ ivx-migrate review runtime-run-platform \
   --environment-id <comparisonId>
 ```
 
+Agent protocol 8 的自主无副作用探索使用另一条独立证据链。用户确认一次精确范围后，Agent 可读取完整选定 Job、生成计划并自主遍历，不逐动作询问；Token/Cookie 始终只由驱动使用：
+
+```bash
+ivx-migrate review exploration-authorize-platform \
+  --review <reviewId> \
+  --environment-id <comparisonId> \
+  --profile STANDARD \
+  --confirm RUN_AUTONOMOUS_READ_ONLY_EXPLORATION
+
+ivx-migrate review exploration-context --review <reviewId> --authorization <authorizationId>
+ivx-migrate review exploration-prepare --review <reviewId> --authorization <authorizationId> --file <plan.json>
+ivx-migrate review exploration-run-platform --review <reviewId> --exploration <explorationId>
+```
+
+中断后只可对同一个 `<explorationId>` 使用 `exploration-resume-platform`。动态报告必须同时说明覆盖目标、实际状态/路径/控件、被跳过或门禁阻止的操作、截图/像素差异以及是否耗尽预算；它不会修改 Review parity、应用 Patch 或更新平台案例。
+
 另存成功后平台可能只推进源案例的 `workId`。`create-platform` 会在创建 Review 前读取当前完整源 JSON，并与 Job 中不可变的转换输入做规范化摘要比较；内容完全相同时，自动把 Review 固定到新 revision 并留下私有审计记录。对于 Workflow 0.5.1 已创建但尚未产生环境证据的 Review，首次 `environment-check` 会执行相同协调。若内容确实变化，则返回 `REVIEW_SOURCE_CONTENT_CHANGED` 并保留已有 V5；不要重新迁移或再次 Save As。已有环境或运行时证据后不会自动改写 source baseline。
 
 Workflow 会先对 V4/V5 的配置、设置、域名、路由和绑定做脱敏环境比较。`ENVIRONMENT_EQUIVALENT` 或 `NORMALIZED_EQUIVALENT` 可进入正常浏览器对照；需用户绑定或环境阻塞时默认停止，也不会把差异归因给 Converter。`/config/name` 是已确认不进入平台运行时的保存配置预设名称，因此明确按 `IGNORE_FOR_PARITY` 处理；其他未知字段仍默认阻塞。预览 URL 来自平台当前元数据并与源/目标 `workId` 复核，不需要用户手填。

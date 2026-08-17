@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.ivx.local/migration/v2/runtime-exploration-authorization.schema.json",
+  "title": "iVX Autonomous Read-only Runtime Exploration Authorization v2",
+  "type": "object",
+  "required": ["schemaVersion", "kind", "authorizationId", "reviewId", "jobId", "jobManifestSha256", "source", "target", "origins", "scope", "environment", "environmentMode", "profile", "limits", "confirmation", "expiresAt", "createdAt", "createdBy", "sensitivity"],
+  "properties": {
+    "schemaVersion": { "const": 2 },
+    "kind": { "const": "runtime-exploration-authorization" },
+    "authorizationId": { "$ref": "common.schema.json#/$defs/id" },
+    "reviewId": { "$ref": "common.schema.json#/$defs/reviewId" },
+    "jobId": { "$ref": "common.schema.json#/$defs/jobId" },
+    "jobManifestSha256": { "$ref": "common.schema.json#/$defs/sha256" },
+    "source": { "$ref": "#/$defs/subject" },
+    "target": { "$ref": "#/$defs/subject" },
+    "origins": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "target"],
+      "properties": {
+        "source": { "type": "string", "format": "uri", "maxLength": 2048 },
+        "target": { "type": "string", "format": "uri", "maxLength": 2048 }
+      }
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["jobArtifacts", "authenticatedSession", "execution"],
+      "properties": {
+        "jobArtifacts": { "const": "COMPLETE_READ_ONLY" },
+        "authenticatedSession": { "const": "DRIVER_USE_ONLY" },
+        "execution": { "const": "AUTONOMOUS_READ_ONLY" }
+      }
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["comparisonId", "status"],
+      "properties": {
+        "comparisonId": { "$ref": "common.schema.json#/$defs/id" },
+        "status": { "enum": ["ENVIRONMENT_EQUIVALENT", "NORMALIZED_EQUIVALENT", "REQUIRES_USER_BINDING", "BLOCKED_ENVIRONMENT"] }
+      }
+    },
+    "environmentMode": { "enum": ["EQUIVALENT_ONLY", "ALLOW_DIAGNOSTIC"] },
+    "profile": { "enum": ["QUICK", "STANDARD", "DEEP"] },
+    "limits": { "$ref": "#/$defs/limits" },
+    "confirmation": { "const": "RUN_AUTONOMOUS_READ_ONLY_EXPLORATION" },
+    "expiresAt": { "$ref": "common.schema.json#/$defs/dateTime" },
+    "createdAt": { "$ref": "common.schema.json#/$defs/dateTime" },
+    "createdBy": { "const": "USER" },
+    "sensitivity": { "const": "PRIVATE" }
+  },
+  "$defs": {
+    "subject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["nid", "workId"],
+      "properties": {
+        "nid": { "type": "integer", "minimum": 1 },
+        "workId": { "type": "string", "minLength": 1, "maxLength": 256 }
+      }
+    },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["maxStates", "maxActions", "maxDepth", "maxDurationMs", "maxScreenshots"],
+      "properties": {
+        "maxStates": { "type": "integer", "minimum": 1, "maximum": 500 },
+        "maxActions": { "type": "integer", "minimum": 1, "maximum": 3000 },
+        "maxDepth": { "type": "integer", "minimum": 0, "maximum": 16 },
+        "maxDurationMs": { "type": "integer", "minimum": 1000, "maximum": 7200000 },
+        "maxScreenshots": { "type": "integer", "minimum": 2, "maximum": 1000 }
+      }
+    }
+  },
+  "additionalProperties": false
+}
