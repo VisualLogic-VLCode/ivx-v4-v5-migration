@@ -8,6 +8,7 @@ import {
   IvxPlatformAdapter,
   mergeSaveAsConfig,
   normalizePlatformBaseUrl,
+  workRoutingMatches,
 } from '../src/platform/http-adapter.js';
 import { encodePlatformWork } from '../src/platform/work-codec.js';
 
@@ -148,6 +149,53 @@ test('Save As domain routing keeps default domains and canonicalizes target root
     preRoot: true,
   });
   assert.throws(() => buildSaveAsDomainRouting({}, {}, { path: '/play/target' }), { code: 'PLATFORM_RESPONSE_INVALID' });
+});
+
+test('routing read-back compares platform default omissions and root path spellings semantically', () => {
+  assert.equal(workRoutingMatches({
+    domain: 'source.example.test',
+    path: '/play/target',
+    previewDomain: 'source-preview.example.test',
+    previewPath: '/play/target-preview',
+    customDomain: true,
+    pubRoot: false,
+    preRoot: false,
+  }, {}, {
+    domain: 'source.example.test',
+    path: '/play/target',
+    previewDomain: 'source-preview.example.test',
+    previewPath: '/play/target-preview',
+    customDomain: true,
+  }), true);
+
+  assert.equal(workRoutingMatches({
+    domain: '',
+    path: '/',
+    previewDomain: '',
+    previewPath: '/',
+    customDomain: false,
+    pubRoot: true,
+    preRoot: true,
+  }, {}, {
+    path: '',
+    previewPath: '',
+  }), true);
+
+  assert.equal(workRoutingMatches({
+    domain: 'source.example.test',
+    path: '/play/target',
+    previewDomain: 'source-preview.example.test',
+    previewPath: '/play/target-preview',
+    customDomain: true,
+    pubRoot: false,
+    preRoot: false,
+  }, {}, {
+    domain: 'different.example.test',
+    path: '/play/target',
+    previewDomain: 'source-preview.example.test',
+    previewPath: '/play/target-preview',
+    customDomain: true,
+  }), false);
 });
 
 test('routing modify preserves an unknown write outcome when immediate read-back is unavailable', async () => {

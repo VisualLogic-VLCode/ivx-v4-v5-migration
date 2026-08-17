@@ -6,7 +6,7 @@ function response(value) {
   return new Response(JSON.stringify(value), { status: 200, headers: { 'Content-Type': 'application/json' } });
 }
 
-function adapterFixture({ loseModifyResponse = false, changeConfigDuringRead = false } = {}) {
+function adapterFixture({ loseModifyResponse = false, changeConfigDuringRead = false, omitFalseRootFlags = false, forceDomainDrift = false } = {}) {
   const calls = [];
   const state = {
     info: { nid: 200, workId: 'target-work-1', domain: 'old.example.test', path: '/play/old', previewDomain: 'old-preview.example.test', previewPath: '/play/old-preview' },
@@ -32,10 +32,12 @@ function adapterFixture({ loseModifyResponse = false, changeConfigDuringRead = f
       if (pathname === '/ih5/editor/work/modify') {
         for (const key of ['domain', 'path', 'previewDomain', 'previewPath', 'customDomain', 'pubRoot', 'preRoot']) {
           if (Object.hasOwn(body, key)) {
-            state.settings[key] = body[key];
+            if (omitFalseRootFlags && ['pubRoot', 'preRoot'].includes(key) && body[key] === false) delete state.settings[key];
+            else state.settings[key] = body[key];
             if (!['customDomain', 'pubRoot', 'preRoot'].includes(key)) state.info[key] = body[key];
           }
         }
+        if (forceDomainDrift) state.settings.domain = 'platform-normalized-to-wrong-domain.example.test';
         if (loseModifyResponse) throw new Error('response lost after routing write');
         return response({});
       }
@@ -91,6 +93,51 @@ test('adapter routing writes are narrow, revision-checked, and verified by read-
     expectedWorkId: 'target-work-1',
     routing: { settings: '{}' },
   }), { code: 'PLATFORM_INPUT_INVALID' });
+});
+
+test('adapter accepts omitted false root flags', async () => {
+  const { adapter, calls, state } = adapterFixture({ omitFalseRootFlags: true });
+  const result = await adapter.modifyWorkRouting({
+    nid: 200,
+    expectedWorkId: 'target-work-1',
+    routing: {
+      domain: 'new.example.test',
+      path: '/play/new',
+      previewDomain: 'new-preview.example.test',
+      previewPath: '/play/new-preview',
+      customDomain: true,
+      pubRoot: false,
+      preRoot: false,
+    },
+  });
+  assert.equal(result.confirmation, 'SUCCEEDED');
+  assert.equal(Object.hasOwn(result.settings, 'pubRoot'), false);
+  assert.equal(Object.hasOwn(result.settings, 'preRoot'), false);
+  assert.equal(calls.filter((call) => call.pathname.endsWith('/modify')).length, 1);
+  assert.equal(state.settings.domain, 'new.example.test');
+});
+
+test('adapter reports actual routing drift by field name only', async () => {
+  const { adapter } = adapterFixture({ forceDomainDrift: true });
+  await assert.rejects(adapter.modifyWorkRouting({
+    nid: 200,
+    expectedWorkId: 'target-work-1',
+    routing: {
+      domain: 'expected.example.test',
+      path: '/play/new',
+      previewDomain: 'new-preview.example.test',
+      previewPath: '/play/new-preview',
+      customDomain: true,
+      pubRoot: false,
+      preRoot: false,
+    },
+  }), (error) => {
+    assert.equal(error.code, 'TARGET_ENVIRONMENT_VERIFICATION_FAILED');
+    assert.deepEqual(error.details, { mismatchedFields: ['domain'] });
+    assert.equal(JSON.stringify(error).includes('expected.example.test'), false);
+    assert.equal(JSON.stringify(error).includes('platform-normalized-to-wrong-domain.example.test'), false);
+    return true;
+  });
 });
 
 test('unknown routing-write responses reconcile by read-back and are not replayed', async () => {

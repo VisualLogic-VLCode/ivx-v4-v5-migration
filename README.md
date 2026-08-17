@@ -4,7 +4,7 @@ This project is the distributable local workflow used by Codex or Claude Code. I
 
 ## Current status
 
-The current release candidate is Workflow `0.7.2` with Agent protocol 8, Converter `1.2.5`, and Knowledge Runtime `0.1.5`. Its capabilities are:
+The current release candidate is Workflow `0.7.3` with Agent protocol 8, Converter `1.2.5`, and Knowledge Runtime `0.1.5`. Its capabilities are:
 
 - private global Job storage with atomic state writes and per-Job locks;
 - metadata + physical work version classification;
@@ -93,7 +93,7 @@ The commands below document what the Agent executes and remain available as a ma
 
 ```bash
 npm install --global \
-  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.7.2/ivx-v4-v5-migration-0.7.2.tgz
+  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.7.3/ivx-v4-v5-migration-0.7.3.tgz
 ```
 
 ```bash

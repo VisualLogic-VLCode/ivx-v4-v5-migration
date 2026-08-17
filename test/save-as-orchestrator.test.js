@@ -237,6 +237,38 @@ test('unknown domain-routing response resumes by read-back without replay', asyn
   }
 });
 
+test('known-failed domain routing resumes from semantically equivalent read-back without replay', async () => {
+  const context = fixture();
+  context.adapter.sourceSettings = { domain: 'source.example.test', previewDomain: 'preview.example.test', customDomain: true };
+  context.adapter.failRoutingOnceKnown = true;
+  try {
+    await assert.rejects(context.orchestrator.run(context.job.jobId), { code: 'PLATFORM_RESPONSE_ERROR' });
+    assert.equal(context.jobs.load(context.job.jobId).status, 'SAVE_INCOMPLETE');
+    assert.equal(context.adapter.calls.create, 1);
+    assert.equal(context.adapter.calls.routing, 1);
+    const journalFile = context.orchestrator.journalFile(context.job.jobId);
+    const journal = JSON.parse(fs.readFileSync(journalFile, 'utf8'));
+    context.adapter.targetSettings = {
+      domain: journal.domainRouting.expected.domain,
+      path: journal.domainRouting.expected.path,
+      previewDomain: journal.domainRouting.expected.previewDomain,
+      previewPath: journal.domainRouting.expected.previewPath,
+      customDomain: journal.domainRouting.expected.customDomain,
+    };
+
+    const result = await context.orchestrator.run(context.job.jobId);
+    assert.equal(result.status, 'SUCCEEDED');
+    assert.equal(context.adapter.calls.create, 1);
+    assert.equal(context.adapter.calls.routing, 1);
+    assert.equal(context.adapter.calls.save, 1);
+    const recovered = JSON.parse(fs.readFileSync(journalFile, 'utf8'));
+    assert.equal(recovered.domainRouting.status, 'CONFIRMED');
+    assert.equal(recovered.domainRouting.confirmation, 'ALREADY_PRESENT');
+  } finally {
+    fs.rmSync(context.temporary, { recursive: true, force: true });
+  }
+});
+
 test('unknown unapplied domain routing is never replayed automatically', async () => {
   const context = fixture();
   context.adapter.sourceSettings = { domain: 'source.example.test', previewDomain: 'preview.example.test', customDomain: true };

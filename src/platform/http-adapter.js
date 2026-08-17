@@ -176,11 +176,37 @@ function normalizeWorkRouting(routing) {
   return structuredClone(routing);
 }
 
+function observedWorkRoutingValue(key, info, settings) {
+  const routing = extractWorkRouting(info, settings);
+  if (key === 'domain' || key === 'previewDomain') {
+    const value = Object.hasOwn(routing, key) ? routing[key] : '';
+    invariant(typeof value === 'string', 'PLATFORM_RESPONSE_INVALID', `Target settings ${key} must be a string`);
+    return value;
+  }
+  if (key === 'customDomain') {
+    const value = Object.hasOwn(routing, key) ? routing[key] : false;
+    invariant(typeof value === 'boolean', 'PLATFORM_RESPONSE_INVALID', 'Target settings customDomain must be a boolean');
+    return value;
+  }
+
+  const pathKey = key === 'path' || key === 'pubRoot' ? 'path' : 'previewPath';
+  const rootKey = pathKey === 'path' ? 'pubRoot' : 'preRoot';
+  const path = routing[pathKey];
+  invariant(typeof path === 'string', 'PLATFORM_RESPONSE_INVALID', `Target settings ${pathKey} must be a string`);
+  const root = Object.hasOwn(routing, rootKey) ? routing[rootKey] : path === '' || path === '/';
+  invariant(typeof root === 'boolean', 'PLATFORM_RESPONSE_INVALID', `Target settings ${rootKey} must be a boolean`);
+  return key === rootKey ? root : (root ? '/' : path);
+}
+
+function workRoutingMismatchedFields(expected, info, settings) {
+  const normalizedExpected = normalizeWorkRouting(expected);
+  return Object.entries(normalizedExpected)
+    .filter(([key, value]) => observedWorkRoutingValue(key, info, settings) !== value)
+    .map(([key]) => key);
+}
+
 export function workRoutingMatches(expected, info, settings) {
-  return Object.entries(expected).every(([key, value]) => {
-    if (Object.hasOwn(settings || {}, key)) return settings[key] === value;
-    return info?.[key] === value;
-  });
+  return workRoutingMismatchedFields(expected, info, settings).length === 0;
 }
 
 function stablePlatformValue(value) {
@@ -413,7 +439,8 @@ export class IvxPlatformAdapter {
       throw error;
     }
     const observed = await readBack();
-    invariant(workRoutingMatches(normalizedRouting, observed.workInfo, observed.settings), 'TARGET_ENVIRONMENT_VERIFICATION_FAILED', 'Target routing read-back does not match the requested binding');
+    const mismatchedFields = workRoutingMismatchedFields(normalizedRouting, observed.workInfo, observed.settings);
+    invariant(mismatchedFields.length === 0, 'TARGET_ENVIRONMENT_VERIFICATION_FAILED', 'Target routing read-back does not match the requested binding', { mismatchedFields });
     return { ...observed, confirmation: 'SUCCEEDED' };
   }
 

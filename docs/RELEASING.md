@@ -44,11 +44,11 @@ The rules intentionally permit ordinary fast-forward source pushes and the signe
 
 The recommended first installation is Agent-first. The user gives their local Codex or Claude Code the copyable [general-user starter prompt](templates/AI-AGENT-STARTER-PROMPT.md), which points to the immutable tagged [bootstrap procedure](AI-AGENT-BOOTSTRAP.md). The Agent executes every command, while the user only types the Token into the visible native macOS secure-input dialog opened by the Launcher. After setup, the installed managed Skill becomes authoritative. The separate [acceptance prompt](templates/AI-AGENT-ACCEPTANCE-PROMPT.md) is maintainer QA and must not be presented as the ordinary onboarding path.
 
-The bootstrap procedure uses the stable `0.7.2` Launcher asset. Workflow `0.3.4` and later Releases are immutable at the repository level:
+The bootstrap procedure uses the stable `0.7.3` Launcher asset. Workflow `0.3.4` and later Releases are immutable at the repository level:
 
 ```bash
 npm install --global \
-  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.7.2/ivx-v4-v5-migration-0.7.2.tgz
+  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.7.3/ivx-v4-v5-migration-0.7.3.tgz
 ivx-migrate setup --prompt-token
 ```
 
@@ -101,6 +101,8 @@ Workflow `0.7.0` raises Agent protocol to 8 for autonomous read-only exploration
 Workflow `0.7.1` keeps Agent protocol 8 and runtime behavior unchanged. It corrects the bundled current-stable, bootstrap, and external-acceptance documentation after isolated signed-channel installation confirmed that the independently maintained Converter stable had advanced to `1.2.5`. The Workflow compatibility range remains `>=1.2.0 <2.0.0`.
 
 Workflow `0.7.2` keeps Agent protocol 8 and adds a resumable Save As domain checkpoint. New V5 targets inherit only the V4 Domain Binding (`domain`, `customDomain`, `previewDomain`) while retaining their own platform-generated Target Route Allocation (`path`, `previewPath`, `pubRoot`, `preRoot`). Ordinary, Additional V5, and diagnostic copies share the same checkpoint. Exact read-back is required; an unknown or mismatched modify outcome is reconciled without replay, and already-in-flight legacy final-save journals retain their previous behavior.
+
+Workflow `0.7.3` keeps Agent protocol 8 and corrects domain-routing read-back equivalence. Platform-omitted default `false` root flags are inferred from their paired paths, and root path spellings `""` and `"/"` are canonicalized before comparison. Actual domain, preview-domain, non-root path, custom-domain, or contradictory root-state drift still fails closed; known verification failures expose only mismatched field names. An existing incomplete Save As can confirm already-equivalent target state without replaying target creation or the routing write.
 
 If a pre-`0.4.1` managed Workflow cannot download the current Release, install the current immutable Launcher with npm and invoke exactly one recovery command: `ivx-migrate setup --force --launcher-recovery RECOVER_SIGNED_RUNTIME`. Coordinated setup preserves the existing Token path and installs a compatible Workflow/Converter/Knowledge/Agent set; a Workflow-only update can be rejected correctly when the old home does not yet contain Knowledge. Recovery uses the bundled signed-channel client only for setup/update/rollback/Agent synchronization and refuses a bundled version older than the active managed Workflow. It does not read or replace the Token. Normal delegation resumes after the successful setup.
 
