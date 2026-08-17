@@ -228,5 +228,23 @@ test('Agent adapters require the explicit Context policy before using current-us
     assert.match(skill, /minimum Agent-controlled browser operation/);
     assert.match(skill, /another origin/);
     assert.match(skill, /another task or authorization/);
+    assert.match(skill, /non-sensitive capability probe/);
+    assert.match(skill, /generated sentinel/);
+    assert.match(skill, /set\/read\/remove/);
+    assert.match(skill, /follow-up non-sensitive DOM\/accessibility read/);
+    assert.match(skill, /do not consume the real credential/);
+  }
+});
+
+test('Agent adapters keep readiness and evidence timeouts under Agent control', () => {
+  for (const relative of ['agents/codex/SKILL.md', 'agents/claude/SKILL.md']) {
+    const skill = fs.readFileSync(path.resolve(import.meta.dirname, '..', relative), 'utf8');
+    assert.match(skill, /default 300-second business-root readiness budget for each V4\/V5 subject/);
+    assert.match(skill, /poll about every 10 seconds/);
+    assert.match(skill, /platform loading shell is not readiness/);
+    assert.match(skill, /independent aggregate operation budgets of at least 120 seconds/);
+    assert.match(skill, /retry that stage at most once with an expanded call or alternate non-secret strategy/);
+    assert.match(skill, /TEST_HARNESS/);
+    assert.match(skill, /Workflow (?:does not|neither).*choose(?:s)? budgets/);
   }
 });

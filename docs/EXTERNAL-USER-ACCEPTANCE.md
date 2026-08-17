@@ -4,8 +4,8 @@
 
 本轮公开基线（2026-08-17）：
 
-- 首次引导使用的稳定 Launcher：`0.8.1`
-- 本文发布后签名通道安装的 Workflow：`0.8.1`
+- 首次引导使用的稳定 Launcher：`0.8.2`
+- 本文发布后签名通道安装的 Workflow：`0.8.2`
 - Converter：`1.2.5`
 - Knowledge Runtime：`0.1.6`
 - Agent protocol：`9`
@@ -35,7 +35,7 @@
 维护者让测试用户打开本机 Codex 或 Claude Code，把[外部测试 Agent 启动提示](templates/AI-AGENT-ACCEPTANCE-PROMPT.md)整段交给 Agent，并只替换两个 `nid`。提示中的不可变引导地址必须是：
 
 ```text
-https://raw.githubusercontent.com/VisualLogic-VLCode/ivx-v4-v5-migration/v0.8.1/docs/AI-AGENT-BOOTSTRAP.md
+https://raw.githubusercontent.com/VisualLogic-VLCode/ivx-v4-v5-migration/v0.8.2/docs/AI-AGENT-BOOTSTRAP.md
 ```
 
 测试用户不需要复制任何 `ivx-migrate` 命令。Agent 必须自行检查环境、执行安装、初始化、更新、预检、转换、诊断、验证和结果整理。下列命令仅用于验收者核对 Agent 的动作；应由 Agent 在测试用户本机执行：
@@ -43,7 +43,7 @@ https://raw.githubusercontent.com/VisualLogic-VLCode/ivx-v4-v5-migration/v0.8.1/
 ```bash
 node --version
 npm install --global \
-  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.8.1/ivx-v4-v5-migration-0.8.1.tgz
+  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.8.2/ivx-v4-v5-migration-0.8.2.tgz
 ivx-migrate version
 ```
 
@@ -209,13 +209,14 @@ Agent 可以读取 Job 的 `state.json` 和 `reports/`，但不得读取 Token �
 
 只使用第二阶段已正常返回 `SUCCEEDED` 的 Job 创建 Runtime Review。把实际 Job ID 写进提示，不依赖“刚才那个案例”等聊天记忆：
 
-> 请使用 v4-to-v5-workflow，对迁移 Job `<JOB_ID>` 创建 Runtime Review 并完成 Environment Gate。先展示 Agent Direct Test 的精确只读授权范围，等我确认后，由你直接使用自己的浏览器与测试工具读取完整 Job、编写 JavaScript、使用 CSS/XPath/循环和动态决策，对源 V4 与目标 V5 做充分的无副作用业务对照。Workflow 不得提供浏览器驱动或动作规划器。优先使用本机已授权会话；如果 Context 明确允许，并且我在当前任务中直接输入只用于这两个受权预览页的 Token/Cookie/session，允许你在唯一一次最小浏览器认证调用中临时使用，但不要重复、回显、跨任务复用或写入 Workflow、shell/CLI 参数、环境变量、独立或落盘脚本、文件、截图、报告、证据和证明。发现差异后先提交 Agent 证明并按工作流完成证据分类；只对明确允许的高置信非转换器问题使用初始预算自动修复并复测，不扩大预算，不执行副作用测试。只能按 Agent-attested 范围汇报，不能声称 Workflow 严格 parity。
+> 请使用 v4-to-v5-workflow，对迁移 Job `<JOB_ID>` 创建 Runtime Review 并完成 Environment Gate。先展示 Agent Direct Test 的精确只读授权范围，等我确认后，由你直接使用自己的浏览器与测试工具读取完整 Job、编写 JavaScript、使用 CSS/XPath/循环和动态决策，对源 V4 与目标 V5 做充分的无副作用业务对照。Workflow 不得提供浏览器驱动或动作规划器。V4/V5 每侧默认给予 300 秒业务根就绪时间，约每 10 秒轮询，且 DOM、视觉、控制台/网络取证使用独立长时预算；标题或加载壳层不算业务就绪。优先使用本机已授权会话；如果 Context 明确允许，并且我在当前任务中直接输入只用于这两个受权预览页的 Token/Cookie/session，先用非敏感随机哨兵在同一执行面验证加载前存储能力，成功后才允许你在唯一一次最小浏览器认证调用中临时使用真实值；不要重复、回显、跨任务复用或写入 Workflow、shell/CLI 参数、环境变量、独立或落盘脚本、文件、截图、报告、证据和证明。发现差异后先提交 Agent 证明并按工作流完成证据分类；只对明确允许的高置信非转换器问题使用初始预算自动修复并复测，不扩大预算，不执行副作用测试。只能按 Agent-attested 范围汇报，不能声称 Workflow 严格 parity。
 
 至少核对：
 
 - Review 绑定原 Job 的源/目标 nid、workId、revision 和固定 Workflow/Converter/Knowledge 版本；
 - Environment Gate 通过或明确安全停止，环境差异不会被错误归因给 Converter；
 - Workflow 的 Agent Direct 进程未实例化或提供 Runtime/Exploration Driver；V4/V5 的工具和浏览器操作由 Agent 自己决定；
+- 两侧各自实际执行了最长 300 秒的业务根就绪判断，轮询和 DOM/视觉/日志操作预算没有被工具默认的 30 秒超时替代；加载壳层、标题或 load 事件没有被当作业务就绪；
 - Agent 可读取精确 Job 全部文件并把新证据只写入返回的私有 workspace；若使用用户在当前任务直接提供的临时凭据，仅发生在受权预览页的最小浏览器操作中，认证值没有进入 Workflow、shell/CLI、文件、截图、报告、证据或证明；
 - 证明明确报告业务流、状态、动作、断言、截图、网络观察和所有差异，并保持 `strictParityClaimed:false`、`workflowDriverUsed:false`；
 - `CONVERTER`、`PLATFORM_RUNTIME`、`KNOWLEDGE_GAP`、`AUTHORIZATION`、`UNKNOWN` 不触发自动目标修改；
