@@ -4,7 +4,7 @@ This project is the distributable local workflow used by Codex or Claude Code. I
 
 ## Current status
 
-The current public stable runtime set is Workflow `0.6.2` with Agent protocol 7, Converter `1.2.2`, and Knowledge Runtime `0.1.4`. Its capabilities are:
+The current public stable runtime set is Workflow `0.7.0` with Agent protocol 8, Converter `1.2.2`, and Knowledge Runtime `0.1.5`. Its capabilities are:
 
 - private global Job storage with atomic state writes and per-Job locks;
 - metadata + physical work version classification;
@@ -23,6 +23,7 @@ The current public stable runtime set is Workflow `0.6.2` with Agent protocol 7,
 - a separately authorized diagnostic Save As path that creates an editor-openable V5 copy for any classified issue after independent write hard gates pass, without reporting normal success;
 - independent private Runtime Review Session persistence, one-writer-per-target-revision leases, Human Finding evidence, and external-revision baseline reconciliation;
 - a locked Playwright Runtime Driver with closed declarative scenarios, isolated V4/V5 contexts, private browser authentication state, redacted traces, reviewed normalization, side-effect gates, and report-only parity comparison;
+- explicitly authorized autonomous read-only exploration with immutable Job scope, trusted dynamic `SAFE_BFS`, same-origin/read-only gates, resumable checkpoints, masked screenshots, pixel/structure/accessibility evidence, and coverage-bounded—not strict—parity claims;
 - an exact-scoped, short-lived USER environment-risk acceptance for diagnostic runtime observation without rewriting environment equivalence, Converter attribution, or target-repair authority;
 - Diagnosis v2 with evidence-backed Issue Clusters, policy-computed automatic-repair decisions, independent diagnostic-save eligibility, calibration fixtures, and redacted owner-specific maintainer reports;
 - bounded target repair with private authorization leases, per-cluster `3+2` attempts, per-review `10+5` confirmed revisions, V5-only Patch policy, static regression gates, Saveable Checkpoints, target CAS, unknown-write reconciliation, verified read-back, and affected-scenario retesting;
@@ -92,7 +93,7 @@ The commands below document what the Agent executes and remain available as a ma
 
 ```bash
 npm install --global \
-  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.6.2/ivx-v4-v5-migration-0.6.2.tgz
+  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.7.0/ivx-v4-v5-migration-0.7.0.tgz
 ```
 
 ```bash

@@ -82,3 +82,39 @@ test('maintainer preparation builds, hashes, signs, and plans a GitHub Release w
     fs.rmSync(temporary, { recursive: true, force: true });
   }
 });
+
+test('Workflow release descriptor advertises autonomous exploration under Agent protocol 8', async () => {
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'ivx-workflow-release-'));
+  const packageDir = path.join(temporary, 'workflow');
+  const output = path.join(temporary, 'output');
+  const privateKeyFile = path.join(temporary, 'private.pem');
+  fs.mkdirSync(packageDir);
+  fs.writeFileSync(path.join(packageDir, 'package.json'), JSON.stringify({
+    name: '@test/workflow',
+    version: '0.7.0',
+    type: 'module',
+    files: ['index.js'],
+  }));
+  fs.writeFileSync(path.join(packageDir, 'index.js'), 'export const version = "0.7.0";\n');
+  const { publicKey, privateKey } = crypto.generateKeyPairSync('ed25519');
+  fs.writeFileSync(privateKeyFile, privateKey.export({ type: 'pkcs8', format: 'pem' }), { mode: 0o600 });
+  try {
+    const prepared = prepareRelease({
+      kind: 'workflow',
+      'package-dir': packageDir,
+      output,
+      repo: 'test-owner/test-workflow',
+      'private-key': privateKeyFile,
+      'compatible-converter': '>=1.2.0 <2.0.0',
+    });
+    const verified = await loadReleaseEnvelope(prepared.manifest.file, {
+      publicKeyPem: publicKey.export({ type: 'spki', format: 'pem' }),
+    });
+    const descriptor = verified.payload.versions['0.7.0'];
+    assert.equal(descriptor.agentProtocolVersion, 8);
+    assert.equal(descriptor.compatibleConverter, '>=1.2.0 <2.0.0');
+    assert.equal(descriptor.capabilities.autonomousReadOnlyExploration, true);
+  } finally {
+    fs.rmSync(temporary, { recursive: true, force: true });
+  }
+});

@@ -20,7 +20,7 @@
 
    ```bash
    npm install --global \
-     https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.6.2/ivx-v4-v5-migration-0.6.2.tgz
+     https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.7.0/ivx-v4-v5-migration-0.7.0.tgz
    ```
 
    不要自动使用 `sudo`。如全局安装因权限失败，停止并说明本机 Node/npm 权限问题。已经安装 Launcher 时不要重新安装或降级，先使用它的签名更新通道；只有第 6 步定义的受限恢复条件成立时才能重新安装上述版本。
@@ -41,7 +41,7 @@
    - Workflow、Converter、Knowledge 已激活；
    - Agent 配置 `current=true`。
 6. 签名通道报告更新时，由 Agent 执行 `ivx-migrate update apply`，按命令要求重新启动后重复 `doctor` 和 `update check`。不得从 Git 仓库直接更新。
-   - 若旧 Workflow 的下载器返回 `RUNTIME_DOWNLOAD_FAILED`，Agent 只允许执行一次发布方定义的恢复链：从本引导第 2 步同一不可变 `0.6.2` Release 重新安装 Launcher，然后执行 `ivx-migrate setup --force --launcher-recovery RECOVER_SIGNED_RUNTIME`。协调式 setup 会保留现有 Token 路径并补齐兼容的 Workflow、Converter、Knowledge 和 Agent 配置；不要退化为单独更新 Workflow。无需重新录入或读取 Token。
+   - 若旧 Workflow 的下载器返回 `RUNTIME_DOWNLOAD_FAILED`，Agent 只允许执行一次发布方定义的恢复链：从本引导第 2 步同一不可变 `0.7.0` Release 重新安装 Launcher，然后执行 `ivx-migrate setup --force --launcher-recovery RECOVER_SIGNED_RUNTIME`。协调式 setup 会保留现有 Token 路径并补齐兼容的 Workflow、Converter、Knowledge 和 Agent 配置；不要退化为单独更新 Workflow。无需重新录入或读取 Token。
    - 恢复模式只允许 setup/update/rollback/Agent 同步，并拒绝用较旧 Launcher 覆盖更高的受管 Workflow。恢复后立刻回到普通命令；不得长期附加该参数，也不得改用 Git 或未签名包。
 7. 找到本次 Agent 对应的受管文件并完整读取：
 

@@ -1,6 +1,6 @@
 # V4→V5 工作流：运行时验证、问题诊断与 AI 修复设计
 
-> 状态：阶段 0–10 已全部实现；Workflow `0.6.2`、Converter `1.2.2` 与 Knowledge Runtime `0.1.4` 构成当前公开运行时集合。阶段 10“Additional V5 Creation 与 Existing Target Refresh”已通过本地合同、模拟平台、故障注入和公开分发验收；Existing Target Refresh 的真实平台写入试点仍需单独授权，未以模拟结果替代真实平台结论
+> 状态：阶段 0–10 及自主无副作用探索已全部实现；Workflow `0.7.0`、Converter `1.2.2` 与 Knowledge Runtime `0.1.5` 构成当前公开运行时集合。阶段 10“Additional V5 Creation 与 Existing Target Refresh”已通过本地合同、模拟平台、故障注入和公开分发验收；Existing Target Refresh 的真实平台写入试点仍需单独授权，未以模拟结果替代真实平台结论
 > 初稿：2026-08-12；本次修订：2026-08-14
 > 适用项目：`ivx-v4-v5-migration` 及其独立分发的 Workflow、Agent 适配器和知识运行时
 > 不修改：`tov5parser` 的转换规则；转换器继续由维护者在独立仓库中维护
@@ -862,7 +862,7 @@ Converter 修复后由维护者发布新 Converter；用户更新后可以对原
 
 **本地实现记录（2026-08-13）：**Workflow 已锁定 Playwright 1.62.1，并将 Playwright/Playwright Core 打入签名 Workflow 包；Chromium 由该锁定 CLI 单独安装。Scenario 仅接受封闭动作和语义定位器；V4/V5 使用隔离 Context；原始捕获值只在进程内参与归一化和哈希，不落盘；原生 Playwright trace 因可能包含认证与响应数据而禁用。当前 Runtime Cycle 只能产出 `targetRepairAttempted:false`、`platformWriteAttempted:false` 的报告，不能调用目标修复或平台保存。真实本机 Chromium 的无副作用双服务冒烟已通过；公开案例验收仍归阶段 8。
 
-**自主探索实现记录（2026-08-17，待发布）：**Agent protocol 8 新增独立 Runtime Exploration Authorization/Plan/Report，不改变固定 Runtime Scenario 或 Review `activeCycleId`。一次 USER 授权锁定精确 Job manifest、Review、两端 revision/origin、Environment Comparison/mode、QUICK/STANDARD/DEEP 上限与过期时间；Agent 可读取该 Job 完整树并提交 `SAFE_BFS` 计划，但 Token/browser storage state 仅由驱动消费。可信控制器通过固定 DOM JavaScript 发现同源链接、tab、disclosure 和非 secret filter，支持声明式语义/CSS/XPath seed，在全新 Context 中逐路径重放并 checkpoint；它不执行任意 Agent JavaScript。非安全请求、跨域导航、WebSocket、popup、download、dialog、动作期 storage mutation、revision 漂移或启用写模式会隔离路径。结果联合结构、ARIA、脱敏截图和 pixel diff，必须报告覆盖与预算；即使覆盖达标也只声明 bounded exploration parity，`strictParityClaimed:false`，不提升旧 Review parity、不归因根因、不修复或写平台。
+**自主探索实现记录（2026-08-17，随 Workflow `0.7.0` 发布）：**Agent protocol 8 新增独立 Runtime Exploration Authorization/Plan/Report，不改变固定 Runtime Scenario 或 Review `activeCycleId`。一次 USER 授权锁定精确 Job manifest、Review、两端 revision/origin、Environment Comparison/mode、QUICK/STANDARD/DEEP 上限与过期时间；Agent 可读取该 Job 完整树并提交 `SAFE_BFS` 计划，但 Token/browser storage state 仅由驱动消费。可信控制器通过固定 DOM JavaScript 发现同源链接、tab、disclosure 和非 secret filter，支持声明式语义/CSS/XPath seed，在全新 Context 中逐路径重放并 checkpoint；它不执行任意 Agent JavaScript。非安全请求、跨域导航、WebSocket、popup、download、dialog、动作期 storage mutation、revision 漂移或启用写模式会隔离路径。结果联合结构、ARIA、脱敏截图和 pixel diff，必须报告覆盖与预算；即使覆盖达标也只声明 bounded exploration parity，`strictParityClaimed:false`，不提升旧 Review parity、不归因根因、不修复或写平台。
 
 ### 阶段 6：Diagnosis v2 与维护者报告
 
@@ -961,11 +961,11 @@ Converter 修复后由维护者发布新 Converter；用户更新后可以对原
 
 ## 20. 当前状态与后续维护
 
-代码改造阶段 0–10 已全部实现。Knowledge Runtime `0.1.4`、Workflow `0.6.2` 和兼容的独立 Converter `1.2.2` 均已公开发布；受控真实案例已完成普通另存、环境门禁和无人值守运行时一致性验收。Workflow `0.4.0` 公共全新安装暴露的 GitHub Release 正文下载超时，已由 `0.4.1` 的受校验系统下载路径、`0.4.2` 的显式防降级 Launcher 恢复，以及 `0.4.3` 的协调式 setup 依次修复。`0.4.3` 的全新安装、旧用户恢复、Agent 同步和回滚验收均通过；`0.4.4` 仅重构普通用户入口、授权说明与维护者验收信息架构，不改变运行时行为。
+代码改造阶段 0–10 及自主无副作用探索已全部实现。Knowledge Runtime `0.1.5`、Workflow `0.7.0` 和兼容的独立 Converter `1.2.2` 均已公开发布；受控真实案例已完成普通另存、环境门禁和无人值守运行时一致性验收，自主探索的安全遍历与隔离边界已通过本地真实 Chromium 验收。Workflow `0.4.0` 公共全新安装暴露的 GitHub Release 正文下载超时，已由 `0.4.1` 的受校验系统下载路径、`0.4.2` 的显式防降级 Launcher 恢复，以及 `0.4.3` 的协调式 setup 依次修复。`0.4.3` 的全新安装、旧用户恢复、Agent 同步和回滚验收均通过；`0.4.4` 仅重构普通用户入口、授权说明与维护者验收信息架构，不改变运行时行为。
 
 Workflow `0.5.0` 在此基础上增加 `/config/name` 的明确字段政策、精确范围的环境风险接受、诊断专用运行状态和 Agent 报告边界。Agent protocol 已提升到 6，Knowledge Runtime `0.1.3` 提供对应兼容范围。`0.5.1` 补齐 Workflow 回滚后的 Agent Skill 协调同步；`0.5.2` 增加以完整 V4 输入摘要为证据的 post-Save source revision 协调，并明确禁止通过重复 Save As 处理内容变化。签名 Release、稳定通道、全新安装、协调更新、回滚和既有 Review 恢复共同构成发布验收。
 
-阶段 0–10 的后续工作属于持续维护和扩大真实案例覆盖：继续收集稳定、可回滚的真实场景校准 Diagnosis/Repair 政策；按真实试点数据评估预算；为 Windows 建立原生 Token 文件 ACL 合同。阶段 10 的领域合同、CLI、Agent SOP、协议兼容和模拟平台故障分支已经随签名 Knowledge `0.1.4` 与 Workflow `0.6.0` 按依赖顺序公开发布；`0.6.1` 在不改变协议的前提下补齐旧 Group Job 的 null-gid 谱系兼容，`0.6.2` 继续保持协议 7，并将组件静态校验收窄到权威拥有边，避免把 `props` 用户业务数据误判为组件。Additional V5 与 Existing Target Refresh 的公开安装/更新路径可以使用，但 Existing Target Refresh 的真实平台写入仍应作为单独授权的试点逐步扩大覆盖。任何尚未由真实稳定场景覆盖的能力都必须明确标注为 mock、校准夹具或故障注入结果，不以静态结果替代运行时等价结论。Converter 的后续修复继续独立发布；只要版本仍满足 Workflow `0.6.2` 的 `>=1.2.0 <2.0.0` 兼容范围，就不要求同步发布新的 Workflow。
+阶段 0–10 的后续工作属于持续维护和扩大真实案例覆盖：继续收集稳定、可回滚的真实场景校准 Diagnosis/Repair 政策；按真实试点数据评估预算；为 Windows 建立原生 Token 文件 ACL 合同。阶段 10 的领域合同、CLI、Agent SOP、协议兼容和模拟平台故障分支已经随签名 Knowledge `0.1.4` 与 Workflow `0.6.0` 按依赖顺序公开发布；`0.6.1` 在不改变协议的前提下补齐旧 Group Job 的 null-gid 谱系兼容，`0.6.2` 继续保持协议 7，并将组件静态校验收窄到权威拥有边，避免把 `props` 用户业务数据误判为组件；`0.7.0` 与内容不变的 Knowledge `0.1.5` 按依赖顺序增加协议 8 的自主无副作用探索。Additional V5、Existing Target Refresh 与自主探索的公开安装/更新路径可以使用，但 Existing Target Refresh 的真实平台写入仍应作为单独授权的试点逐步扩大覆盖。任何尚未由真实稳定场景覆盖的能力都必须明确标注为 mock、校准夹具或故障注入结果，不以静态结果替代运行时等价结论。Converter 的后续修复继续独立发布；只要版本仍满足 Workflow `0.7.0` 的 `>=1.2.0 <2.0.0` 兼容范围，就不要求同步发布新的 Workflow。
 
 ## 21. Additional V5 Creation 与 Existing Target Refresh（阶段 10 已实现并发布）
 
