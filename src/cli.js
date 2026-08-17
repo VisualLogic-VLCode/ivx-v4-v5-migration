@@ -17,6 +17,7 @@ import { RefreshApplyOrchestrator } from './refresh/refresh-apply-orchestrator.j
 import { RefreshPrepareOrchestrator } from './refresh/refresh-prepare-orchestrator.js';
 import { RefreshStore } from './refresh/refresh-store.js';
 import { RuntimeReviewStore } from './reviews/review-store.js';
+import { reviewRuntimePins, workflowRuntimePinForJob } from './reviews/runtime-pins.js';
 import { evaluateEnvironmentGate } from './environment/environment-gate.js';
 import { PlaywrightRuntimeDriver } from './runtime/playwright-driver.js';
 import { RuntimeReviewRunner } from './runtime/review-runner.js';
@@ -131,33 +132,6 @@ function knowledgePin(descriptor) {
     contentSha256: descriptor.contentSha256,
     schemaVersion: descriptor.knowledgeSchemaVersion,
     ruleIds: [],
-  };
-}
-
-function reviewRuntimePins(job, context) {
-  const current = context.registry.readCurrent();
-  const runtimePin = (name, jobRuntime) => {
-    invariant(jobRuntime?.version, 'REVIEW_RUNTIME_PIN_MISSING', `Job does not pin a ${name} version`);
-    const active = current[name];
-    const sha256 = jobRuntime.sha256
-      || jobRuntime.artifactSha256
-      || jobRuntime.entrySha256
-      || (active?.version === jobRuntime.version ? active.artifactSha256 : null);
-    invariant(typeof sha256 === 'string' && /^[a-f0-9]{64}$/.test(sha256), 'REVIEW_RUNTIME_PIN_MISSING', `Job does not have a recoverable ${name} SHA-256 pin`);
-    return { version: jobRuntime.version, sha256 };
-  };
-  const knowledge = job.runtime?.knowledge;
-  invariant(knowledge?.version && knowledge?.sha256 && knowledge?.contentSha256 && knowledge?.schemaVersion, 'REVIEW_RUNTIME_PIN_MISSING', 'Job does not pin a complete Knowledge Runtime');
-  return {
-    workflow: runtimePin('workflow', job.runtime?.workflow),
-    converter: runtimePin('converter', job.runtime?.converter),
-    knowledge: {
-      version: knowledge.version,
-      sha256: knowledge.sha256,
-      contentSha256: knowledge.contentSha256,
-      schemaVersion: knowledge.schemaVersion,
-      ruleIds: [...(knowledge.ruleIds || [])],
-    },
   };
 }
 
@@ -379,10 +353,10 @@ async function runDryRun(options, context) {
     gid: options.gid,
     mode: 'local-file',
     workspaceReference: Boolean(options['workspace-ref']),
-    workflowRuntime: {
+    workflowRuntime: workflowRuntimePinForJob(context.registry, {
       version: packageJson.version,
       packageName: packageJson.name,
-    },
+    }),
     converterRuntime: converterDescriptor,
     knowledgeRuntime: knowledgePin(context.registry.readCurrent().knowledge),
   });
@@ -461,7 +435,10 @@ async function runPlatformMigration(options, context) {
     ...migrationIntent,
     mode: 'platform',
     workspaceReference: Boolean(options['workspace-ref']),
-    workflowRuntime: { version: packageJson.version, packageName: packageJson.name },
+    workflowRuntime: workflowRuntimePinForJob(context.registry, {
+      version: packageJson.version,
+      packageName: packageJson.name,
+    }),
     converterRuntime: converterDescriptor,
     knowledgeRuntime: knowledgePin(context.registry.readCurrent().knowledge),
   });
@@ -564,7 +541,10 @@ async function handleJob(positionals, options, context) {
       sourceNid: options.nid,
       gid: options.gid,
       ...migrationIntentOptions(options),
-      workflowRuntime: current.workflow,
+      workflowRuntime: workflowRuntimePinForJob(context.registry, {
+        version: packageJson.version,
+        packageName: packageJson.name,
+      }),
       converterRuntime: current.converter,
       knowledgeRuntime: knowledgePin(current.knowledge),
       workspaceReference: Boolean(options['workspace-ref']),
@@ -743,6 +723,7 @@ async function handleReview(positionals, options, context) {
     const job = context.jobs.load(options.job);
     invariant(['SUCCEEDED', 'DIAGNOSTIC_COPY_CREATED'].includes(job.status), 'REVIEW_JOB_NOT_COMPLETE', 'Runtime Review requires a completed platform target');
     invariant(job.target?.nid && job.target?.workId, 'REVIEW_TARGET_MISSING', 'Completed Job has no confirmed target revision');
+    const runtime = reviewRuntimePins(job, context.registry);
     const adapter = createPlatformAdapter(options, context);
     const [targetMetadata, sourceMetadata] = await Promise.all([
       adapter.getCaseInfo(job.target.nid),
@@ -757,7 +738,7 @@ async function handleReview(positionals, options, context) {
     return context.reviews.create({
       jobId: options.job,
       capability: options.capability || 'READ_ONLY',
-      runtime: reviewRuntimePins(job, context),
+      runtime,
       targetSnapshot,
       sourceWorkId: sourceMetadata.workId,
       sourceSnapshot,

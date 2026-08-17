@@ -8,6 +8,7 @@ import test from 'node:test';
 import { JobStore } from '../src/jobs/job-store.js';
 import { createAppPaths } from '../src/paths.js';
 import { encodePlatformWork } from '../src/platform/work-codec.js';
+import { RuntimeRegistry } from '../src/releases/runtime-registry.js';
 
 const projectRoot = path.resolve(import.meta.dirname, '..');
 const cli = path.join(projectRoot, 'bin', 'ivx-migrate.js');
@@ -42,7 +43,9 @@ function runCli(home, token, args) {
   });
 }
 
-function completedJob(home) {
+function completedJob(home, {
+  workflowRuntime = { version: '0.4.0', sha256: 'a'.repeat(64) },
+} = {}) {
   const jobs = new JobStore(createAppPaths(home));
   const source = {
     case: { id: 'case-root', type: 'ih5-case', events: { list: [{ tree: { type: 'root' } }] } },
@@ -57,7 +60,7 @@ function completedJob(home) {
   let job = jobs.create({
     sourceNid: 100,
     mode: 'platform',
-    workflowRuntime: { version: '0.4.0', sha256: 'a'.repeat(64) },
+    workflowRuntime,
     converterRuntime: { version: '1.2.1', entrySha256: 'b'.repeat(64) },
     knowledgeRuntime: { version: '0.1.1', sha256: 'c'.repeat(64), contentSha256: 'd'.repeat(64), schemaVersion: 1, ruleIds: [] },
   });
@@ -71,13 +74,108 @@ function completedJob(home) {
   return { job, target };
 }
 
+function installWorkflowRuntime(home, {
+  version,
+  packageName = '@test/workflow',
+  artifactSha256,
+  activate = false,
+} = {}) {
+  const registry = new RuntimeRegistry(createAppPaths(home));
+  const directory = registry.runtimeDir('workflow', version);
+  fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
+  fs.writeFileSync(path.join(directory, '.ivx-runtime.json'), JSON.stringify({
+    schemaVersion: 1,
+    kind: 'workflow',
+    version,
+    packageName,
+    artifactSha256,
+    packagePath: directory,
+    compatibility: { converter: '>=1.0.0 <2.0.0', agentProtocolVersion: 8 },
+  }), { mode: 0o600 });
+  if (activate) registry.activate('workflow', version);
+}
+
+async function listenUnexpectedPlatformServer() {
+  let requests = 0;
+  const server = http.createServer((_request, response) => {
+    requests += 1;
+    sendJson(response, { error: 'platform must not be contacted before runtime-pin validation' }, 500);
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  return {
+    server,
+    baseUrl: `http://127.0.0.1:${server.address().port}`,
+    requests: () => requests,
+  };
+}
+
+function writePlatformConfig(home, baseUrl) {
+  fs.writeFileSync(path.join(home, 'config.json'), JSON.stringify({
+    platform: {
+      baseUrl,
+      tokenEnv: 'TEST_REVIEW_TOKEN',
+      writeMode: 'disabled',
+      allowInsecureLocalhost: true,
+    },
+  }), { mode: 0o600 });
+}
+
+test('platform-backed Review rejects an unrecoverable legacy Workflow pin before platform access', async () => {
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'ivx-review-platform-pin-missing-'));
+  const home = path.join(temporary, 'home');
+  const token = 'review-token-pin-missing';
+  const { job } = completedJob(home, {
+    workflowRuntime: { version: '0.3.9', packageName: '@test/workflow' },
+  });
+  const platform = await listenUnexpectedPlatformServer();
+  writePlatformConfig(home, platform.baseUrl);
+  try {
+    const created = await runCli(home, token, ['review', 'create-platform', '--job', job.jobId, '--capability', 'READ_ONLY']);
+    assert.equal(created.code, 1);
+    assert.equal(JSON.parse(created.stderr).code, 'REVIEW_RUNTIME_PIN_MISSING');
+    assert.equal(platform.requests(), 0);
+  } finally {
+    await new Promise((resolve) => platform.server.close(resolve));
+    fs.rmSync(temporary, { recursive: true, force: true });
+  }
+});
+
+test('platform-backed Review rejects a legacy Workflow package mismatch before platform access', async () => {
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'ivx-review-platform-pin-mismatch-'));
+  const home = path.join(temporary, 'home');
+  const token = 'review-token-pin-mismatch';
+  installWorkflowRuntime(home, {
+    version: '0.4.0',
+    packageName: '@unexpected/workflow',
+    artifactSha256: 'e'.repeat(64),
+  });
+  const { job } = completedJob(home, {
+    workflowRuntime: { version: '0.4.0', packageName: '@test/workflow' },
+  });
+  const platform = await listenUnexpectedPlatformServer();
+  writePlatformConfig(home, platform.baseUrl);
+  try {
+    const created = await runCli(home, token, ['review', 'create-platform', '--job', job.jobId, '--capability', 'READ_ONLY']);
+    assert.equal(created.code, 1);
+    assert.equal(JSON.parse(created.stderr).code, 'REVIEW_RUNTIME_PIN_MISMATCH');
+    assert.equal(platform.requests(), 0);
+  } finally {
+    await new Promise((resolve) => platform.server.close(resolve));
+    fs.rmSync(temporary, { recursive: true, force: true });
+  }
+});
+
 test('platform-backed review creation and Environment Gate never expose case secrets to the Agent', async () => {
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'ivx-review-platform-cli-'));
   const home = path.join(temporary, 'home');
   const token = 'review-token-never-persist';
   const secret = 'environment-secret-never-output';
   let targetSecret = secret;
-  const { job, target } = completedJob(home);
+  const legacyWorkflowSha256 = 'e'.repeat(64);
+  installWorkflowRuntime(home, { version: '0.4.0', artifactSha256: legacyWorkflowSha256 });
+  const { job, target } = completedJob(home, {
+    workflowRuntime: { version: '0.4.0', packageName: '@test/workflow' },
+  });
   const source = JSON.parse(fs.readFileSync(path.join(home, 'jobs', job.jobId, 'v4', 'app.json'), 'utf8'));
   let sourceWorkId = 'source-work-after-save-2';
   let sourceSnapshot = source;
@@ -125,6 +223,7 @@ test('platform-backed review creation and Environment Gate never expose case sec
     const created = await runCli(home, token, ['review', 'create-platform', '--job', job.jobId, '--capability', 'WRITE']);
     assert.equal(created.code, 0, created.stderr || created.stdout);
     const review = JSON.parse(created.stdout).result;
+    assert.deepEqual(review.runtime.workflow, { version: '0.4.0', sha256: legacyWorkflowSha256 });
     assert.equal(review.target.nid, 200);
     assert.equal(review.baseline.targetWorkId, 'target-work-1');
     assert.equal(review.baseline.sourceWorkId, 'source-work-after-save-2');
