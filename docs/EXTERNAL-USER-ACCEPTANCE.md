@@ -2,11 +2,11 @@
 
 本清单是维护者 QA，不是所有用户的安装或日常使用说明。普通用户应从[通过 AI Agent 使用工作流](AI-USER-GUIDE.md)开始。本清单专门用于在维护者电脑之外验证公开分发链、个人案例权限、Group 普通参与者权限、V4 判版、转换诊断和默认不保存边界。测试用户必须从本机 Codex 或 Claude Code 发起，不手动逐条调用工作流命令。第一阶段只允许转换到 `READY_TO_SAVE` 或安全停止状态，**不得创建或保存 V5 案例**。每个案例单独创建 Job、单独填写一份结果。
 
-本轮公开基线（2026-08-14）：
+本轮公开基线（2026-08-17）：
 
-- 首次引导使用的稳定 Launcher：`0.7.0`
-- 本文发布后签名通道安装的 Workflow：`0.7.0`
-- Converter：`1.2.2`
+- 首次引导使用的稳定 Launcher：`0.7.1`
+- 本文发布后签名通道安装的 Workflow：`0.7.1`
+- Converter：`1.2.5`
 - Knowledge Runtime：`0.1.5`
 - Agent protocol：`8`
 - 默认平台：`https://dev.ivx.cn`
@@ -35,7 +35,7 @@
 维护者让测试用户打开本机 Codex 或 Claude Code，把[外部测试 Agent 启动提示](templates/AI-AGENT-ACCEPTANCE-PROMPT.md)整段交给 Agent，并只替换两个 `nid`。提示中的不可变引导地址必须是：
 
 ```text
-https://raw.githubusercontent.com/VisualLogic-VLCode/ivx-v4-v5-migration/v0.7.0/docs/AI-AGENT-BOOTSTRAP.md
+https://raw.githubusercontent.com/VisualLogic-VLCode/ivx-v4-v5-migration/v0.7.1/docs/AI-AGENT-BOOTSTRAP.md
 ```
 
 测试用户不需要复制任何 `ivx-migrate` 命令。Agent 必须自行检查环境、执行安装、初始化、更新、预检、转换、诊断、验证和结果整理。下列命令仅用于验收者核对 Agent 的动作；应由 Agent 在测试用户本机执行：
@@ -43,7 +43,7 @@ https://raw.githubusercontent.com/VisualLogic-VLCode/ivx-v4-v5-migration/v0.7.0/
 ```bash
 node --version
 npm install --global \
-  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.7.0/ivx-v4-v5-migration-0.7.0.tgz
+  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.7.1/ivx-v4-v5-migration-0.7.1.tgz
 ivx-migrate version
 ```
 

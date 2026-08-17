@@ -22,7 +22,7 @@
 
 ```bash
 npm install --global \
-  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.7.0/ivx-v4-v5-migration-0.7.0.tgz
+  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.7.1/ivx-v4-v5-migration-0.7.1.tgz
 ```
 
 ## 2. 命令行参考：安全录入 Token 并初始化
@@ -244,7 +244,7 @@ ivx-migrate rollback --kind converter
 
 工作流和转换器独立发布。转换器问题必须等待维护者发布新 Converter；普通用户和 Agent 不应修改已安装 Converter。
 
-若旧版运行时在更新 Workflow 时返回 `RUNTIME_DOWNLOAD_FAILED`，Agent 可执行一次受限恢复，不需要用户重新输入 Token：先从上面的不可变 `0.7.0` Release 重新安装 Launcher，再执行 `ivx-migrate setup --force --launcher-recovery RECOVER_SIGNED_RUNTIME`。协调式 setup 会保留现有 Token 路径，并一次补齐 Workflow、Converter、Knowledge 和 Agent 配置；不要只更新 Workflow，因为旧环境可能尚未安装所需 Knowledge Runtime。该确认只允许新版或同版 Launcher 接管 setup/update/rollback/Agent 同步，旧 Launcher 不能借此覆盖更高版本。成功后恢复正常的 `update apply` 流程。
+若旧版运行时在更新 Workflow 时返回 `RUNTIME_DOWNLOAD_FAILED`，Agent 可执行一次受限恢复，不需要用户重新输入 Token：先从上面的不可变 `0.7.1` Release 重新安装 Launcher，再执行 `ivx-migrate setup --force --launcher-recovery RECOVER_SIGNED_RUNTIME`。协调式 setup 会保留现有 Token 路径，并一次补齐 Workflow、Converter、Knowledge 和 Agent 配置；不要只更新 Workflow，因为旧环境可能尚未安装所需 Knowledge Runtime。该确认只允许新版或同版 Launcher 接管 setup/update/rollback/Agent 同步，旧 Launcher 不能借此覆盖更高版本。成功后恢复正常的 `update apply` 流程。
 
 维护者首次在其他用户电脑上验证公开安装、普通参与者权限与默认不保存边界时，才使用单独的[验收专用 Agent 提示](templates/AI-AGENT-ACCEPTANCE-PROMPT.md)和[外部普通用户验收清单](EXTERNAL-USER-ACCEPTANCE.md)。该流程不是普通用户快速入门；它的第一阶段故意禁止保存，并使用独立的[无保存结果模板](templates/EXTERNAL-USER-ACCEPTANCE-RESULT.md)和[另存结果模板](templates/EXTERNAL-USER-SAVE-AS-RESULT.md)。
 

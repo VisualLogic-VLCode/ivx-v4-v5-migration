@@ -44,11 +44,11 @@ The rules intentionally permit ordinary fast-forward source pushes and the signe
 
 The recommended first installation is Agent-first. The user gives their local Codex or Claude Code the copyable [general-user starter prompt](templates/AI-AGENT-STARTER-PROMPT.md), which points to the immutable tagged [bootstrap procedure](AI-AGENT-BOOTSTRAP.md). The Agent executes every command, while the user only types the Token into the visible native macOS secure-input dialog opened by the Launcher. After setup, the installed managed Skill becomes authoritative. The separate [acceptance prompt](templates/AI-AGENT-ACCEPTANCE-PROMPT.md) is maintainer QA and must not be presented as the ordinary onboarding path.
 
-The bootstrap procedure uses the stable `0.7.0` Launcher asset. Workflow `0.3.4` and later Releases are immutable at the repository level:
+The bootstrap procedure uses the stable `0.7.1` Launcher asset. Workflow `0.3.4` and later Releases are immutable at the repository level:
 
 ```bash
 npm install --global \
-  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.7.0/ivx-v4-v5-migration-0.7.0.tgz
+  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.7.1/ivx-v4-v5-migration-0.7.1.tgz
 ivx-migrate setup --prompt-token
 ```
 
@@ -97,6 +97,8 @@ Workflow `0.6.1` keeps Agent protocol 7 and repairs legacy Group lineage compati
 Workflow `0.6.2` keeps Agent protocol 7 and makes baseline component validation follow authoritative ownership edges: realm roots, node `children`, and stage/server root-level `classes`. Arbitrary serialized business objects under component `props` no longer become component nodes merely because they contain string `id` and `type` fields. Genuine duplicate owned component IDs remain blocking errors and now include their JSON Pointer ownership paths.
 
 Workflow `0.7.0` raises Agent protocol to 8 for autonomous read-only exploration. Agents must obtain one exact expiring `RUN_AUTONOMOUS_READ_ONLY_EXPLORATION` grant, read only the returned immutable Job root, keep Platform Token/browser-auth values driver-only, submit a closed `SAFE_BFS` plan, honor all safety quarantines, and report coverage-bounded rather than strict parity. Knowledge Runtime `0.1.5` is the compatibility-only release that first admits protocol 8; its knowledge content digest and all content-file hashes remain identical to `0.1.4`. Publish and activate Knowledge `0.1.5` before Workflow `0.7.0`; the Converter compatibility range remains unchanged.
+
+Workflow `0.7.1` keeps Agent protocol 8 and runtime behavior unchanged. It corrects the bundled current-stable, bootstrap, and external-acceptance documentation after isolated signed-channel installation confirmed that the independently maintained Converter stable had advanced to `1.2.5`. The Workflow compatibility range remains `>=1.2.0 <2.0.0`.
 
 If a pre-`0.4.1` managed Workflow cannot download the current Release, install the current immutable Launcher with npm and invoke exactly one recovery command: `ivx-migrate setup --force --launcher-recovery RECOVER_SIGNED_RUNTIME`. Coordinated setup preserves the existing Token path and installs a compatible Workflow/Converter/Knowledge/Agent set; a Workflow-only update can be rejected correctly when the old home does not yet contain Knowledge. Recovery uses the bundled signed-channel client only for setup/update/rollback/Agent synchronization and refuses a bundled version older than the active managed Workflow. It does not read or replace the Token. Normal delegation resumes after the successful setup.
 
