@@ -4,7 +4,7 @@ This project is the distributable local workflow used by Codex or Claude Code. I
 
 ## Current status
 
-The current public stable runtime set is Workflow `0.7.1` with Agent protocol 8, Converter `1.2.5`, and Knowledge Runtime `0.1.5`. Its capabilities are:
+The current release candidate is Workflow `0.7.2` with Agent protocol 8, Converter `1.2.5`, and Knowledge Runtime `0.1.5`. Its capabilities are:
 
 - private global Job storage with atomic state writes and per-Job locks;
 - metadata + physical work version classification;
@@ -17,7 +17,7 @@ The current public stable runtime set is Workflow `0.7.1` with Agent protocol 8,
 - one-time public-channel setup plus unified Workflow/Converter/Knowledge/Agent updates;
 - an editor-compatible binary work codec;
 - bearer-token metadata/load/config adapters with token redaction and strict `0600` Token-file support;
-- permission preflight, source revision checks, resumable Save As checkpoints, final nid rewrite, post-save read-back verification, and content-guarded source-revision reconciliation before Runtime Review;
+- permission preflight, source revision checks, resumable Save As checkpoints, source Domain Binding preservation with target-owned route allocation, final nid rewrite, post-save read-back verification, and content-guarded source-revision reconciliation before Runtime Review;
 - explicit `CREATE_ADDITIONAL_V5` intent for a separate new target without weakening retry/resume semantics;
 - independent Existing Target Refresh with trusted lineage—including a current-platform-proven compatibility path for completed legacy Group Jobs whose stored gid is null—source/target/config CAS, exact short-lived authorization, target-identity rewrite, preserved target configuration, write-ahead reconciliation, no unknown replay, and Review succession;
 - a separately authorized diagnostic Save As path that creates an editor-openable V5 copy for any classified issue after independent write hard gates pass, without reporting normal success;
@@ -93,7 +93,7 @@ The commands below document what the Agent executes and remain available as a ma
 
 ```bash
 npm install --global \
-  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.7.1/ivx-v4-v5-migration-0.7.1.tgz
+  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.7.2/ivx-v4-v5-migration-0.7.2.tgz
 ```
 
 ```bash

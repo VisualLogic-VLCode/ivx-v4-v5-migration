@@ -67,12 +67,25 @@ class FakeAdapter {
     this.sourceInfo = { nid: sourceNid, gid: 0, memberType: 1, workId: 'source-work-7' };
     this.targetInfo = { nid: targetNid, gid: 0, memberType: 1, workId: 'target-work-0' };
     this.sourceConfig = { customVars: { kept: 'yes' } };
+    this.sourceSettings = { domain: '', previewDomain: '', customDomain: false };
     this.defaultConfig = { default: true, wechat: { noJs: false } };
     this.targetConfig = {};
+    this.targetSettings = {
+      domain: '',
+      path: '/play/target-generated',
+      previewDomain: '',
+      previewPath: '/play/target-preview-generated',
+      customDomain: false,
+      pubRoot: false,
+      preRoot: false,
+    };
     this.targetWork = structuredClone(converted);
-    this.calls = { create: 0, config: 0, save: 0 };
+    this.calls = { create: 0, config: 0, routing: 0, save: 0 };
     this.failFinalOnceAfterWrite = false;
     this.failConfigOnceAfterWrite = false;
+    this.failRoutingOnceAfterWrite = false;
+    this.failRoutingUnknownBeforeWrite = false;
+    this.failRoutingOnceKnown = false;
     this.failCreateOutcome = false;
     this.invalidCreateResponse = false;
     this.forcePostSaveMismatch = false;
@@ -83,6 +96,16 @@ class FakeAdapter {
   async recheckSourceRevision({ workId }) { return { unchanged: workId === this.sourceInfo.workId, expectedWorkId: workId, currentWorkId: this.sourceInfo.workId }; }
   async getDefaultUserConfig() { return structuredClone(this.defaultConfig); }
   async getWorkConfig(nid) { return structuredClone(nid === sourceNid ? this.sourceConfig : this.targetConfig); }
+  async getWorkSettings(nid) { return structuredClone(nid === sourceNid ? this.sourceSettings : this.targetSettings); }
+  async getWorkEnvironment({ nid, workId }) {
+    const info = await this.getCaseInfo(nid);
+    if (info.workId !== workId) throw Object.assign(new Error('revision changed'), { code: 'PLATFORM_REVISION_CHANGED' });
+    return {
+      workInfo: info,
+      config: await this.getWorkConfig(nid),
+      settings: await this.getWorkSettings(nid),
+    };
+  }
   async setWorkConfig(_nid, config) {
     this.calls.config += 1;
     this.targetConfig = structuredClone(config);
@@ -91,6 +114,31 @@ class FakeAdapter {
       throw Object.assign(new Error('config response lost'), { code: 'PLATFORM_NETWORK_FAILED' });
     }
     return {};
+  }
+  async modifyWorkRouting({ routing }) {
+    this.calls.routing += 1;
+    if (this.failRoutingOnceKnown) {
+      this.failRoutingOnceKnown = false;
+      throw Object.assign(new Error('routing rejected'), {
+        code: 'PLATFORM_RESPONSE_ERROR',
+        details: { outcome: 'REJECTED' },
+      });
+    }
+    if (this.failRoutingUnknownBeforeWrite) {
+      throw Object.assign(new Error('routing response lost before observable update'), {
+        code: 'PLATFORM_NETWORK_FAILED',
+        details: { outcome: 'UNKNOWN_AFTER_WRITE_ATTEMPT' },
+      });
+    }
+    Object.assign(this.targetSettings, structuredClone(routing));
+    if (this.failRoutingOnceAfterWrite) {
+      this.failRoutingOnceAfterWrite = false;
+      throw Object.assign(new Error('routing response lost'), {
+        code: 'PLATFORM_NETWORK_FAILED',
+        details: { outcome: 'UNKNOWN_AFTER_WRITE_ATTEMPT' },
+      });
+    }
+    return { confirmation: 'SUCCEEDED' };
   }
   async saveAsV5() {
     this.calls.create += 1;
@@ -126,7 +174,7 @@ test('resumable Save As completes creation, config, nid rewrite, save, and read-
     const result = await context.orchestrator.run(context.job.jobId);
     assert.equal(result.status, 'SUCCEEDED');
     assert.equal(result.target.nid, targetNid);
-    assert.deepEqual(context.adapter.calls, { create: 1, config: 1, save: 1 });
+    assert.deepEqual(context.adapter.calls, { create: 1, config: 1, routing: 0, save: 1 });
     assert.equal(context.adapter.targetWork.case.props.nid, targetNid);
     assert.equal(context.adapter.targetWork.stage.props.ref, 'n456_table');
     assert.equal(context.adapter.targetWork.stage.props.modDbId, 'n123_mod');
@@ -134,6 +182,136 @@ test('resumable Save As completes creation, config, nid rewrite, save, and read-
     const journal = JSON.parse(fs.readFileSync(context.orchestrator.journalFile(context.job.jobId), 'utf8'));
     assert.equal(journal.phase, 'POST_SAVE_VERIFIED');
     assert.equal(JSON.stringify(journal).includes('kept'), false);
+  } finally {
+    fs.rmSync(context.temporary, { recursive: true, force: true });
+  }
+});
+
+test('Save As copies source domains and preserves target-generated paths', async () => {
+  const context = fixture();
+  context.adapter.sourceSettings = {
+    domain: 'source.example.test',
+    previewDomain: 'source-preview.example.test',
+    customDomain: true,
+    path: '/play/source-must-not-copy',
+    previewPath: '/play/source-preview-must-not-copy',
+  };
+  try {
+    const result = await context.orchestrator.run(context.job.jobId);
+    assert.equal(result.status, 'SUCCEEDED');
+    assert.equal(context.adapter.calls.routing, 1);
+    assert.deepEqual(context.adapter.targetSettings, {
+      domain: 'source.example.test',
+      path: '/play/target-generated',
+      previewDomain: 'source-preview.example.test',
+      previewPath: '/play/target-preview-generated',
+      customDomain: true,
+      pubRoot: false,
+      preRoot: false,
+    });
+    const journal = JSON.parse(fs.readFileSync(context.orchestrator.journalFile(context.job.jobId), 'utf8'));
+    assert.equal(journal.domainRouting.policy, 'COPY_SOURCE_DOMAINS_PRESERVE_TARGET_PATHS');
+    assert.equal(journal.domainRouting.status, 'CONFIRMED');
+    assert.equal(journal.domainRouting.expected.path, '/play/target-generated');
+    assert.equal(JSON.stringify(journal.domainRouting).includes('source-must-not-copy'), false);
+  } finally {
+    fs.rmSync(context.temporary, { recursive: true, force: true });
+  }
+});
+
+test('unknown domain-routing response resumes by read-back without replay', async () => {
+  const context = fixture();
+  context.adapter.sourceSettings = { domain: 'source.example.test', previewDomain: 'preview.example.test', customDomain: true };
+  context.adapter.failRoutingOnceAfterWrite = true;
+  try {
+    await assert.rejects(context.orchestrator.run(context.job.jobId), { code: 'DOMAIN_ROUTING_OUTCOME_UNKNOWN' });
+    assert.equal(context.jobs.load(context.job.jobId).status, 'SAVE_INCOMPLETE');
+    assert.equal(context.adapter.calls.routing, 1);
+    const result = await context.orchestrator.run(context.job.jobId);
+    assert.equal(result.status, 'SUCCEEDED');
+    assert.equal(context.adapter.calls.routing, 1);
+    const journal = JSON.parse(fs.readFileSync(context.orchestrator.journalFile(context.job.jobId), 'utf8'));
+    assert.equal(journal.domainRouting.confirmation, 'CONFIRMED_BY_RESUME_READBACK');
+  } finally {
+    fs.rmSync(context.temporary, { recursive: true, force: true });
+  }
+});
+
+test('unknown unapplied domain routing is never replayed automatically', async () => {
+  const context = fixture();
+  context.adapter.sourceSettings = { domain: 'source.example.test', previewDomain: 'preview.example.test', customDomain: true };
+  context.adapter.failRoutingUnknownBeforeWrite = true;
+  try {
+    await assert.rejects(context.orchestrator.run(context.job.jobId), { code: 'DOMAIN_ROUTING_OUTCOME_UNKNOWN' });
+    await assert.rejects(context.orchestrator.run(context.job.jobId), { code: 'DOMAIN_ROUTING_RECONCILIATION_REQUIRED' });
+    assert.equal(context.adapter.calls.routing, 1);
+    assert.equal(context.adapter.calls.save, 0);
+  } finally {
+    fs.rmSync(context.temporary, { recursive: true, force: true });
+  }
+});
+
+test('source domain drift after target creation stops before a second routing write', async () => {
+  const context = fixture();
+  context.adapter.sourceSettings = { domain: 'source.example.test', previewDomain: 'preview.example.test', customDomain: true };
+  context.adapter.failRoutingOnceKnown = true;
+  try {
+    await assert.rejects(context.orchestrator.run(context.job.jobId), { code: 'PLATFORM_RESPONSE_ERROR' });
+    context.adapter.sourceSettings.domain = 'changed.example.test';
+    await assert.rejects(context.orchestrator.run(context.job.jobId), { code: 'SOURCE_DOMAIN_CONFIGURATION_CHANGED' });
+    assert.equal(context.adapter.calls.routing, 1);
+    assert.equal(context.adapter.calls.save, 0);
+  } finally {
+    fs.rmSync(context.temporary, { recursive: true, force: true });
+  }
+});
+
+test('target path drift after routing preparation stops before a second write', async () => {
+  const context = fixture();
+  context.adapter.sourceSettings = { domain: 'source.example.test', previewDomain: 'preview.example.test', customDomain: true };
+  context.adapter.failRoutingOnceKnown = true;
+  try {
+    await assert.rejects(context.orchestrator.run(context.job.jobId), { code: 'PLATFORM_RESPONSE_ERROR' });
+    context.adapter.targetSettings.path = '/play/externally-changed';
+    await assert.rejects(context.orchestrator.run(context.job.jobId), { code: 'TARGET_PATH_CONFIGURATION_CHANGED' });
+    assert.equal(context.adapter.calls.routing, 1);
+  } finally {
+    fs.rmSync(context.temporary, { recursive: true, force: true });
+  }
+});
+
+test('a crash-persisted routing request cannot be replayed when read-back mismatches', async () => {
+  const context = fixture();
+  context.adapter.sourceSettings = { domain: 'source.example.test', previewDomain: 'preview.example.test', customDomain: true };
+  context.adapter.failRoutingOnceKnown = true;
+  try {
+    await assert.rejects(context.orchestrator.run(context.job.jobId), { code: 'PLATFORM_RESPONSE_ERROR' });
+    const journalFile = context.orchestrator.journalFile(context.job.jobId);
+    const journal = JSON.parse(fs.readFileSync(journalFile, 'utf8'));
+    journal.domainRouting.status = 'REQUESTED';
+    fs.writeFileSync(journalFile, `${JSON.stringify(journal, null, 2)}\n`, { mode: 0o600 });
+    await assert.rejects(context.orchestrator.run(context.job.jobId), { code: 'DOMAIN_ROUTING_RECONCILIATION_REQUIRED' });
+    assert.equal(context.adapter.calls.routing, 1);
+  } finally {
+    fs.rmSync(context.temporary, { recursive: true, force: true });
+  }
+});
+
+test('legacy journal that already started final save resumes without inserting a new routing write', async () => {
+  const context = fixture();
+  context.adapter.failFinalOnceAfterWrite = true;
+  try {
+    await assert.rejects(context.orchestrator.run(context.job.jobId), { code: 'FINAL_SAVE_OUTCOME_UNKNOWN' });
+    const journalFile = context.orchestrator.journalFile(context.job.jobId);
+    const legacy = JSON.parse(fs.readFileSync(journalFile, 'utf8'));
+    delete legacy.domainRouting;
+    fs.writeFileSync(journalFile, `${JSON.stringify(legacy, null, 2)}\n`, { mode: 0o600 });
+    const result = await context.orchestrator.run(context.job.jobId);
+    assert.equal(result.status, 'SUCCEEDED');
+    assert.equal(context.adapter.calls.routing, 0);
+    const recovered = JSON.parse(fs.readFileSync(journalFile, 'utf8'));
+    assert.equal(recovered.domainRouting.status, 'LEGACY_SKIPPED');
+    assert.equal(recovered.domainRouting.required, false);
   } finally {
     fs.rmSync(context.temporary, { recursive: true, force: true });
   }
@@ -164,6 +342,29 @@ test('Additional V5 Save As rejects and checkpoints a non-distinct prior target 
   }
 });
 
+test('Additional V5 Save As applies the same domain policy to a distinct target', async () => {
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'ivx-additional-domain-save-as-'));
+  const jobs = new JobStore(createAppPaths(path.join(temporary, 'home')));
+  const prior = completeReadyJob(jobs, readyJob(jobs), targetNid);
+  const additional = readyJob(jobs, {
+    intent: MIGRATION_INTENTS.CREATE_ADDITIONAL_V5,
+    relatedPriorJobIds: [prior.jobId],
+  });
+  const adapter = new FakeAdapter();
+  adapter.targetInfo.nid = targetNid + 1;
+  adapter.sourceSettings = { domain: 'source.example.test', previewDomain: 'preview.example.test', customDomain: true };
+  const orchestrator = new SaveAsOrchestrator({ jobs, adapter });
+  try {
+    const result = await orchestrator.run(additional.jobId);
+    assert.equal(result.status, 'SUCCEEDED');
+    assert.equal(result.target.nid, targetNid + 1);
+    assert.equal(adapter.calls.routing, 1);
+    assert.equal(adapter.targetSettings.path, '/play/target-generated');
+  } finally {
+    fs.rmSync(temporary, { recursive: true, force: true });
+  }
+});
+
 test('diagnostic Save As preserves its intent and completes as a diagnostic copy instead of success', async () => {
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'ivx-diagnostic-save-as-'));
   const jobs = new JobStore(createAppPaths(path.join(temporary, 'home')));
@@ -174,11 +375,13 @@ test('diagnostic Save As preserves its intent and completes as a diagnostic copy
     adapter,
     saveIntent: SAVE_INTENTS.KNOWN_ISSUES_DIAGNOSTIC,
   });
+  adapter.sourceSettings = { domain: 'diagnostic.example.test', previewDomain: 'diagnostic-preview.example.test', customDomain: true };
   try {
     const result = await diagnostic.run(job.jobId);
     assert.equal(result.status, 'DIAGNOSTIC_COPY_CREATED');
     assert.equal(result.target.nid, targetNid);
     assert.equal(result.diagnosticSave.result, 'CREATED');
+    assert.equal(adapter.calls.routing, 1);
     const journal = JSON.parse(fs.readFileSync(diagnostic.journalFile(job.jobId), 'utf8'));
     assert.equal(journal.intent.kind, SAVE_INTENTS.KNOWN_ISSUES_DIAGNOSTIC);
     assert.equal(journal.intent.authorizationArtifact, 'reports/diagnostic-save-authorization.json');
@@ -223,7 +426,7 @@ test('diagnostic Save As refuses to start without its persisted authorization', 
       adapter,
       saveIntent: SAVE_INTENTS.KNOWN_ISSUES_DIAGNOSTIC,
     }).run(job.jobId), { code: 'DIAGNOSTIC_SAVE_AUTHORIZATION_MISSING' });
-    assert.deepEqual(adapter.calls, { create: 0, config: 0, save: 0 });
+    assert.deepEqual(adapter.calls, { create: 0, config: 0, routing: 0, save: 0 });
   } finally {
     fs.rmSync(temporary, { recursive: true, force: true });
   }
@@ -237,7 +440,7 @@ test('unknown final-save response resumes by read-back without creating or savin
     assert.equal(context.jobs.load(context.job.jobId).status, 'SAVE_INCOMPLETE');
     const result = await context.orchestrator.run(context.job.jobId);
     assert.equal(result.status, 'SUCCEEDED');
-    assert.deepEqual(context.adapter.calls, { create: 1, config: 1, save: 1 });
+    assert.deepEqual(context.adapter.calls, { create: 1, config: 1, routing: 0, save: 1 });
   } finally {
     fs.rmSync(context.temporary, { recursive: true, force: true });
   }
@@ -251,7 +454,7 @@ test('unknown config response resumes by config read-back without replaying crea
     assert.equal(context.jobs.load(context.job.jobId).status, 'SAVE_INCOMPLETE');
     const result = await context.orchestrator.run(context.job.jobId);
     assert.equal(result.status, 'SUCCEEDED');
-    assert.deepEqual(context.adapter.calls, { create: 1, config: 1, save: 1 });
+    assert.deepEqual(context.adapter.calls, { create: 1, config: 1, routing: 0, save: 1 });
   } finally {
     fs.rmSync(context.temporary, { recursive: true, force: true });
   }

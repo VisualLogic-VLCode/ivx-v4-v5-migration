@@ -11,7 +11,7 @@ function adapterFixture({ loseModifyResponse = false, changeConfigDuringRead = f
   const state = {
     info: { nid: 200, workId: 'target-work-1', domain: 'old.example.test', path: '/play/old', previewDomain: 'old-preview.example.test', previewPath: '/play/old-preview' },
     config: { customVars: { env: 'test-secret-value' } },
-    settings: { domain: 'old.example.test', path: '/play/old', previewDomain: 'old-preview.example.test', previewPath: '/play/old-preview', customDomain: true },
+    settings: { domain: 'old.example.test', path: '/play/old', previewDomain: 'old-preview.example.test', previewPath: '/play/old-preview', customDomain: true, pubRoot: false, preRoot: false },
   };
   const adapter = new IvxPlatformAdapter({
     baseUrl: 'http://localhost:3000',
@@ -30,10 +30,10 @@ function adapterFixture({ loseModifyResponse = false, changeConfigDuringRead = f
       }
       if (pathname === '/ih5/editor/work/getConfig' && body.type === 'settings') return response(state.settings);
       if (pathname === '/ih5/editor/work/modify') {
-        for (const key of ['domain', 'path', 'previewDomain', 'previewPath', 'customDomain']) {
+        for (const key of ['domain', 'path', 'previewDomain', 'previewPath', 'customDomain', 'pubRoot', 'preRoot']) {
           if (Object.hasOwn(body, key)) {
             state.settings[key] = body[key];
-            if (key !== 'customDomain') state.info[key] = body[key];
+            if (!['customDomain', 'pubRoot', 'preRoot'].includes(key)) state.info[key] = body[key];
           }
         }
         if (loseModifyResponse) throw new Error('response lost after routing write');
@@ -77,10 +77,13 @@ test('adapter routing writes are narrow, revision-checked, and verified by read-
       previewDomain: 'new-preview.example.test',
       previewPath: '/play/new-preview',
       customDomain: true,
+      pubRoot: false,
+      preRoot: false,
     },
   });
   assert.equal(result.confirmation, 'SUCCEEDED');
   assert.equal(result.settings.previewPath, '/play/new-preview');
+  assert.equal(result.settings.pubRoot, false);
   assert.equal(calls.filter((call) => call.pathname.endsWith('/modify')).length, 1);
 
   await assert.rejects(adapter.modifyWorkRouting({

@@ -2,9 +2,24 @@ import path from 'node:path';
 import { WorkflowError, invariant } from '../errors.js';
 import { readJson, sha256Buffer } from '../fs/secure-json.js';
 import { MIGRATION_INTENTS } from '../jobs/intents.js';
-import { mergeSaveAsConfig } from './http-adapter.js';
+import {
+  buildSaveAsDomainRouting,
+  extractWorkDomainBinding,
+  extractWorkPathOwnership,
+  mergeSaveAsConfig,
+  workRoutingMatches,
+} from './http-adapter.js';
 
 const JOURNAL_PATH = 'reports/platform-save-journal.json';
+const DOMAIN_ROUTING_POLICY = 'COPY_SOURCE_DOMAINS_PRESERVE_TARGET_PATHS';
+const FINAL_SAVE_STARTED_PHASES = new Set([
+  'FINAL_SAVE_REQUESTED',
+  'FINAL_SAVE_RESPONDED',
+  'FINAL_SAVE_OUTCOME_UNKNOWN',
+  'FINAL_CONTENT_CONFIRMED',
+  'POST_SAVE_MISMATCH',
+  'POST_SAVE_VERIFIED',
+]);
 
 export const SAVE_INTENTS = Object.freeze({
   VALIDATED: 'validated',
@@ -95,6 +110,11 @@ export class SaveAsOrchestrator {
       },
       target: {},
       config: {},
+      domainRouting: {
+        policy: DOMAIN_ROUTING_POLICY,
+        required: true,
+        status: 'PENDING',
+      },
       finalSave: {},
       verification: {},
       attempts: [],
@@ -112,6 +132,22 @@ export class SaveAsOrchestrator {
       kind: existingIntent,
       authorizationArtifact: journal.intent?.authorizationArtifact || null,
     };
+    if (!journal.domainRouting) {
+      const finalSaveStarted = Boolean(journal.finalSave?.requestedAt) || FINAL_SAVE_STARTED_PHASES.has(journal.phase);
+      journal.domainRouting = {
+        policy: DOMAIN_ROUTING_POLICY,
+        required: !finalSaveStarted,
+        status: finalSaveStarted ? 'LEGACY_SKIPPED' : 'PENDING',
+        ...(finalSaveStarted
+          ? {
+            skippedAt: now(),
+            skipReason: 'legacy-journal-final-save-already-started',
+          }
+          : {}),
+      };
+    }
+    invariant(journal.domainRouting.policy === DOMAIN_ROUTING_POLICY, 'SAVE_JOURNAL_DOMAIN_POLICY_MISMATCH', 'Persisted Save As journal has an unsupported domain-routing policy');
+    invariant(typeof journal.domainRouting.required === 'boolean', 'SAVE_JOURNAL_DOMAIN_POLICY_MISMATCH', 'Persisted Save As journal has no domain-routing requirement flag');
     if (existingIntent === SAVE_INTENTS.KNOWN_ISSUES_DIAGNOSTIC) {
       invariant(
         journal.intent.authorizationArtifact === 'reports/diagnostic-save-authorization.json',
@@ -201,16 +237,18 @@ export class SaveAsOrchestrator {
       }
     }
 
-    const [sourceConfig, defaultConfig] = await Promise.all([
-      this.adapter.getWorkConfig(job.input.sourceNid),
+    const [sourceEnvironment, defaultConfig] = await Promise.all([
+      this.adapter.getWorkEnvironment({ nid: job.input.sourceNid, workId: journal.source.workId }),
       this.adapter.getDefaultUserConfig(),
     ]);
+    const sourceConfig = sourceEnvironment.config || {};
     const mergedConfig = mergeSaveAsConfig(defaultConfig, sourceConfig);
     const mergedConfigSha256 = valueSha256(mergedConfig);
     if (journal.target.nid && journal.config.expectedSha256 && journal.config.expectedSha256 !== mergedConfigSha256) {
       throw new WorkflowError('CONFIG_SOURCE_CHANGED', 'Source/default config changed after the target case was created');
     }
     journal.config.expectedSha256 = mergedConfigSha256;
+    this.#freezeSourceDomainBinding(journal, sourceEnvironment.settings || {});
 
     if (!journal.target.nid) {
       journal.phase = 'CREATE_REQUESTED';
@@ -261,6 +299,7 @@ export class SaveAsOrchestrator {
     }
 
     await this.#ensureConfig(jobId, journal, mergedConfig);
+    await this.#ensureDomainRouting(jobId, journal);
     const finalWork = rewriteCaseNidForFinalSave(initialWork, job.input.sourceNid, journal.target.nid);
     journal.finalSave.expectedSha256 = valueSha256(finalWork);
     this.persist(jobId, journal);
@@ -356,6 +395,106 @@ export class SaveAsOrchestrator {
       this.record(journal, 'target-config', 'INCOMPLETE', { error: publicError(error) });
       this.persist(jobId, journal);
       this.transitionIfNeeded(jobId, 'SAVE_INCOMPLETE', 'target-config-write-incomplete');
+      throw error;
+    }
+  }
+
+  #freezeSourceDomainBinding(journal, sourceSettings) {
+    if (!journal.domainRouting.required) return;
+    const binding = extractWorkDomainBinding(sourceSettings);
+    const bindingSha256 = valueSha256(binding);
+    if (!journal.target.nid || !journal.domainRouting.sourceSha256) {
+      journal.domainRouting.source = binding;
+      journal.domainRouting.sourceSha256 = bindingSha256;
+      return;
+    }
+    invariant(
+      journal.domainRouting.sourceSha256 === bindingSha256,
+      'SOURCE_DOMAIN_CONFIGURATION_CHANGED',
+      'Source domain configuration changed after the target case was created',
+    );
+  }
+
+  async #ensureDomainRouting(jobId, journal) {
+    const state = journal.domainRouting;
+    if (!state.required) {
+      this.record(journal, 'target-domain-routing', 'SKIPPED_LEGACY', { reason: state.skipReason });
+      this.persist(jobId, journal);
+      return;
+    }
+    invariant(state.source && state.sourceSha256, 'SOURCE_DOMAIN_CONFIGURATION_MISSING', 'Save As journal has no frozen source domain configuration');
+    const [workInfo, settings] = await Promise.all([
+      this.adapter.getCaseInfo(journal.target.nid),
+      this.adapter.getWorkSettings(journal.target.nid),
+    ]);
+    const pathOwnership = extractWorkPathOwnership(workInfo, settings || {});
+    const pathOwnershipSha256 = valueSha256(pathOwnership);
+    if (!state.expected) {
+      invariant(workInfo?.workId === journal.target.workId, 'PLATFORM_REVISION_CHANGED', 'Target revision changed before freezing its generated paths', {
+        expectedWorkId: journal.target.workId,
+        currentWorkId: workInfo?.workId || null,
+      });
+      state.targetPathSha256 = pathOwnershipSha256;
+      state.expected = buildSaveAsDomainRouting(state.source, workInfo, settings || {});
+      state.expectedSha256 = valueSha256(state.expected);
+      state.status = 'PENDING';
+      state.preparedAt = now();
+      this.record(journal, 'target-domain-routing', 'PREPARED');
+      this.persist(jobId, journal);
+    } else {
+      invariant(state.targetPathSha256 === pathOwnershipSha256, 'TARGET_PATH_CONFIGURATION_CHANGED', 'Target-generated path configuration changed after the Save As domain intent was frozen');
+      invariant(state.expectedSha256 === valueSha256(state.expected), 'SAVE_JOURNAL_DOMAIN_POLICY_MISMATCH', 'Persisted Save As domain-routing digest does not match its frozen intent');
+    }
+
+    if (workRoutingMatches(state.expected, workInfo, settings || {})) {
+      const resumedUnknown = state.status === 'OUTCOME_UNKNOWN';
+      state.status = 'CONFIRMED';
+      state.appliedAt = state.appliedAt || now();
+      state.confirmation = resumedUnknown ? 'CONFIRMED_BY_RESUME_READBACK' : state.confirmation || 'ALREADY_PRESENT';
+      delete state.error;
+      this.record(journal, 'target-domain-routing', state.confirmation);
+      this.persist(jobId, journal);
+      return;
+    }
+    if (state.status === 'OUTCOME_UNKNOWN' || state.status === 'REQUESTED') {
+      throw new WorkflowError('DOMAIN_ROUTING_RECONCILIATION_REQUIRED', 'The domain-routing write outcome is unknown and read-back does not match; automatic replay is forbidden');
+    }
+    if (state.status === 'CONFIRMED') {
+      throw new WorkflowError('TARGET_DOMAIN_CONFIGURATION_CHANGED', 'Target domain configuration changed after it was confirmed');
+    }
+    invariant(workInfo?.workId === journal.target.workId, 'PLATFORM_REVISION_CHANGED', 'Target revision changed before its domain configuration could be applied', {
+      expectedWorkId: journal.target.workId,
+      currentWorkId: workInfo?.workId || null,
+    });
+
+    state.status = 'REQUESTED';
+    state.requestedAt = now();
+    this.record(journal, 'target-domain-routing', 'REQUESTED');
+    this.persist(jobId, journal);
+    try {
+      const result = await this.adapter.modifyWorkRouting({
+        nid: journal.target.nid,
+        expectedWorkId: workInfo.workId,
+        routing: state.expected,
+      });
+      state.status = 'CONFIRMED';
+      state.appliedAt = now();
+      state.confirmation = result?.confirmation || 'SUCCEEDED';
+      delete state.error;
+      this.record(journal, 'target-domain-routing', state.confirmation);
+      this.persist(jobId, journal);
+    } catch (error) {
+      const outcomeUnknown = error?.details?.outcome === 'UNKNOWN_AFTER_WRITE_ATTEMPT';
+      state.status = outcomeUnknown ? 'OUTCOME_UNKNOWN' : 'INCOMPLETE';
+      state.error = publicError(error);
+      this.record(journal, 'target-domain-routing', state.status, { error: state.error });
+      this.persist(jobId, journal);
+      this.transitionIfNeeded(jobId, 'SAVE_INCOMPLETE', outcomeUnknown
+        ? 'target-domain-routing-outcome-unknown'
+        : 'target-domain-routing-write-incomplete');
+      if (outcomeUnknown) {
+        throw new WorkflowError('DOMAIN_ROUTING_OUTCOME_UNKNOWN', 'Domain-routing write outcome is unknown; resume will use read-back and will not replay the write', { cause: state.error });
+      }
       throw error;
     }
   }

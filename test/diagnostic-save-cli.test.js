@@ -110,6 +110,16 @@ test('CLI permits every classified cause after independent diagnostic-save hard 
   let targetWork = null;
   let targetWorkId = 'target-work-0';
   let targetConfig = {};
+  const sourceSettings = { domain: '', previewDomain: '', customDomain: false };
+  const targetSettings = {
+    domain: '',
+    path: '/play/target-generated',
+    previewDomain: '',
+    previewPath: '/play/target-preview-generated',
+    customDomain: false,
+    pubRoot: false,
+    preRoot: false,
+  };
   const calls = { create: 0, config: 0, save: 0 };
   fs.mkdirSync(home, { recursive: true });
   const { jobs, job } = createIssueJob(home, converted, [
@@ -138,6 +148,7 @@ test('CLI permits every classified cause after independent diagnostic-save hard 
       }
       if (url.pathname === '/ih5/editor/work/getConfig') {
         const body = JSON.parse((await readBody(request)).toString('utf8'));
+        if (body.type === 'settings') return sendJson(response, body.nid === sourceNid ? sourceSettings : targetSettings);
         return sendJson(response, body.nid === sourceNid ? { customVars: { environment: 'test' } } : targetConfig);
       }
       if (url.pathname === '/ih5/app/user/getDefaultConfig') {

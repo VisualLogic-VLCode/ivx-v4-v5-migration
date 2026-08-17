@@ -120,7 +120,16 @@ export { assertRepairableCluster, evaluateRepairCandidate, newHighSeverityIssues
 export { TargetUpdateOrchestrator } from './repair/target-update-orchestrator.js';
 export { encodePlatformWork, decodePlatformWork } from './platform/work-codec.js';
 export { withTargetWriteLease } from './platform/target-write-lease.js';
-export { extractWorkRouting, IvxPlatformAdapter, mergeSaveAsConfig, normalizePlatformBaseUrl } from './platform/http-adapter.js';
+export {
+  buildSaveAsDomainRouting,
+  extractWorkDomainBinding,
+  extractWorkPathOwnership,
+  extractWorkRouting,
+  IvxPlatformAdapter,
+  mergeSaveAsConfig,
+  normalizePlatformBaseUrl,
+  workRoutingMatches,
+} from './platform/http-adapter.js';
 export { inspectPlatformToken, normalizeTokenFilePath, readPlatformTokenFile, resolvePlatformToken } from './platform/token-source.js';
 export { SAVE_INTENTS, SaveAsOrchestrator, prepareInitialSaveAsWork, rewriteCaseNidForFinalSave } from './platform/save-as-orchestrator.js';
 export { AgentInstaller } from './agents/installer.js';

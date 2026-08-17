@@ -1,6 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { extractWorkRouting, IvxPlatformAdapter, mergeSaveAsConfig, normalizePlatformBaseUrl } from '../src/platform/http-adapter.js';
+import {
+  buildSaveAsDomainRouting,
+  extractWorkDomainBinding,
+  extractWorkPathOwnership,
+  extractWorkRouting,
+  IvxPlatformAdapter,
+  mergeSaveAsConfig,
+  normalizePlatformBaseUrl,
+} from '../src/platform/http-adapter.js';
 import { encodePlatformWork } from '../src/platform/work-codec.js';
 
 const work = {
@@ -53,6 +61,7 @@ test('platform adapter preflight separates personal allow, role deny, and group 
     [10, { nid: 10, workId: 'a-1', gid: 0, memberType: 3 }],
     [11, { nid: 11, workId: 'b-1', gid: 0, memberType: 4 }],
     [12, { nid: 12, workId: 'c-1', gid: 99, memberType: 3 }],
+    [13, { nid: 13, workId: 'd-1', gid: 98, memberType: 3 }],
   ]);
   const adapter = new IvxPlatformAdapter({
     baseUrl: 'http://localhost:3000',
@@ -63,13 +72,14 @@ test('platform adapter preflight separates personal allow, role deny, and group 
       const body = options.body ? JSON.parse(options.body) : {};
       if (pathname.endsWith('/work/get')) return response(cases.get(body.nid));
       if (pathname.endsWith('/userinfo')) return response({ id: 500 });
-      if (pathname.endsWith('/workGroup/get')) return response({ gid: 99, uid: 600 });
+      if (pathname.endsWith('/workGroup/get')) return response({ gid: body.gid, uid: body.gid === 98 ? 500 : 600 });
       throw new Error(`Unexpected ${pathname}`);
     },
   });
   assert.equal((await adapter.preflightSaveAs({ nid: 10 })).decision, 'ALLOWED');
   assert.equal((await adapter.preflightSaveAs({ nid: 11 })).decision, 'DENIED');
   assert.equal((await adapter.preflightSaveAs({ nid: 12, gid: 99 })).decision, 'UNKNOWN');
+  assert.equal((await adapter.preflightSaveAs({ nid: 13, gid: 98 })).reason, 'GROUP_OWNER');
   assert.equal((await adapter.preflightTargetUpdate({ nid: 10 })).decision, 'ALLOWED');
   assert.equal((await adapter.preflightTargetUpdate({ nid: 11 })).reason, 'TARGET_ROLE_NOT_EDITABLE');
   assert.equal((await adapter.preflightTargetUpdate({ nid: 12 })).decision, 'UNKNOWN');
@@ -83,6 +93,99 @@ test('target routing snapshot prefers settings over work metadata without retain
     ),
     { domain: 'published.example', path: '/v4', previewDomain: 'preview.example', previewPath: '/v5', customDomain: true },
   );
+});
+
+test('Save As domain routing copies source domains while preserving target-generated paths', () => {
+  const source = {
+    domain: 'source.example.test',
+    customDomain: true,
+    previewDomain: 'source-preview.example.test',
+    path: '/play/source-must-not-copy',
+    previewPath: '/play/source-preview-must-not-copy',
+  };
+  const targetInfo = { path: '/play/target-info', previewPath: '/play/target-preview-info' };
+  const targetSettings = {
+    path: '/play/target-generated',
+    previewPath: '/play/target-preview-generated',
+    pubRoot: false,
+    preRoot: false,
+  };
+  assert.deepEqual(extractWorkDomainBinding(source), {
+    domain: 'source.example.test',
+    previewDomain: 'source-preview.example.test',
+    customDomain: true,
+  });
+  assert.deepEqual(extractWorkPathOwnership(targetInfo, targetSettings), {
+    path: '/play/target-generated',
+    previewPath: '/play/target-preview-generated',
+    pubRoot: false,
+    preRoot: false,
+  });
+  assert.deepEqual(buildSaveAsDomainRouting(source, targetInfo, targetSettings), {
+    domain: 'source.example.test',
+    path: '/play/target-generated',
+    previewDomain: 'source-preview.example.test',
+    previewPath: '/play/target-preview-generated',
+    customDomain: true,
+    pubRoot: false,
+    preRoot: false,
+  });
+});
+
+test('Save As domain routing keeps default domains and canonicalizes target root paths', () => {
+  assert.deepEqual(buildSaveAsDomainRouting({}, {}, {
+    path: '',
+    previewPath: '/',
+    pubRoot: true,
+    preRoot: true,
+  }), {
+    domain: '',
+    path: '/',
+    previewDomain: '',
+    previewPath: '/',
+    customDomain: false,
+    pubRoot: true,
+    preRoot: true,
+  });
+  assert.throws(() => buildSaveAsDomainRouting({}, {}, { path: '/play/target' }), { code: 'PLATFORM_RESPONSE_INVALID' });
+});
+
+test('routing modify preserves an unknown write outcome when immediate read-back is unavailable', async () => {
+  let modifyAttempted = false;
+  const adapter = new IvxPlatformAdapter({
+    baseUrl: 'http://localhost:3000',
+    token: 'token',
+    writesEnabled: true,
+    allowInsecureLocalhost: true,
+    fetchImpl: async (url) => {
+      const pathname = new URL(url).pathname;
+      if (pathname.endsWith('/work/get') && !modifyAttempted) {
+        return response({ nid: 10, workId: 'target-work-1' });
+      }
+      if (pathname.endsWith('/work/modify')) {
+        modifyAttempted = true;
+        throw new Error('connection reset after request dispatch');
+      }
+      throw new Error('routing read-back unavailable');
+    },
+  });
+
+  await assert.rejects(adapter.modifyWorkRouting({
+    nid: 10,
+    expectedWorkId: 'target-work-1',
+    routing: {
+      domain: 'source.example.test',
+      path: '/play/target',
+      previewDomain: 'source-preview.example.test',
+      previewPath: '/play/target-preview',
+      customDomain: true,
+      pubRoot: false,
+      preRoot: false,
+    },
+  }), (error) => {
+    assert.equal(error.details.outcome, 'UNKNOWN_AFTER_WRITE_ATTEMPT');
+    return true;
+  });
 });
 
 test('platform writes are disabled by default and errors redact the token', async () => {

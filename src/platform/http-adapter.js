@@ -91,7 +91,15 @@ export function mergeSaveAsConfig(defaultConfig, sourceConfig) {
   return defaults;
 }
 
-const WORK_ROUTING_KEYS = Object.freeze(['domain', 'path', 'previewDomain', 'previewPath', 'customDomain']);
+const WORK_ROUTING_KEYS = Object.freeze([
+  'domain',
+  'path',
+  'previewDomain',
+  'previewPath',
+  'customDomain',
+  'pubRoot',
+  'preRoot',
+]);
 
 export function extractWorkRouting(workInfo = {}, settings = {}) {
   const output = {};
@@ -100,6 +108,50 @@ export function extractWorkRouting(workInfo = {}, settings = {}) {
     else if (Object.hasOwn(workInfo || {}, key)) output[key] = structuredClone(workInfo[key]);
   }
   return output;
+}
+
+export function extractWorkDomainBinding(settings = {}) {
+  invariant(settings && typeof settings === 'object' && !Array.isArray(settings), 'PLATFORM_INPUT_INVALID', 'settings must be an object');
+  const binding = {
+    domain: Object.hasOwn(settings, 'domain') ? settings.domain : '',
+    previewDomain: Object.hasOwn(settings, 'previewDomain') ? settings.previewDomain : '',
+    customDomain: Object.hasOwn(settings, 'customDomain') ? settings.customDomain : false,
+  };
+  for (const key of ['domain', 'previewDomain']) {
+    invariant(typeof binding[key] === 'string', 'PLATFORM_RESPONSE_INVALID', `settings.${key} must be a string`);
+  }
+  invariant(typeof binding.customDomain === 'boolean', 'PLATFORM_RESPONSE_INVALID', 'settings.customDomain must be a boolean');
+  return binding;
+}
+
+export function extractWorkPathOwnership(workInfo = {}, settings = {}) {
+  const routing = extractWorkRouting(workInfo, settings);
+  invariant(typeof routing.path === 'string', 'PLATFORM_RESPONSE_INVALID', 'Target settings have no publish path');
+  invariant(typeof routing.previewPath === 'string', 'PLATFORM_RESPONSE_INVALID', 'Target settings have no preview path');
+  const pubRoot = Object.hasOwn(routing, 'pubRoot') ? routing.pubRoot : routing.path === '' || routing.path === '/';
+  const preRoot = Object.hasOwn(routing, 'preRoot') ? routing.preRoot : routing.previewPath === '' || routing.previewPath === '/';
+  invariant(typeof pubRoot === 'boolean', 'PLATFORM_RESPONSE_INVALID', 'Target settings pubRoot must be a boolean');
+  invariant(typeof preRoot === 'boolean', 'PLATFORM_RESPONSE_INVALID', 'Target settings preRoot must be a boolean');
+  return {
+    path: pubRoot ? '/' : routing.path,
+    previewPath: preRoot ? '/' : routing.previewPath,
+    pubRoot,
+    preRoot,
+  };
+}
+
+export function buildSaveAsDomainRouting(sourceSettings, targetWorkInfo, targetSettings) {
+  const source = extractWorkDomainBinding(sourceSettings);
+  const target = extractWorkPathOwnership(targetWorkInfo, targetSettings);
+  return normalizeWorkRouting({
+    domain: source.domain,
+    path: target.path,
+    previewDomain: source.previewDomain,
+    previewPath: target.previewPath,
+    customDomain: source.customDomain,
+    pubRoot: target.pubRoot,
+    preRoot: target.preRoot,
+  });
 }
 
 function normalizeWorkRouting(routing) {
@@ -111,15 +163,20 @@ function normalizeWorkRouting(routing) {
     if (Object.hasOwn(routing, key)) invariant(typeof routing[key] === 'string', 'PLATFORM_INPUT_INVALID', `routing.${key} must be a string`);
   }
   if (Object.hasOwn(routing, 'customDomain')) invariant(typeof routing.customDomain === 'boolean', 'PLATFORM_INPUT_INVALID', 'routing.customDomain must be a boolean');
-  const hasPublished = Object.hasOwn(routing, 'domain') || Object.hasOwn(routing, 'path');
-  const hasPreview = Object.hasOwn(routing, 'previewDomain') || Object.hasOwn(routing, 'previewPath');
+  for (const key of ['pubRoot', 'preRoot']) {
+    if (Object.hasOwn(routing, key)) invariant(typeof routing[key] === 'boolean', 'PLATFORM_INPUT_INVALID', `routing.${key} must be a boolean`);
+  }
+  const hasPublished = Object.hasOwn(routing, 'domain') || Object.hasOwn(routing, 'path') || Object.hasOwn(routing, 'pubRoot');
+  const hasPreview = Object.hasOwn(routing, 'previewDomain') || Object.hasOwn(routing, 'previewPath') || Object.hasOwn(routing, 'preRoot');
   invariant(!hasPublished || (Object.hasOwn(routing, 'domain') && Object.hasOwn(routing, 'path')), 'PLATFORM_INPUT_INVALID', 'routing domain and path must be supplied together');
   invariant(!hasPreview || (Object.hasOwn(routing, 'previewDomain') && Object.hasOwn(routing, 'previewPath')), 'PLATFORM_INPUT_INVALID', 'routing previewDomain and previewPath must be supplied together');
   invariant(!Object.hasOwn(routing, 'customDomain') || hasPublished, 'PLATFORM_INPUT_INVALID', 'routing.customDomain requires domain and path');
+  invariant(!Object.hasOwn(routing, 'pubRoot') || hasPublished, 'PLATFORM_INPUT_INVALID', 'routing.pubRoot requires domain and path');
+  invariant(!Object.hasOwn(routing, 'preRoot') || hasPreview, 'PLATFORM_INPUT_INVALID', 'routing.preRoot requires previewDomain and previewPath');
   return structuredClone(routing);
 }
 
-function routingMatches(expected, info, settings) {
+export function workRoutingMatches(expected, info, settings) {
   return Object.entries(expected).every(([key, value]) => {
     if (Object.hasOwn(settings || {}, key)) return settings[key] === value;
     return info?.[key] === value;
@@ -344,14 +401,19 @@ export class IvxPlatformAdapter {
       });
     } catch (error) {
       if (error?.details?.outcome !== 'UNKNOWN_AFTER_WRITE_ATTEMPT') throw error;
-      const observed = await readBack();
-      if (routingMatches(normalizedRouting, observed.workInfo, observed.settings)) {
+      let observed;
+      try {
+        observed = await readBack();
+      } catch {
+        throw error;
+      }
+      if (workRoutingMatches(normalizedRouting, observed.workInfo, observed.settings)) {
         return { ...observed, confirmation: 'CONFIRMED_BY_READBACK' };
       }
       throw error;
     }
     const observed = await readBack();
-    invariant(routingMatches(normalizedRouting, observed.workInfo, observed.settings), 'TARGET_ENVIRONMENT_VERIFICATION_FAILED', 'Target routing read-back does not match the requested binding');
+    invariant(workRoutingMatches(normalizedRouting, observed.workInfo, observed.settings), 'TARGET_ENVIRONMENT_VERIFICATION_FAILED', 'Target routing read-back does not match the requested binding');
     return { ...observed, confirmation: 'SUCCEEDED' };
   }
 

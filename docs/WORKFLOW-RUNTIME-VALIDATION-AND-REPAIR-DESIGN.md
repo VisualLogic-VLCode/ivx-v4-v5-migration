@@ -1,6 +1,6 @@
 # V4→V5 工作流：运行时验证、问题诊断与 AI 修复设计
 
-> 状态：阶段 0–10 及自主无副作用探索已全部实现；Workflow `0.7.1`、Converter `1.2.5` 与 Knowledge Runtime `0.1.5` 构成当前公开运行时集合。阶段 10“Additional V5 Creation 与 Existing Target Refresh”已通过本地合同、模拟平台、故障注入和公开分发验收；Existing Target Refresh 的真实平台写入试点仍需单独授权，未以模拟结果替代真实平台结论
+> 状态：阶段 0–10 及自主无副作用探索已全部实现；Workflow `0.7.2` 是当前候选，兼容 Converter `1.2.5` 与 Knowledge Runtime `0.1.5`，Agent protocol 保持 8。阶段 10“Additional V5 Creation 与 Existing Target Refresh”已通过本地合同、模拟平台、故障注入和公开分发验收；Existing Target Refresh 的真实平台写入试点仍需单独授权，未以模拟结果替代真实平台结论
 > 初稿：2026-08-12；本次修订：2026-08-17
 > 适用项目：`ivx-v4-v5-migration` 及其独立分发的 Workflow、Agent 适配器和知识运行时
 > 不修改：`tov5parser` 的转换规则；转换器继续由维护者在独立仓库中维护
@@ -206,8 +206,8 @@ flowchart TD
 进一步核对 VxEditor41/VxServer 后可确认：
 
 - 工作 JSON、work config、work settings/work info 是不同数据面。
-- `previewDomain`、`previewPath`、`domain`、`path` 属于目标案例的访问身份和路由。
-- VxServer 的另存逻辑会移除源预览域名/路径，让目标重新生成唯一地址。
+- `domain`、`customDomain`、`previewDomain` 构成应由源继承的 Domain Binding；`path`、`previewPath`、`pubRoot`、`preRoot` 构成目标独占的 Target Route Allocation。
+- VxServer 的另存逻辑会为目标重新生成唯一路径；Workflow 只能在目标创建后恢复源域名身份，不能把源路径覆盖回目标。
 - 配置中存在密钥、私钥、客户端 secret、证书/keystore 密码等敏感类别，既不能盲目复制，也不能交给 AI 判断。
 
 因此目标不是“字节级配置相同”，而是“业务语义所需的环境等价”。
@@ -228,13 +228,26 @@ flowchart TD
 ### 7.3 推荐的首版政策
 
 - `customVars`：继续在 Platform Adapter 内存中按源语义写入目标；Job 只记录键名、类型、是否存在、是否一致等脱敏信息，原值不进入 AI 上下文。
-- 预览域名/路径：让平台为目标生成合法地址。通常在轨迹中归一化源/目标 host、nid、workId；如果案例业务逻辑主动读取、拼接或比较 `location.host/path`，则不能归一化掉，必须建立等价目标绑定或标记 `ENVIRONMENT_CONFIGURATION`。
+- 域名与路径：另存时复制源 `domain`、`customDomain`、`previewDomain`，保留目标新生成的 `path`、`previewPath`、`pubRoot`、`preRoot`。通常在轨迹中只归一化 nid、workId 和已审查的目标路径映射；如果案例业务逻辑主动读取、拼接或比较 `location.host/path`，域名必须真实一致，路径差异也必须按场景审查，不能一概归一化。
 - WorkInfo 路由投影：`workInfo.domain`、`workInfo.previewDomain` 在目标读取结果中可能省略；只有对应的 `settings.domain`、`settings.previewDomain` 在源、目标两侧均存在并通过字段政策比较时，才可将该投影缺省归一化。Settings 也缺失时仍然阻断。
 - 预览禁用默认值：VxServer 只在 `workInfo.extra.preDisable === true` 时禁用预览，因此字段缺失与显式 `false` 语义等价；`true` 与缺失仍然阻断。Manifest 保留真实的 PRESENT/ABSENT，不伪造字段存在。
 - 安全的展示/加载设置：建立明确 allowlist 后才复制；首版不得使用“复制所有未知键”。
 - 密钥、证书、客户端 secret、账号资源：只报告缺失/不等价，要求用户在目标侧绑定；绝不输出原值。
 - 外部 API、数据库、消息队列：记录逻辑绑定是否等价。可能产生真实副作用的测试默认禁止自动执行。
 - 保存配置预设名称 `/config/name`：VxEditor 保存预设时可能把显示名称带入 work config，但 VxServer 运行时配置合同不读取该字段，因此显式忽略。该结论不扩展为“忽略所有非域名字段”；其他未知字段仍默认阻塞。
+
+#### 7.3.1 Save As 域名配置检查点
+
+普通另存、Additional V5 和诊断副本共用同一个 journaled checkpoint：
+
+1. 在创建目标前，读取 revision-pinned V4 `settings` 并冻结 Domain Binding 及其摘要；
+2. 创建 V5 后读取其 settings/work info，冻结 Target Route Allocation 及摘要；
+3. 构造完整平台 payload：源域名字段 + 目标路径/root 字段；若当前目标已经精确匹配则不写；
+4. 写前再次确认源域名和目标路径未漂移，调用一次窄化的 routing modify，再精确读回；
+5. 请求响应丢失时只允许通过目标读回确认。未观察到精确结果时进入 `DOMAIN_ROUTING_RECONCILIATION_REQUIRED`，不得自动重放；
+6. 若旧 journal 在该检查点引入前已经开始最终内容保存，则标为 `LEGACY_SKIPPED` 并沿用旧恢复语义，不在升级恢复途中插入额外平台写入。
+
+Domain Binding 和 Target Route Allocation 只作为私有 Job 证据保存，不含 Token/Cookie。Agent 不直接调用 `getConfig`/`modify`，也不自行修补设置；它只消费 CLI 的确认、漂移或对账结论。该检查点不增加新的 Agent 授权或输入格式，因此 Agent protocol 保持 8。
 
 ### 7.4 环境门禁状态
 
@@ -961,11 +974,11 @@ Converter 修复后由维护者发布新 Converter；用户更新后可以对原
 
 ## 20. 当前状态与后续维护
 
-代码改造阶段 0–10 及自主无副作用探索已全部实现。Knowledge Runtime `0.1.5`、Workflow `0.7.1` 和兼容的独立 Converter `1.2.5` 均已公开发布；受控真实案例已完成普通另存、环境门禁和无人值守运行时一致性验收，自主探索的安全遍历与隔离边界已通过本地真实 Chromium 验收。Workflow `0.4.0` 公共全新安装暴露的 GitHub Release 正文下载超时，已由 `0.4.1` 的受校验系统下载路径、`0.4.2` 的显式防降级 Launcher 恢复，以及 `0.4.3` 的协调式 setup 依次修复。`0.4.3` 的全新安装、旧用户恢复、Agent 同步和回滚验收均通过；`0.4.4` 仅重构普通用户入口、授权说明与维护者验收信息架构，不改变运行时行为。
+代码改造阶段 0–10 及自主无副作用探索已全部实现。Knowledge Runtime `0.1.5`、Workflow `0.7.1` 和兼容的独立 Converter `1.2.5` 已公开发布；Workflow `0.7.2` 域名配置保留补丁已形成候选，等待提交与签名发布。受控真实案例已完成普通另存、环境门禁和无人值守运行时一致性验收，自主探索的安全遍历与隔离边界已通过本地真实 Chromium 验收。Workflow `0.4.0` 公共全新安装暴露的 GitHub Release 正文下载超时，已由 `0.4.1` 的受校验系统下载路径、`0.4.2` 的显式防降级 Launcher 恢复，以及 `0.4.3` 的协调式 setup 依次修复。`0.4.3` 的全新安装、旧用户恢复、Agent 同步和回滚验收均通过；`0.4.4` 仅重构普通用户入口、授权说明与维护者验收信息架构，不改变运行时行为。
 
 Workflow `0.5.0` 在此基础上增加 `/config/name` 的明确字段政策、精确范围的环境风险接受、诊断专用运行状态和 Agent 报告边界。Agent protocol 已提升到 6，Knowledge Runtime `0.1.3` 提供对应兼容范围。`0.5.1` 补齐 Workflow 回滚后的 Agent Skill 协调同步；`0.5.2` 增加以完整 V4 输入摘要为证据的 post-Save source revision 协调，并明确禁止通过重复 Save As 处理内容变化。签名 Release、稳定通道、全新安装、协调更新、回滚和既有 Review 恢复共同构成发布验收。
 
-阶段 0–10 的后续工作属于持续维护和扩大真实案例覆盖：继续收集稳定、可回滚的真实场景校准 Diagnosis/Repair 政策；按真实试点数据评估预算；为 Windows 建立原生 Token 文件 ACL 合同。阶段 10 的领域合同、CLI、Agent SOP、协议兼容和模拟平台故障分支已经随签名 Knowledge `0.1.4` 与 Workflow `0.6.0` 按依赖顺序公开发布；`0.6.1` 在不改变协议的前提下补齐旧 Group Job 的 null-gid 谱系兼容，`0.6.2` 继续保持协议 7，并将组件静态校验收窄到权威拥有边，避免把 `props` 用户业务数据误判为组件；`0.7.0` 与内容不变的 Knowledge `0.1.5` 按依赖顺序增加协议 8 的自主无副作用探索，`0.7.1` 仅校正已独立升级到 `1.2.5` 的 Converter 当前稳定基线文档。Additional V5、Existing Target Refresh 与自主探索的公开安装/更新路径可以使用，但 Existing Target Refresh 的真实平台写入仍应作为单独授权的试点逐步扩大覆盖。任何尚未由真实稳定场景覆盖的能力都必须明确标注为 mock、校准夹具或故障注入结果，不以静态结果替代运行时等价结论。Converter 的后续修复继续独立发布；只要版本仍满足 Workflow `0.7.1` 的 `>=1.2.0 <2.0.0` 兼容范围，就不要求同步发布新的 Workflow。
+阶段 0–10 的后续工作属于持续维护和扩大真实案例覆盖：继续收集稳定、可回滚的真实场景校准 Diagnosis/Repair 政策；按真实试点数据评估预算；为 Windows 建立原生 Token 文件 ACL 合同。阶段 10 的领域合同、CLI、Agent SOP、协议兼容和模拟平台故障分支已经随签名 Knowledge `0.1.4` 与 Workflow `0.6.0` 按依赖顺序公开发布；`0.6.1` 在不改变协议的前提下补齐旧 Group Job 的 null-gid 谱系兼容，`0.6.2` 继续保持协议 7，并将组件静态校验收窄到权威拥有边，避免把 `props` 用户业务数据误判为组件；`0.7.0` 与内容不变的 Knowledge `0.1.5` 按依赖顺序增加协议 8 的自主无副作用探索，`0.7.1` 仅校正已独立升级到 `1.2.5` 的 Converter 当前稳定基线文档，`0.7.2` 候选增加源 Domain Binding/目标 Route Allocation 分权的可恢复另存检查点。Additional V5、Existing Target Refresh 与自主探索的公开安装/更新路径可以使用，但 Existing Target Refresh 的真实平台写入仍应作为单独授权的试点逐步扩大覆盖。任何尚未由真实稳定场景覆盖的能力都必须明确标注为 mock、校准夹具或故障注入结果，不以静态结果替代运行时等价结论。Converter 的后续修复继续独立发布；只要版本仍满足 Workflow `0.7.2` 的 `>=1.2.0 <2.0.0` 兼容范围，就不要求同步发布新的 Workflow。
 
 ## 21. Additional V5 Creation 与 Existing Target Refresh（阶段 10 已实现并发布）
 

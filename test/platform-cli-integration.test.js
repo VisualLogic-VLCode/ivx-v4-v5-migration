@@ -67,7 +67,21 @@ test('CLI platform migration uses caller token, converts, saves, checkpoints, an
   let targetWork = null;
   let targetWorkId = 'target-work-0';
   let targetConfig = {};
-  const calls = { create: 0, config: 0, save: 0 };
+  const sourceSettings = {
+    domain: 'source.example.test',
+    previewDomain: 'source-preview.example.test',
+    customDomain: true,
+  };
+  const targetSettings = {
+    domain: '',
+    path: '/play/target-generated',
+    previewDomain: '',
+    previewPath: '/play/target-preview-generated',
+    customDomain: false,
+    pubRoot: false,
+    preRoot: false,
+  };
+  const calls = { create: 0, config: 0, routing: 0, save: 0 };
   fs.mkdirSync(home, { recursive: true });
   fs.mkdirSync(converter, { recursive: true });
   fs.writeFileSync(path.join(converter, 'package.json'), JSON.stringify({ name: '@test/platform-converter', version: '1.0.0', type: 'module' }));
@@ -115,6 +129,7 @@ test('CLI platform migration uses caller token, converts, saves, checkpoints, an
       }
       if (url.pathname === '/ih5/editor/work/getConfig') {
         const body = JSON.parse((await readBody(request)).toString('utf8'));
+        if (body.type === 'settings') return sendJson(response, body.nid === sourceNid ? sourceSettings : targetSettings);
         return sendJson(response, body.nid === sourceNid ? { customVars: { environment: 'test' } } : targetConfig);
       }
       if (url.pathname === '/ih5/app/user/getDefaultConfig') {
@@ -130,6 +145,14 @@ test('CLI platform migration uses caller token, converts, saves, checkpoints, an
         calls.config += 1;
         const body = JSON.parse((await readBody(request)).toString('utf8'));
         targetConfig = body.config;
+        return sendJson(response, {});
+      }
+      if (url.pathname === '/ih5/editor/work/modify') {
+        calls.routing += 1;
+        const body = JSON.parse((await readBody(request)).toString('utf8'));
+        for (const key of ['domain', 'path', 'previewDomain', 'previewPath', 'customDomain', 'pubRoot', 'preRoot']) {
+          if (Object.hasOwn(body, key)) targetSettings[key] = body[key];
+        }
         return sendJson(response, {});
       }
       if (url.pathname.startsWith('/work/save/')) {
@@ -162,10 +185,14 @@ test('CLI platform migration uses caller token, converts, saves, checkpoints, an
     assert.equal(result.code, 0, result.stderr || result.stdout);
     const output = JSON.parse(result.stdout);
     assert.equal(output.result.status, 'SUCCEEDED');
-    assert.deepEqual(calls, { create: 1, config: 1, save: 1 });
+    assert.deepEqual(calls, { create: 1, config: 1, routing: 1, save: 1 });
     assert.equal(targetWork.case.props.nid, targetNid);
     assert.equal(targetConfig.default, undefined);
     assert.deepEqual(targetConfig.customVars, { environment: 'test' });
+    assert.equal(targetSettings.domain, 'source.example.test');
+    assert.equal(targetSettings.previewDomain, 'source-preview.example.test');
+    assert.equal(targetSettings.path, '/play/target-generated');
+    assert.equal(targetSettings.previewPath, '/play/target-preview-generated');
     assert.equal(allFileText(home).includes(token), false);
   } finally {
     await new Promise((resolve) => server.close(resolve));

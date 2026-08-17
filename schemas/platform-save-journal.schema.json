@@ -26,6 +26,52 @@
       },
       "additionalProperties": true
     },
+    "domainRouting": {
+      "type": "object",
+      "required": ["policy", "required", "status"],
+      "properties": {
+        "policy": { "const": "COPY_SOURCE_DOMAINS_PRESERVE_TARGET_PATHS" },
+        "required": { "type": "boolean" },
+        "status": {
+          "enum": ["PENDING", "REQUESTED", "OUTCOME_UNKNOWN", "INCOMPLETE", "CONFIRMED", "LEGACY_SKIPPED"]
+        },
+        "source": {
+          "type": "object",
+          "required": ["domain", "previewDomain", "customDomain"],
+          "properties": {
+            "domain": { "type": "string" },
+            "previewDomain": { "type": "string" },
+            "customDomain": { "type": "boolean" }
+          },
+          "additionalProperties": false
+        },
+        "sourceSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "targetPathSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "expected": {
+          "type": "object",
+          "required": ["domain", "path", "previewDomain", "previewPath", "customDomain", "pubRoot", "preRoot"],
+          "properties": {
+            "domain": { "type": "string" },
+            "path": { "type": "string" },
+            "previewDomain": { "type": "string" },
+            "previewPath": { "type": "string" },
+            "customDomain": { "type": "boolean" },
+            "pubRoot": { "type": "boolean" },
+            "preRoot": { "type": "boolean" }
+          },
+          "additionalProperties": false
+        },
+        "expectedSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "preparedAt": { "type": "string" },
+        "requestedAt": { "type": "string" },
+        "appliedAt": { "type": "string" },
+        "skippedAt": { "type": "string" },
+        "skipReason": { "type": "string" },
+        "confirmation": { "type": "string" },
+        "error": { "type": "object" }
+      },
+      "additionalProperties": false
+    },
     "finalSave": { "type": "object" },
     "verification": { "type": "object" },
     "attempts": { "type": "array" }

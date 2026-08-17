@@ -16,6 +16,14 @@ _Avoid_: Rerun, new migration, another Save As
 An explicit user intent that starts a new Migration Job from the current V4 source and creates a new V5 target while preserving every earlier Job, Review, and target.
 _Avoid_: Retry, resume, Existing Target Refresh
 
+**Domain Binding**:
+The source-owned public-domain identity inherited by a newly created V5 target: `domain`, `customDomain`, and `previewDomain`.
+_Avoid_: Complete routing configuration, Target Route Allocation
+
+**Target Route Allocation**:
+The target-owned platform allocation retained from the newly created V5 case: `path`, `previewPath`, `pubRoot`, and `preRoot`.
+_Avoid_: Source path copy, Domain Binding
+
 **Existing Target Refresh**:
 A separate managed operation that fully converts the current V4 source into a previously Workflow-created V5 target while retaining that target nid and, by default, its target-side configuration.
 _Avoid_: Save As, Runtime Repair, overwrite
