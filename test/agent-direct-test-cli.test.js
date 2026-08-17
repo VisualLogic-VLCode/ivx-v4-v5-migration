@@ -143,6 +143,13 @@ test('protocol-9 Agent Direct CLI hands execution to the local Agent and archive
     assert.equal(context.workflowExecution.actionPlanner, 'NOT_PROVIDED');
     assert.equal(context.credentialPolicy.access, 'AGENT_LOCAL_USE');
     assert.equal(context.credentialPolicy.valuesIncluded, false);
+    assert.equal(context.credentialPolicy.userDirectInput, 'EPHEMERAL_BROWSER_USE_ALLOWED');
+    assert.equal(context.credentialPolicy.browserUse, 'AUTHORIZED_SUBJECTS_ONLY');
+    assert.equal(context.credentialPolicy.agentToolTransport, 'MINIMUM_BROWSER_OPERATION_ONLY');
+    assert.equal(context.credentialPolicy.workflowAccess, 'FORBIDDEN');
+    assert.equal(context.credentialPolicy.persistence, 'FORBIDDEN');
+    assert.equal(context.credentialPolicy.reporting, 'FORBIDDEN');
+    assert.equal(context.credentialPolicy.reuse, 'CURRENT_AGENT_TASK_ONLY');
     assert.equal(context.job.root, path.join(home, 'jobs', job.jobId));
     assert.equal(context.job.manifest.entries.some((entry) => entry.path === 'v4/app.json'), true);
     assert.equal(delivered.stdout.includes(token), false);

@@ -84,6 +84,10 @@ _Avoid_: Runtime Exploration, Runtime Scenario, Workflow-driven test
 The private immutable handoff for one Agent Direct Test Session containing exact V4/V5 revisions and preview entry points, environment evidence, complete selected-Job read scope, an Agent-owned evidence workspace, and the authorization boundary.
 _Avoid_: Browser driver configuration, test plan, raw credential export
 
+**User-Supplied Ephemeral Credential**:
+A secret value that the current user explicitly provides in the active Agent task for authentication to the exact subjects of one authorized Agent Direct Test Session; the Agent may consume it only through the single minimum browser-control invocation, which is its sole Agent-tool transport, while Workflow never receives the value and reuse or persistence is forbidden.
+_Avoid_: Managed platform Token, credential file, reusable browser profile, Workflow Context field
+
 **Agent Test Attestation**:
 A redacted Agent-authored statement of tested business flows, observations, effects, evidence references, and outcome that Workflow scope-checks and archives without presenting it as driver-verified Runtime Parity.
 _Avoid_: Runtime Comparison Report, strict parity proof, Workflow verdict

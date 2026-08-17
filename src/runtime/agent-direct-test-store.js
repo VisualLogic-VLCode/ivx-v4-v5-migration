@@ -235,7 +235,17 @@ export class AgentDirectTestStore {
           target: { ...authorization.target, baseUrl: targetUrl.toString() },
         },
         environmentComparisonPath: path.join(this.reviews.reviewDir(reviewId), 'environment', `${authorization.environment.comparisonId}.json`),
-        credentialPolicy: { access: 'AGENT_LOCAL_USE', valuesIncluded: false, reporting: 'FORBIDDEN' },
+        credentialPolicy: {
+          access: 'AGENT_LOCAL_USE',
+          valuesIncluded: false,
+          userDirectInput: 'EPHEMERAL_BROWSER_USE_ALLOWED',
+          browserUse: 'AUTHORIZED_SUBJECTS_ONLY',
+          agentToolTransport: 'MINIMUM_BROWSER_OPERATION_ONLY',
+          workflowAccess: 'FORBIDDEN',
+          persistence: 'FORBIDDEN',
+          reporting: 'FORBIDDEN',
+          reuse: 'CURRENT_AGENT_TASK_ONLY',
+        },
         workflowExecution: { browserDriver: 'NOT_PROVIDED', actionPlanner: 'NOT_PROVIDED', readinessDetector: 'NOT_PROVIDED' },
       };
       immutableJson(path.join(root, 'context.json'), context, 'AGENT_TEST_CONTEXT_CONFLICT');

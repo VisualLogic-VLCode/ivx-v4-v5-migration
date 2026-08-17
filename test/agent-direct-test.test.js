@@ -105,6 +105,17 @@ test('Agent Direct read-only session hands full control to the Agent and archive
     assert.equal(context.workflowExecution.browserDriver, 'NOT_PROVIDED');
     assert.equal(context.workflowExecution.actionPlanner, 'NOT_PROVIDED');
     assert.equal(context.credentialPolicy.access, 'AGENT_LOCAL_USE');
+    assert.deepEqual(context.credentialPolicy, {
+      access: 'AGENT_LOCAL_USE',
+      valuesIncluded: false,
+      userDirectInput: 'EPHEMERAL_BROWSER_USE_ALLOWED',
+      browserUse: 'AUTHORIZED_SUBJECTS_ONLY',
+      agentToolTransport: 'MINIMUM_BROWSER_OPERATION_ONLY',
+      workflowAccess: 'FORBIDDEN',
+      persistence: 'FORBIDDEN',
+      reporting: 'FORBIDDEN',
+      reuse: 'CURRENT_AGENT_TASK_ONLY',
+    });
     assert.equal(context.job.root, f.jobs.jobDir(f.job.jobId));
     assert.equal(context.job.manifest.entries.some((entry) => entry.path === 'v4/app.json'), true);
     fs.mkdirSync(path.join(context.session.workspaceRoot, 'screenshots'), { recursive: true });
@@ -205,5 +216,17 @@ test('Agent Direct evidence cannot be missing or escape the private workspace th
     }), { code: 'AGENT_TEST_EVIDENCE_PATH_INVALID' });
   } finally {
     fs.rmSync(temporary, { recursive: true, force: true });
+  }
+});
+
+test('Agent adapters require the explicit Context policy before using current-user ephemeral browser credentials', () => {
+  for (const relative of ['agents/codex/SKILL.md', 'agents/claude/SKILL.md']) {
+    const skill = fs.readFileSync(path.resolve(import.meta.dirname, '..', relative), 'utf8');
+    assert.match(skill, /credentialPolicy\.userDirectInput: EPHEMERAL_BROWSER_USE_ALLOWED/);
+    assert.match(skill, /agentToolTransport: MINIMUM_BROWSER_OPERATION_ONLY/);
+    assert.match(skill, /exact authorized V4\/V5 subjects/);
+    assert.match(skill, /minimum Agent-controlled browser operation/);
+    assert.match(skill, /another origin/);
+    assert.match(skill, /another task or authorization/);
   }
 });
