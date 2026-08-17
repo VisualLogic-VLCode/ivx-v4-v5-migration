@@ -4,7 +4,7 @@ This project is the distributable local workflow used by Codex or Claude Code. I
 
 ## Current status
 
-The current release candidate is Workflow `0.7.3` with Agent protocol 8, Converter `1.2.5`, and Knowledge Runtime `0.1.5`. Its capabilities are:
+The current release candidate is Workflow `0.7.4` with Agent protocol 8, Converter `1.2.5`, and Knowledge Runtime `0.1.5`. Its capabilities are:
 
 - private global Job storage with atomic state writes and per-Job locks;
 - metadata + physical work version classification;
@@ -22,6 +22,7 @@ The current release candidate is Workflow `0.7.3` with Agent protocol 8, Convert
 - independent Existing Target Refresh with trusted lineage—including a current-platform-proven compatibility path for completed legacy Group Jobs whose stored gid is null—source/target/config CAS, exact short-lived authorization, target-identity rewrite, preserved target configuration, write-ahead reconciliation, no unknown replay, and Review succession;
 - a separately authorized diagnostic Save As path that creates an editor-openable V5 copy for any classified issue after independent write hard gates pass, without reporting normal success;
 - independent private Runtime Review Session persistence, one-writer-per-target-revision leases, Human Finding evidence, and external-revision baseline reconciliation;
+- exact-version legacy Workflow-pin recovery for Runtime Review, with complete forward Job pins and local-before-platform failure on missing or contradictory provenance;
 - a locked Playwright Runtime Driver with closed declarative scenarios, isolated V4/V5 contexts, private browser authentication state, redacted traces, reviewed normalization, side-effect gates, and report-only parity comparison;
 - explicitly authorized autonomous read-only exploration with immutable Job scope, trusted dynamic `SAFE_BFS`, same-origin/read-only gates, resumable checkpoints, masked screenshots, pixel/structure/accessibility evidence, and coverage-bounded—not strict—parity claims;
 - an exact-scoped, short-lived USER environment-risk acceptance for diagnostic runtime observation without rewriting environment equivalence, Converter attribution, or target-repair authority;
@@ -93,7 +94,7 @@ The commands below document what the Agent executes and remain available as a ma
 
 ```bash
 npm install --global \
-  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.7.3/ivx-v4-v5-migration-0.7.3.tgz
+  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.7.4/ivx-v4-v5-migration-0.7.4.tgz
 ```
 
 ```bash
