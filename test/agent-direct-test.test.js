@@ -248,3 +248,18 @@ test('Agent adapters keep readiness and evidence timeouts under Agent control', 
     assert.match(skill, /Workflow (?:does not|neither).*choose(?:s)? budgets/);
   }
 });
+
+test('Agent adapters recover local Playwright resolution without a Workflow loading bridge', () => {
+  for (const relative of ['agents/codex/SKILL.md', 'agents/claude/SKILL.md']) {
+    const skill = fs.readFileSync(path.resolve(import.meta.dirname, '..', relative), 'utf8');
+    assert.match(skill, /normal Agent-local Playwright\/module loading fails/);
+    assert.match(skill, /do not ask Workflow to provide a module-loading bridge/);
+    assert.match(skill, /active signed managed Workflow package root from installed runtime state/);
+    assert.match(skill, /anchor an Agent-local module resolver at its package metadata/);
+    assert.match(skill, /createRequire.*package\.json/);
+    assert.match(skill, /without hard-coding a Workflow version or copying dependencies/);
+    assert.match(skill, /Verify browser launch and rerun the complete non-sensitive probe/);
+    assert.match(skill, /only after those safe local loading strategies fail may you stop as `TEST_HARNESS`/);
+    assert.doesNotMatch(skill, /workflows\/0\.8\.2/);
+  }
+});

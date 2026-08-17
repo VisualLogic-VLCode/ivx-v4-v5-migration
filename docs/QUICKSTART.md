@@ -22,7 +22,7 @@
 
 ```bash
 npm install --global \
-  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.8.2/ivx-v4-v5-migration-0.8.2.tgz
+  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.8.3/ivx-v4-v5-migration-0.8.3.tgz
 ```
 
 ## 2. 命令行参考：安全录入 Token 并初始化
@@ -204,9 +204,9 @@ ivx-migrate review agent-test-context-platform --review <reviewId> --authorizati
 ivx-migrate review agent-test-submit-platform --review <reviewId> --session <sessionId> --file <attestation.json>
 ```
 
-Agent 优先使用本地已授权的认证/浏览器会话。当返回的 Context 明确包含 `credentialPolicy.userDirectInput: EPHEMERAL_BROWSER_USE_ALLOWED` 与 `agentToolTransport: MINIMUM_BROWSER_OPERATION_ONLY` 时，若当前用户在本次 Agent 任务中直接输入 Token、Cookie 或 session 值，并说明用于当前授权的 V4/V5 预览页，Agent 必须先在准备使用的同一浏览器执行面用随机非敏感哨兵完成相同加载前存储机制的写入、读取和删除；不能枚举或查看既有存储。探测失败时不得消费真实值，应更换已授权工具或以 `TEST_HARNESS` 停止。探测成功后，真实值才可只在完成认证所需的一次最小浏览器控制调用中临时使用。Workflow 不接收该值；Agent 不得要求重复输入、回显、转发到其他地址、跨任务复用，或把它放进 shell/CLI 参数、环境变量、独立或落盘脚本、文件、截图、报告、证据和证明。证据只能记录“认证初始化成功/失败”。
+Agent 优先使用本地已授权的认证/浏览器会话。当返回的 Context 明确包含 `credentialPolicy.userDirectInput: EPHEMERAL_BROWSER_USE_ALLOWED` 与 `agentToolTransport: MINIMUM_BROWSER_OPERATION_ONLY` 时，若当前用户在本次 Agent 任务中直接输入 Token、Cookie 或 session 值，并说明用于当前授权的 V4/V5 预览页，Agent 必须先在准备使用的同一浏览器执行面用随机非敏感哨兵完成相同加载前存储机制的写入、读取和删除；不能枚举或查看既有存储。探测失败时不得消费真实值，应先更换已授权工具。若普通 Playwright/模块加载失败，Agent 还必须从本机激活的签名受管 Workflow 定位包根，由 Agent 自己把模块解析锚定到该包并重新验证浏览器启动和完整哨兵探测；不得要求 Workflow 提供加载桥、复制依赖或硬编码版本。只有这些有界安全策略均失败后，才以 `TEST_HARNESS` 停止。探测成功后，真实值才可只在完成认证所需的一次最小浏览器控制调用中临时使用。Workflow 不接收该值；Agent 不得要求重复输入、回显、转发到其他地址、跨任务复用，或把它放进 shell/CLI 参数、环境变量、独立或落盘脚本、文件、截图、报告、证据和证明。证据只能记录“认证初始化成功/失败”。
 
-页面业务就绪由 Agent 判断：V4、V5 每侧默认最多等待 300 秒，约每 10 秒做一次保持现有浏览器上下文的有界轮询。页面标题、load 事件或平台加载壳层不算就绪；必须观察到稳定的业务根 DOM/ARIA/状态，并排除阻断性的认证或运行时错误。DOM/无障碍树、视觉截图和控制台/网络/运行时取证各自使用至少 120 秒的独立操作预算，单阶段超时最多扩大预算重试一次。浏览器工具自身的 30 秒 watchdog 不得被误当成 300 秒业务等待已经结束。只读授权下，Agent 自己负责避免提交、保存、创建、更新、删除、支付、发布等业务副作用；无法安全继续时必须停止该路径。提交结果属于 `AGENT_ATTESTED` 证据，不能声称严格 parity，也不会自动修改 Review parity、应用 Patch 或更新平台案例。`AGENT_DIRECT_SIDE_EFFECT` 已建模但在 0.8.2 中尚未开放。
+页面业务就绪由 Agent 判断：V4、V5 每侧默认最多等待 300 秒，约每 10 秒做一次保持现有浏览器上下文的有界轮询。页面标题、load 事件或平台加载壳层不算就绪；必须观察到稳定的业务根 DOM/ARIA/状态，并排除阻断性的认证或运行时错误。DOM/无障碍树、视觉截图和控制台/网络/运行时取证各自使用至少 120 秒的独立操作预算，单阶段超时最多扩大预算重试一次。浏览器工具自身的 30 秒 watchdog 不得被误当成 300 秒业务等待已经结束。只读授权下，Agent 自己负责避免提交、保存、创建、更新、删除、支付、发布等业务副作用；无法安全继续时必须停止该路径。提交结果属于 `AGENT_ATTESTED` 证据，不能声称严格 parity，也不会自动修改 Review parity、应用 Patch 或更新平台案例。`AGENT_DIRECT_SIDE_EFFECT` 已建模但在 0.8.3 中尚未开放。
 
 另存成功后平台可能只推进源案例的 `workId`。`create-platform` 会在创建 Review 前读取当前完整源 JSON，并与 Job 中不可变的转换输入做规范化摘要比较；内容完全相同时，自动把 Review 固定到新 revision 并留下私有审计记录。对于 Workflow 0.5.1 已创建但尚未产生环境证据的 Review，首次 `environment-check` 会执行相同协调。若内容确实变化，则返回 `REVIEW_SOURCE_CONTENT_CHANGED` 并保留已有 V5；不要重新迁移或再次 Save As。已有环境或运行时证据后不会自动改写 source baseline。
 
@@ -216,7 +216,7 @@ Workflow 0.7.3 修复平台默认值省略导致的误报：当平台没有返�
 
 Workflow 0.7.4 修复旧 Job 创建 Runtime Review 时缺少 Workflow SHA-256 的兼容缺口。只有已安装的精确 Workflow 版本、包名和摘要证据一致时，才把真实摘要派生到新 Review；缺失、无效或互相矛盾的证据会在访问平台前安全停止，不修改旧 Job。新建 Job 会直接持久化完整的 Workflow 版本、包名和摘要，避免升级后再次丢失谱系。
 
-Workflow 0.8.0 将新运行时测试切换到 Agent Direct Test。Protocol-8 的 Exploration/Scenario 命令和历史证据仍可读取与恢复，但新测试不再经过 Workflow 浏览器驱动。Agent 获得完整受权 Job 与私有工作区后自主执行测试，再把脱敏证明交回 Workflow 做 revision/manifest 复核和不可变归档。Workflow 0.8.1 保持协议 9，并增加当前用户直接临时凭据的精确受权预览页浏览器使用政策。Workflow 0.8.2 继续保持协议 9，在不增加 Workflow 驱动的前提下，加入先探测后使用凭据、每侧默认 300 秒业务就绪等待和独立长时取证预算的 Agent SOP。
+Workflow 0.8.0 将新运行时测试切换到 Agent Direct Test。Protocol-8 的 Exploration/Scenario 命令和历史证据仍可读取与恢复，但新测试不再经过 Workflow 浏览器驱动。Agent 获得完整受权 Job 与私有工作区后自主执行测试，再把脱敏证明交回 Workflow 做 revision/manifest 复核和不可变归档。Workflow 0.8.1 保持协议 9，并增加当前用户直接临时凭据的精确受权预览页浏览器使用政策。Workflow 0.8.2 加入先探测后使用凭据、每侧默认 300 秒业务就绪等待和独立长时取证预算；Workflow 0.8.3 进一步要求 Agent 在模块加载失败时从当前受管包自主恢复解析，再允许判定测试工具不可用。两者都不增加 Workflow 驱动。
 
 Workflow 会先对 V4/V5 的配置、设置、域名、路由和绑定做脱敏环境比较。`ENVIRONMENT_EQUIVALENT` 或 `NORMALIZED_EQUIVALENT` 可进入正常浏览器对照；需用户绑定或环境阻塞时默认停止，也不会把差异归因给 Converter。`/config/name` 是已确认不进入平台运行时的保存配置预设名称，因此明确按 `IGNORE_FOR_PARITY` 处理；其他未知字段仍默认阻塞。预览 URL 来自平台当前元数据并与源/目标 `workId` 复核，不需要用户手填。
 
@@ -254,7 +254,7 @@ ivx-migrate rollback --kind converter
 
 工作流和转换器独立发布。转换器问题必须等待维护者发布新 Converter；普通用户和 Agent 不应修改已安装 Converter。
 
-若旧版运行时在更新 Workflow 时返回 `RUNTIME_DOWNLOAD_FAILED`，Agent 可执行一次受限恢复，不需要用户重新输入 Token：先从上面的不可变 `0.8.2` Release 重新安装 Launcher，再执行 `ivx-migrate setup --force --launcher-recovery RECOVER_SIGNED_RUNTIME`。协调式 setup 会保留现有 Token 路径，并一次补齐 Workflow、Converter、Knowledge 和 Agent 配置；不要只更新 Workflow，因为旧环境可能尚未安装所需 Knowledge Runtime。该确认只允许新版或同版 Launcher 接管 setup/update/rollback/Agent 同步，旧 Launcher 不能借此覆盖更高版本。成功后恢复正常的 `update apply` 流程。
+若旧版运行时在更新 Workflow 时返回 `RUNTIME_DOWNLOAD_FAILED`，Agent 可执行一次受限恢复，不需要用户重新输入 Token：先从上面的不可变 `0.8.3` Release 重新安装 Launcher，再执行 `ivx-migrate setup --force --launcher-recovery RECOVER_SIGNED_RUNTIME`。协调式 setup 会保留现有 Token 路径，并一次补齐 Workflow、Converter、Knowledge 和 Agent 配置；不要只更新 Workflow，因为旧环境可能尚未安装所需 Knowledge Runtime。该确认只允许新版或同版 Launcher 接管 setup/update/rollback/Agent 同步，旧 Launcher 不能借此覆盖更高版本。成功后恢复正常的 `update apply` 流程。
 
 维护者首次在其他用户电脑上验证公开安装、普通参与者权限与默认不保存边界时，才使用单独的[验收专用 Agent 提示](templates/AI-AGENT-ACCEPTANCE-PROMPT.md)和[外部普通用户验收清单](EXTERNAL-USER-ACCEPTANCE.md)。该流程不是普通用户快速入门；它的第一阶段故意禁止保存，并使用独立的[无保存结果模板](templates/EXTERNAL-USER-ACCEPTANCE-RESULT.md)和[另存结果模板](templates/EXTERNAL-USER-SAVE-AS-RESULT.md)。
 

@@ -44,11 +44,11 @@ The rules intentionally permit ordinary fast-forward source pushes and the signe
 
 The recommended first installation is Agent-first. The user gives their local Codex or Claude Code the copyable [general-user starter prompt](templates/AI-AGENT-STARTER-PROMPT.md), which points to the immutable tagged [bootstrap procedure](AI-AGENT-BOOTSTRAP.md). The Agent executes every command, while the user only types the Token into the visible native macOS secure-input dialog opened by the Launcher. After setup, the installed managed Skill becomes authoritative. The separate [acceptance prompt](templates/AI-AGENT-ACCEPTANCE-PROMPT.md) is maintainer QA and must not be presented as the ordinary onboarding path.
 
-The bootstrap procedure uses the stable `0.8.2` Launcher asset. Workflow `0.3.4` and later Releases are immutable at the repository level:
+The bootstrap procedure uses the stable `0.8.3` Launcher asset. Workflow `0.3.4` and later Releases are immutable at the repository level:
 
 ```bash
 npm install --global \
-  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.8.2/ivx-v4-v5-migration-0.8.2.tgz
+  https://github.com/VisualLogic-VLCode/ivx-v4-v5-migration/releases/download/v0.8.3/ivx-v4-v5-migration-0.8.3.tgz
 ivx-migrate setup --prompt-token
 ```
 
@@ -111,6 +111,8 @@ Workflow `0.8.0` raises Agent protocol to 9 and makes the local AI Agent the sol
 Workflow `0.8.1` keeps Agent protocol 9 and adds an explicit `User-Supplied Ephemeral Credential` policy to Agent Direct Test. A current user may provide a credential directly in the active Agent task for the exact authorized V4/V5 subjects; only the minimum Agent-controlled browser authentication operation may consume it. Workflow never receives the value, Context advertises the closed policy without values, and shell/CLI transport, persistence, evidence/reporting, other-origin use, and cross-task reuse remain forbidden. The signed descriptor advertises `agentDirectUserSuppliedEphemeralCredential:true`; Converter and Knowledge compatibility remain unchanged.
 
 Workflow `0.8.2` keeps Agent protocol 9 and hardens the distributed Agent execution policy without adding a Workflow browser driver. Before a current-user credential reaches the single allowed browser operation, the Agent must prove the intended before-load storage surface with a generated non-sensitive set/read/remove sentinel. V4 and V5 each receive a default 300-second business-root readiness budget with bounded polling; DOM/accessibility, visual, and console/network/runtime stages receive independent operation budgets of at least 120 seconds and one expanded retry. A title, load event, platform loading shell, or shorter browser-tool watchdog cannot be reported as business readiness or parity. Converter and Knowledge compatibility remain unchanged.
+
+Workflow `0.8.3` keeps Agent protocol 9 and the driverless runtime boundary. If normal Agent-local Playwright/module loading fails, the distributed Agent adapters must discover the active signed managed Workflow package, anchor their own local resolver at that package metadata, verify browser launch, and repeat the full non-sensitive probe before reporting `TEST_HARNESS`. The rule forbids a Workflow loading bridge, copied dependencies, and hard-coded managed versions. Workflow engine behavior, Converter/Knowledge compatibility, credential policy, and the disabled side-effect capability are unchanged.
 
 If a pre-`0.4.1` managed Workflow cannot download the current Release, install the current immutable Launcher with npm and invoke exactly one recovery command: `ivx-migrate setup --force --launcher-recovery RECOVER_SIGNED_RUNTIME`. Coordinated setup preserves the existing Token path and installs a compatible Workflow/Converter/Knowledge/Agent set; a Workflow-only update can be rejected correctly when the old home does not yet contain Knowledge. Recovery uses the bundled signed-channel client only for setup/update/rollback/Agent synchronization and refuses a bundled version older than the active managed Workflow. It does not read or replace the Token. Normal delegation resumes after the successful setup.
 
