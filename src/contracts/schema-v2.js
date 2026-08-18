@@ -25,6 +25,12 @@ export const AGENT_NATIVE_RUN_PURPOSES = Object.freeze([
   'REPAIR_REGRESSION',
 ]);
 
+const AGENT_NATIVE_EXPLORATION_SCOPES = Object.freeze(['WHOLE_CASE', 'AFFECTED_FLOWS']);
+const AGENT_NATIVE_DISCOVERY_SOURCES = Object.freeze(['STATIC_ARTIFACT', 'RUNTIME_UI', 'RUNTIME_NETWORK', 'USER_INPUT']);
+const AGENT_NATIVE_EFFECT_CLASSES = Object.freeze(['READ_ONLY', 'WRITE', 'UNKNOWN']);
+const AGENT_NATIVE_EXECUTION_SCOPES = Object.freeze(['FULLY_EXECUTED', 'PRE_SUBMIT_BOUNDARY', 'BLOCKED', 'NOT_EXECUTED']);
+const AGENT_NATIVE_FLOW_RESULTS = Object.freeze(['MATCHED', 'MISMATCH', 'INCONCLUSIVE', 'NOT_OBSERVED']);
+
 export const RESPONSIBLE_PARTIES = Object.freeze([
   'CONVERTER_MAINTAINER',
   'WORKFLOW_AI',
@@ -783,11 +789,97 @@ function validateAgentNativeSubject(subject, path) {
   }
 }
 
-export function validateAgentNativeObservationBundle(document) {
+function validateAgentNativeExploration(exploration, { outcome, purpose, coverage }) {
+  exactKeys(exploration, ['scope', 'inventory', 'candidateFlows', 'queue'], ['scope', 'inventory', 'candidateFlows', 'queue'], '$.exploration');
+  enumValue(exploration.scope, AGENT_NATIVE_EXPLORATION_SCOPES, '$.exploration.scope');
+  if (purpose === 'REPAIR_REGRESSION' && exploration.scope !== 'AFFECTED_FLOWS') fail('REPAIR_REGRESSION requires AFFECTED_FLOWS exploration scope');
+  if (purpose !== 'REPAIR_REGRESSION' && exploration.scope !== 'WHOLE_CASE') fail('Initial and user retest observations require WHOLE_CASE exploration scope');
+
+  const inventoryKeys = ['smokeTestCompleted', 'staticArtifactsInspected', 'runtimeSurfaceInspected', 'navigationInspected', 'serviceCallsInspected'];
+  exactKeys(exploration.inventory, inventoryKeys, inventoryKeys, '$.exploration.inventory');
+  for (const key of inventoryKeys) boolean(exploration.inventory[key], `$.exploration.inventory.${key}`);
+
+  const flows = array(exploration.candidateFlows, '$.exploration.candidateFlows', { max: 1000 });
+  const flowIds = new Set();
+  flows.forEach((flow, index) => {
+    const path = `$.exploration.candidateFlows[${index}]`;
+    const keys = ['flowId', 'summary', 'discoverySources', 'effectClass', 'executionScope', 'result', 'stepCount', 'stopReason', 'evidenceRefs'];
+    exactKeys(flow, keys, keys, path);
+    id(flow.flowId, `${path}.flowId`);
+    if (flowIds.has(flow.flowId)) fail('$.exploration.candidateFlows flowId values must be unique');
+    flowIds.add(flow.flowId);
+    string(flow.summary, `${path}.summary`, { max: 4096 });
+    const sources = array(flow.discoverySources, `${path}.discoverySources`, { max: 4 });
+    if (sources.length === 0) fail(`${path}.discoverySources must contain at least one source`);
+    sources.forEach((source, sourceIndex) => enumValue(source, AGENT_NATIVE_DISCOVERY_SOURCES, `${path}.discoverySources[${sourceIndex}]`));
+    if (new Set(sources).size !== sources.length) fail(`${path}.discoverySources must not contain duplicates`);
+    enumValue(flow.effectClass, AGENT_NATIVE_EFFECT_CLASSES, `${path}.effectClass`);
+    enumValue(flow.executionScope, AGENT_NATIVE_EXECUTION_SCOPES, `${path}.executionScope`);
+    enumValue(flow.result, AGENT_NATIVE_FLOW_RESULTS, `${path}.result`);
+    integer(flow.stepCount, `${path}.stepCount`, { min: 0, max: 1000000 });
+    nullableString(flow.stopReason, `${path}.stopReason`, { max: 4096 });
+    const refs = uniqueStrings(flow.evidenceRefs, `${path}.evidenceRefs`, { max: 200 });
+    refs.forEach((ref, refIndex) => safeArtifactPath(ref, `${path}.evidenceRefs[${refIndex}]`));
+
+    if (flow.executionScope === 'FULLY_EXECUTED') {
+      if (flow.result === 'NOT_OBSERVED' || flow.stopReason !== null) fail(`${path} fully executed flow requires an observed result and no stopReason`);
+    } else if (flow.executionScope === 'PRE_SUBMIT_BOUNDARY') {
+      if (flow.effectClass !== 'WRITE' || flow.result === 'NOT_OBSERVED' || flow.stopReason === null) {
+        fail(`${path} pre-submit flow requires WRITE classification, an observed result, and a stopReason`);
+      }
+    } else if (flow.executionScope === 'BLOCKED') {
+      if (flow.result !== 'INCONCLUSIVE' || flow.stopReason === null) fail(`${path} blocked flow must be INCONCLUSIVE with a stopReason`);
+    } else if (flow.result !== 'NOT_OBSERVED' || flow.stopReason === null) {
+      fail(`${path} unexecuted flow must be NOT_OBSERVED with a stopReason`);
+    }
+  });
+
+  const queueKeys = ['candidateCount', 'fullyExecutedCount', 'preSubmitCount', 'blockedCount', 'notExecutedCount', 'unknownEffectCount', 'exhausted'];
+  exactKeys(exploration.queue, queueKeys, queueKeys, '$.exploration.queue');
+  for (const key of queueKeys.filter((key) => key !== 'exhausted')) integer(exploration.queue[key], `$.exploration.queue.${key}`, { min: 0, max: 1000000 });
+  boolean(exploration.queue.exhausted, '$.exploration.queue.exhausted');
+  const derived = {
+    candidateCount: flows.length,
+    fullyExecutedCount: flows.filter((flow) => flow.executionScope === 'FULLY_EXECUTED').length,
+    preSubmitCount: flows.filter((flow) => flow.executionScope === 'PRE_SUBMIT_BOUNDARY').length,
+    blockedCount: flows.filter((flow) => flow.executionScope === 'BLOCKED').length,
+    notExecutedCount: flows.filter((flow) => flow.executionScope === 'NOT_EXECUTED').length,
+    unknownEffectCount: flows.filter((flow) => flow.effectClass === 'UNKNOWN').length,
+  };
+  for (const [key, value] of Object.entries(derived)) {
+    if (exploration.queue[key] !== value) fail(`$.exploration.queue.${key} must equal the candidate-flow inventory`);
+  }
+  const exhausted = derived.blockedCount === 0 && derived.notExecutedCount === 0;
+  if (exploration.queue.exhausted !== exhausted) fail('$.exploration.queue.exhausted must reflect blocked and unexecuted candidate flows');
+  if (coverage.businessFlows !== flows.length) fail('$.coverage.businessFlows must equal $.exploration.candidateFlows length');
+
+  const inventoryComplete = inventoryKeys.every((key) => exploration.inventory[key]);
+  if (outcome === 'OBSERVED_EQUIVALENT') {
+    if (!inventoryComplete) fail('OBSERVED_EQUIVALENT requires complete smoke, static, runtime, navigation, and service inventory');
+    if (flows.length === 0) fail('OBSERVED_EQUIVALENT requires at least one candidate business flow');
+    if (!exploration.queue.exhausted) fail('OBSERVED_EQUIVALENT requires an exhausted candidate-flow queue');
+    if (derived.unknownEffectCount > 0) fail('OBSERVED_EQUIVALENT cannot retain UNKNOWN-effect candidate flows');
+    if (flows.some((flow) => !['FULLY_EXECUTED', 'PRE_SUBMIT_BOUNDARY'].includes(flow.executionScope) || flow.result !== 'MATCHED')) {
+      fail('OBSERVED_EQUIVALENT requires every candidate flow to match after full execution or a recorded pre-submit boundary');
+    }
+  }
+  if (outcome === 'OBSERVED_MISMATCH' && !flows.some((flow) => flow.result === 'MISMATCH')) {
+    fail('OBSERVED_MISMATCH requires a MISMATCH candidate flow');
+  }
+  if (outcome === 'INCONCLUSIVE') {
+    const unresolved = !inventoryComplete || !exploration.queue.exhausted || derived.unknownEffectCount > 0
+      || flows.some((flow) => ['INCONCLUSIVE', 'NOT_OBSERVED'].includes(flow.result));
+    if (!unresolved) fail('INCONCLUSIVE requires incomplete inventory, unresolved queue/effect, or an inconclusive candidate flow');
+  }
+}
+
+export function validateAgentNativeObservationBundle(document, { allowLegacyExploration = false } = {}) {
   schemaHeader(document, 'agent-native-observation-bundle');
+  const keys = ['schemaVersion', 'kind', 'runId', 'previousRunId', 'repairBatchId', 'reviewId', 'jobId', 'purpose', 'subjects', 'environment', 'execution', 'outcome', 'coverage', 'exploration', 'effects', 'findings', 'evidenceRefs', 'claims', 'completedAt', 'createdAt', 'createdBy', 'sensitivity'];
+  const required = allowLegacyExploration ? keys.filter((key) => key !== 'exploration') : keys;
   exactKeys(document,
-    ['schemaVersion', 'kind', 'runId', 'previousRunId', 'repairBatchId', 'reviewId', 'jobId', 'purpose', 'subjects', 'environment', 'execution', 'outcome', 'coverage', 'effects', 'findings', 'evidenceRefs', 'claims', 'completedAt', 'createdAt', 'createdBy', 'sensitivity'],
-    ['schemaVersion', 'kind', 'runId', 'previousRunId', 'repairBatchId', 'reviewId', 'jobId', 'purpose', 'subjects', 'environment', 'execution', 'outcome', 'coverage', 'effects', 'findings', 'evidenceRefs', 'claims', 'completedAt', 'createdAt', 'createdBy', 'sensitivity'],
+    required,
+    keys,
     '$');
   id(document.runId, '$.runId');
   if (document.previousRunId !== null) id(document.previousRunId, '$.previousRunId');
@@ -817,6 +909,7 @@ export function validateAgentNativeObservationBundle(document) {
   enumValue(document.outcome, AGENT_NATIVE_OBSERVATION_OUTCOMES, '$.outcome');
   exactKeys(document.coverage, ['businessFlows', 'states', 'actions', 'assertions', 'screenshots', 'networkObservations'], ['businessFlows', 'states', 'actions', 'assertions', 'screenshots', 'networkObservations'], '$.coverage');
   for (const key of Object.keys(document.coverage)) integer(document.coverage[key], `$.coverage.${key}`, { min: 0, max: 1000000 });
+  if (document.exploration) validateAgentNativeExploration(document.exploration, { outcome: document.outcome, purpose: document.purpose, coverage: document.coverage });
   exactKeys(document.effects, ['occurred', 'systems', 'summaries'], ['occurred', 'systems', 'summaries'], '$.effects');
   boolean(document.effects.occurred, '$.effects.occurred');
   uniqueStrings(document.effects.systems, '$.effects.systems', { max: 100 });

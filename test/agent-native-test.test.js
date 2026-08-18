@@ -45,6 +45,41 @@ function fixture() {
   return { temporary, paths, jobs, job, reviews, review, store };
 }
 
+function businessExploration(outcome, overrides = {}) {
+  const result = outcome === 'OBSERVED_MISMATCH' ? 'MISMATCH' : outcome === 'INCONCLUSIVE' ? 'INCONCLUSIVE' : 'MATCHED';
+  const executionScope = outcome === 'INCONCLUSIVE' ? 'BLOCKED' : 'FULLY_EXECUTED';
+  return {
+    scope: overrides.scope || 'WHOLE_CASE',
+    inventory: {
+      smokeTestCompleted: true,
+      staticArtifactsInspected: true,
+      runtimeSurfaceInspected: true,
+      navigationInspected: true,
+      serviceCallsInspected: true,
+    },
+    candidateFlows: [{
+      flowId: 'flow-main-read',
+      summary: 'Redacted primary read-only business flow.',
+      discoverySources: ['STATIC_ARTIFACT', 'RUNTIME_UI', 'RUNTIME_NETWORK'],
+      effectClass: 'READ_ONLY',
+      executionScope,
+      result,
+      stepCount: 4,
+      stopReason: executionScope === 'BLOCKED' ? 'The paired business result could not be observed.' : null,
+      evidenceRefs: [],
+    }],
+    queue: {
+      candidateCount: 1,
+      fullyExecutedCount: executionScope === 'FULLY_EXECUTED' ? 1 : 0,
+      preSubmitCount: 0,
+      blockedCount: executionScope === 'BLOCKED' ? 1 : 0,
+      notExecutedCount: 0,
+      unknownEffectCount: 0,
+      exhausted: executionScope === 'FULLY_EXECUTED',
+    },
+  };
+}
+
 function observation(f, overrides = {}) {
   const runId = overrides.runId || 'native-run-001';
   const outcome = overrides.outcome || 'OBSERVED_MISMATCH';
@@ -64,7 +99,8 @@ function observation(f, overrides = {}) {
     environment: { comparisonId: null, status: null, differences: [{ path: '/config/name', summary: 'IGNORED_FOR_NATIVE_TEST' }] },
     execution: { tools: ['agent-chosen-browser', 'agent-authored-script'], startedAt: NOW, completedAt: NOW },
     outcome,
-    coverage: { businessFlows: 2, states: 8, actions: 12, assertions: 5, screenshots: 2, networkObservations: 4 },
+    coverage: { businessFlows: 1, states: 8, actions: 12, assertions: 5, screenshots: 2, networkObservations: 4 },
+    exploration: overrides.exploration || businessExploration(outcome),
     effects: overrides.effects || { occurred: false, systems: [], summaries: [] },
     findings: outcome === 'OBSERVED_MISMATCH'
       ? [{ findingId: 'finding-1', severity: 'ERROR', status: 'MISMATCH', summary: 'The observed V5 behavior differs from V4.', candidateCause: 'TARGET_CASE', evidenceRefs: ['screenshots/diff.png'] }]
@@ -96,10 +132,69 @@ test('Agent Native handoff has no Workflow execution authorization, session, env
     assert.equal(handoff.environment.status, null);
     assert.equal(handoff.subjects.source.workId, 'source-current-not-baseline');
     assert.equal(handoff.job.root, f.jobs.jobDir(f.job.jobId));
+    assert.equal(handoff.observationContract.businessFlowCoverageRequired, true);
+    assert.equal(handoff.observationContract.unknownEffectRequiresInconclusive, true);
+    assert.equal(handoff.observationContract.writeMayStopAtPreSubmitBoundary, true);
     assert.equal(fs.existsSync(path.join(f.reviews.reviewDir(f.review.reviewId), 'agent-direct-tests')), false);
     assert.equal(Object.hasOwn(publicApi, 'AgentDirectTestStore'), false);
     assert.equal(Object.hasOwn(publicApi, 'validateAgentDirectTestAuthorization'), false);
     assert.equal(Object.hasOwn(publicApi, 'validateAgentTestAttestation'), false);
+  } finally {
+    fs.rmSync(f.temporary, { recursive: true, force: true });
+  }
+});
+
+test('Agent Native cannot report equivalence while an unknown candidate business flow remains unexecuted', () => {
+  const f = fixture();
+  try {
+    const shallow = observation(f, { outcome: 'OBSERVED_EQUIVALENT' });
+    shallow.coverage.businessFlows = 2;
+    shallow.exploration.candidateFlows.push({
+      flowId: 'flow-third-service',
+      summary: 'A third service request remains unclassified.',
+      discoverySources: ['RUNTIME_NETWORK'],
+      effectClass: 'UNKNOWN',
+      executionScope: 'NOT_EXECUTED',
+      result: 'NOT_OBSERVED',
+      stepCount: 0,
+      stopReason: 'The service effect could not yet be classified.',
+      evidenceRefs: [],
+    });
+    Object.assign(shallow.exploration.queue, {
+      candidateCount: 2,
+      notExecutedCount: 1,
+      unknownEffectCount: 1,
+      exhausted: false,
+    });
+    assert.throws(() => validateAgentNativeObservationBundle(shallow), /OBSERVED_EQUIVALENT requires an exhausted candidate-flow queue/);
+
+    shallow.outcome = 'INCONCLUSIVE';
+    shallow.findings = [{
+      findingId: 'finding-third-service',
+      severity: 'WARNING',
+      status: 'INCONCLUSIVE',
+      summary: 'Core flow coverage remains incomplete because one service effect is unknown.',
+      candidateCause: 'TEST_HARNESS',
+      evidenceRefs: [],
+    }];
+    assert.equal(validateAgentNativeObservationBundle(shallow).outcome, 'INCONCLUSIVE');
+  } finally {
+    fs.rmSync(f.temporary, { recursive: true, force: true });
+  }
+});
+
+test('legacy Agent Native observations remain readable but cannot be newly submitted without business exploration', () => {
+  const f = fixture();
+  try {
+    const legacy = observation(f);
+    delete legacy.exploration;
+    assert.throws(() => validateAgentNativeObservationBundle(legacy), /\$\.exploration is required/);
+    const root = f.store.runDir(f.review.reviewId, legacy.runId);
+    fs.mkdirSync(root, { recursive: true, mode: 0o700 });
+    fs.writeFileSync(path.join(root, 'observation.json'), `${JSON.stringify(legacy, null, 2)}\n`, { mode: 0o600 });
+    assert.equal(f.store.status(f.review.reviewId, legacy.runId).observation.outcome, 'OBSERVED_MISMATCH');
+    assert.equal(f.reviews.diagnosisCandidates(f.review.reviewId)[0].nativeRunId, legacy.runId);
+    assert.throws(() => f.store.submit(f.review.reviewId, legacy), /\$\.exploration is required/);
   } finally {
     fs.rmSync(f.temporary, { recursive: true, force: true });
   }
@@ -111,11 +206,14 @@ test('Agent Native archives mismatch evidence and exposes it to Diagnosis v2 wit
     const workspace = f.store.workspace(f.review.reviewId);
     fs.mkdirSync(path.join(workspace, 'screenshots'), { recursive: true });
     fs.writeFileSync(path.join(workspace, 'screenshots', 'diff.png'), 'redacted paired screenshot', { mode: 0o600 });
+    fs.writeFileSync(path.join(workspace, 'screenshots', 'flow-summary.json'), '{"redacted":true}\n', { mode: 0o600 });
     const bundle = observation(f);
+    bundle.exploration.candidateFlows[0].evidenceRefs = ['screenshots/flow-summary.json'];
     assert.equal(validateAgentNativeObservationBundle(bundle).outcome, 'OBSERVED_MISMATCH');
     const result = f.store.submit(f.review.reviewId, bundle);
     assert.equal(result.review.status, 'AGENT_NATIVE_MISMATCH_OBSERVED');
-    assert.equal(result.evidenceManifest.fileCount, 1);
+    assert.equal(result.evidenceManifest.fileCount, 2);
+    assert.deepEqual(result.evidenceManifest.entries.map((entry) => entry.path), ['screenshots/diff.png', 'screenshots/flow-summary.json']);
     const candidates = f.reviews.diagnosisCandidates(f.review.reviewId);
     assert.equal(candidates.length, 1);
     assert.equal(candidates[0].sourceKind, 'AGENT_NATIVE_OBSERVATION');

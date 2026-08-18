@@ -62,7 +62,9 @@ Agent 先执行只读 Refresh prepare：证明该目标来自相同源案例的�
 
 这句话同时授权创建 WRITE Review 和初始修复预算。测试默认使用 `AGENT_NATIVE`：Workflow 只交付当前 V4/V5 地址、Job 文件根目录和环境差异，不创建测试授权或 Session，也不限制 Agent 选择浏览器、Playwright、脚本、会话、重试或测试动作；具体操作仍受用户要求和本机 Agent 自身安全规则约束。
 
-Agent 将结果提交为 `OBSERVED_EQUIVALENT`、`OBSERVED_MISMATCH` 或 `INCONCLUSIVE`，它们是运行时观察而非严格 parity。发现差异后由当前 Agent/LLM 根据证据分类；只有高置信 `SOURCE_DATA` / `TARGET_CASE` 且修复目标为 `V5_ARTIFACT` 时，Workflow 才允许最小 RFC 6902 Patch、全量静态验证、CAS 写入、回读和 Agent Native 复测。`CONVERTER`、平台、环境、测试工具、波动、权限、知识缺口和未知问题只报告，不自动改 V5。
+Agent 不会把“首屏截图一致”直接当作测试完成。它会结合 V4/V5 JSON、运行时控件、导航、事件和网络请求生成候选业务流程，逐条标记为只读、写入或未知，并同步执行两端可安全执行的流程。只读流程应继续深入；写入流程在未获允许时至少测试到提交前；未能判定的请求、被阻断的路径和未执行流程必须留在覆盖报告中。因此只要候选队列未完成，结果只能是 `INCONCLUSIVE`，不能报告观察等价。
+
+Agent 将结果提交为 `OBSERVED_EQUIVALENT`、`OBSERVED_MISMATCH` 或 `INCONCLUSIVE`，并同时提交业务流程清单、每条路径的执行范围与结果、剩余队列和脱敏证据；它们仍是运行时观察而非严格 parity。发现差异后由当前 Agent/LLM 根据证据分类；只有高置信 `SOURCE_DATA` / `TARGET_CASE` 且修复目标为 `V5_ARTIFACT` 时，Workflow 才允许最小 RFC 6902 Patch、全量静态验证、CAS 写入、回读和 Agent Native 复测。`CONVERTER`、平台、环境、测试工具、波动、权限、知识缺口和未知问题只报告，不自动改 V5。
 
 如果 Save As 后平台只推进了源案例 revision，而完整源 JSON 与本次转换输入一致，Workflow 会在创建 Review 或首次环境检查时自动协调并记录审计证据，不需要再迁移或再创建一个 V5。若源内容确实变化，工作流会保留已创建的 V5 并以 `REVIEW_SOURCE_CONTENT_CHANGED` 停止；用户应审阅源变化，不能通过重复 Save As 绕过。
 

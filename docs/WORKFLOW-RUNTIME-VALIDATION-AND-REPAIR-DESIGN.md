@@ -1,6 +1,6 @@
 # V4→V5 工作流：运行时验证、问题诊断与 AI 修复设计
 
-> 状态：阶段 0–11 已实现；Workflow `0.10.0` 当前运行时只保留 Agent Native 测试，将执行、语义诊断与 Patch 生成交给本地 Agent，同时保留受管证据、诊断政策、Patch 验证、预算、CAS、写后回读和审计。兼容 Converter `1.2.5` 与 Knowledge Runtime `0.1.6`，Agent protocol 仍为 9。
+> 状态：阶段 0–12 已实现；签名稳定版 Workflow `0.10.0` 当前运行时只保留 Agent Native 测试，本地 `0.11.0` 候选进一步强制业务流程覆盖证据，将执行、语义诊断与 Patch 生成交给本地 Agent，同时保留受管证据、诊断政策、Patch 验证、预算、CAS、写后回读和审计。兼容 Converter `1.2.5` 与 Knowledge Runtime `0.1.6`，Agent protocol 仍为 9。
 > 初稿：2026-08-12；本次修订：2026-08-18
 > 适用项目：`ivx-v4-v5-migration` 及其独立分发的 Workflow、Agent 适配器和知识运行时
 > 不修改：`tov5parser` 的转换规则；转换器继续由维护者在独立仓库中维护
@@ -1163,6 +1163,10 @@ Knowledge Runtime `0.1.4` 是 compatibility-only 发布：它把协议兼容上�
 
 结果只有 `OBSERVED_EQUIVALENT`、`OBSERVED_MISMATCH`、`INCONCLUSIVE`。`strictParityClaimed` 和 `workflowRestrictionsApplied` 必须为 false。每个 bundle 记录实际测试覆盖、工具、两端观察事实、环境差异、业务 effect、findings 和 workspace 内的脱敏证据摘要；它不是 Workflow 驱动或严格 parity 证明。
 
+Native 测试采用“冒烟基线 → 业务面盘点 → 候选流程 → 副作用分类 → V4/V5 配对执行 → 覆盖结论”的 Agent 自主过程。业务面盘点必须覆盖静态 artifact、运行时 UI、导航、事件和网络/服务请求；每条候选流程记录发现来源，并分类为 `READ_ONLY`、`WRITE` 或 `UNKNOWN`。只读流程自主完整执行；写入流程仅在用户请求与宿主安全政策允许时完整执行，否则测试到明确的提交前边界；未知流程必须继续分析，仍不能判断时作为未解决候选保留。
+
+Workflow 不规划或执行这些动作，但会校验 Agent 提交的闭合覆盖契约。`OBSERVED_EQUIVALENT` 要求：初始/用户复测完成 `WHOLE_CASE` 盘点，修复复测完成 `AFFECTED_FLOWS` 盘点；五类 inventory checkpoint 完整；至少存在一个候选流程；队列已耗尽；无 `UNKNOWN` effect；每条流程均为完整执行或提交前边界后的 `MATCHED`。任一未知、阻断、未执行或不确定候选都只能提交 `INCONCLUSIVE`；存在不匹配候选才支持 `OBSERVED_MISMATCH`。这样既不把驱动交回 Workflow，也不能用首屏/截图一致替代业务流程覆盖。
+
 ### 22.3 Agent/LLM 诊断与受管 Patch
 
 Native mismatch/inconclusive finding 与旧 Runtime Comparison 一起生成稳定 Diagnosis v2 candidate。当前 Agent/LLM 负责语义分类，Workflow 只校验完整性、证据归属、闭合 cause/responsibility/repairTarget、置信度和修复政策，不得静默替换 Agent 的根因。
@@ -1173,4 +1177,18 @@ Agent 生成最小 RFC 6902 Patch 与 `affectedNativeRunIds`。Workflow 保留�
 
 ### 22.4 当前运行时策略
 
-Workflow 0.10.0 不再提供 Agent Direct 命令、Schema、能力字段、序列化读取或恢复逻辑；旧 Direct artifact 不迁移，也不重解释为 Native observation。用户清理旧 Job 后，通过新的 Agent Native run 重新测试。旧 Runtime Scenario 与 Exploration 仍是独立的声明式能力。Agent Native SOP 未变化，因此 Agent protocol 保持 9；此次有意破坏旧 Direct 会话兼容性，Workflow 产品版本提升为 `0.10.0`。
+Workflow 0.10.0 不再提供 Agent Direct 命令、Schema、能力字段、序列化读取或恢复逻辑；旧 Direct artifact 不迁移，也不重解释为 Native observation。用户清理旧 Job 后，通过新的 Agent Native run 重新测试。旧 Runtime Scenario 与 Exploration 仍是独立的声明式能力。
+
+Workflow 0.11.0 保持 Agent protocol 9，不重新引入 Workflow 驱动，只收紧当前 Native observation 的业务流程覆盖证据。签名描述符增加 `agentNativeBusinessFlowCoverage:true`。旧 0.10.0 Native observation 可显式按 legacy read 读取、诊断和恢复，但不能作为新的浅层结果重新提交。
+
+## 23. 阶段 12：防止浅层 Native 等价结论
+
+阶段 12 的验收条件是：
+
+- 首屏一致但仍存在第三个未分类服务请求时，`OBSERVED_EQUIVALENT` 被拒绝；同一证据可诚实提交为 `INCONCLUSIVE`；
+- 初始测试和用户复测使用 `WHOLE_CASE`，修复回归使用 `AFFECTED_FLOWS`；
+- inventory、候选流程和 queue 计数不一致时拒绝提交；未知、阻断或未执行候选不能被 queue 隐藏；
+- `WRITE` 流程仅能在完整执行或有理由的提交前边界计入已覆盖；
+- 候选流程引用的脱敏证据与顶层/finding 证据一起执行存在性、安全路径、哈希与归档校验；
+- 0.10.0 已保存 Native observation 仍可读取并进入诊断，但缺少新 exploration 合同的 artifact 不能重新提交；
+- Codex/Claude Skill、JSON Schema、闭合 validator、handoff 能力、签名描述符和用户文档表达同一约束。

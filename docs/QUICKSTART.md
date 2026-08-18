@@ -192,9 +192,11 @@ ivx-migrate review agent-native-submit \
 
 Agent protocol 9 默认使用 Agent Native 测试。Workflow 只返回当前 V4/V5 地址与 workId/origin、完整 Job 根目录、Agent 私有工作区和环境差异提示；它不创建测试授权、Session、过期时间、revision/origin lease、浏览器驱动、动作规划器、认证规则或副作用范围。Agent 依据用户要求和自身安全政策自主选择浏览器、Playwright/CDP、JavaScript、CSS/XPath、循环、动态点击、截图/像素比较、业务动作与重试。
 
+测试必须先完成首屏冒烟，再结合 V4/V5 静态 artifact 与运行时 UI、导航、事件和服务请求建立候选业务流程清单。每条流程都要标记 `READ_ONLY`、`WRITE` 或 `UNKNOWN`，记录发现来源、执行范围、逐步结果和证据。只读流程自动继续；写入流程在用户与 Agent 安全政策不允许完整执行时停在明确的提交前边界；未知请求应先分析，仍无法判定则保留为未解决项。只要还有未知、被阻断或未执行的候选流程，提交结果必须是 `INCONCLUSIVE`，而不能仅凭首屏相同提交 `OBSERVED_EQUIVALENT`。
+
 Agent 可复用当前会话、浏览器状态、缓存和用户直接提供的运行时认证信息，但必须遵循所在 Agent 的安全规则；Workflow 不接收这些值，观察包、证据、文件与输出中也不得包含 Token、Cookie、session 或浏览器存储内容。工具切换、初始化时机、页面就绪等待和重试均由 Agent 自主决定。
 
-提交结果只能是 `OBSERVED_EQUIVALENT`、`OBSERVED_MISMATCH` 或 `INCONCLUSIVE`，不是严格 parity。两端实际 revision/origin、环境差异和发生过的副作用都作为事实记录，不用于阻止测试。用户要求复测时直接生成带 `previousRunId` 的新 run；修复后的复测还要带 `REPAIR_REGRESSION` 与 `repairBatchId`。Agent Native 是当前唯一的运行时测试接口。
+提交结果只能是 `OBSERVED_EQUIVALENT`、`OBSERVED_MISMATCH` 或 `INCONCLUSIVE`，不是严格 parity。观察包还必须包含完整业务面盘点、候选流程和可核对的队列汇总；Workflow 会拒绝覆盖不足的等价结论。两端实际 revision/origin、环境差异和发生过的副作用都作为事实记录，不用于阻止测试。用户要求复测时直接生成带 `previousRunId` 的新 run；修复后的复测还要带 `REPAIR_REGRESSION` 与 `repairBatchId`。Agent Native 是当前唯一的运行时测试接口。
 
 另存成功后平台可能只推进源案例的 `workId`。`create-platform` 会在创建 Review 前读取当前完整源 JSON，并与 Job 中不可变的转换输入做规范化摘要比较；内容完全相同时，自动把 Review 固定到新 revision 并留下私有审计记录。对于 Workflow 0.5.1 已创建但尚未产生环境证据的 Review，首次 `environment-check` 会执行相同协调。若内容确实变化，则返回 `REVIEW_SOURCE_CONTENT_CHANGED` 并保留已有 V5；不要重新迁移或再次 Save As。已有环境或运行时证据后不会自动改写 source baseline。
 

@@ -322,6 +322,7 @@ function submitNextProposal(value, adapter, diagnosis, authorizationId, sequence
 }
 
 function nativeObservation(value, { runId, previousRunId = null, purpose = 'INITIAL_TEST', repairBatchId = null, outcome = 'OBSERVED_MISMATCH' }) {
+  const result = outcome === 'OBSERVED_MISMATCH' ? 'MISMATCH' : 'MATCHED';
   return {
     schemaVersion: 2,
     kind: 'agent-native-observation-bundle',
@@ -339,6 +340,36 @@ function nativeObservation(value, { runId, previousRunId = null, purpose = 'INIT
     execution: { tools: ['agent-native-browser'], startedAt: NOW, completedAt: NOW },
     outcome,
     coverage: { businessFlows: 1, states: 2, actions: 2, assertions: 1, screenshots: 0, networkObservations: 0 },
+    exploration: {
+      scope: purpose === 'REPAIR_REGRESSION' ? 'AFFECTED_FLOWS' : 'WHOLE_CASE',
+      inventory: {
+        smokeTestCompleted: true,
+        staticArtifactsInspected: true,
+        runtimeSurfaceInspected: true,
+        navigationInspected: true,
+        serviceCallsInspected: true,
+      },
+      candidateFlows: [{
+        flowId: 'flow-repair-target',
+        summary: 'Redacted affected business flow.',
+        discoverySources: ['STATIC_ARTIFACT', 'RUNTIME_UI'],
+        effectClass: 'READ_ONLY',
+        executionScope: 'FULLY_EXECUTED',
+        result,
+        stepCount: 2,
+        stopReason: null,
+        evidenceRefs: [],
+      }],
+      queue: {
+        candidateCount: 1,
+        fullyExecutedCount: 1,
+        preSubmitCount: 0,
+        blockedCount: 0,
+        notExecutedCount: 0,
+        unknownEffectCount: 0,
+        exhausted: true,
+      },
+    },
     effects: { occurred: false, systems: [], summaries: [] },
     findings: outcome === 'OBSERVED_MISMATCH'
       ? [{ findingId: `${runId}-finding`, severity: 'ERROR', status: 'MISMATCH', summary: 'Observed mismatch.', candidateCause: 'TARGET_CASE', evidenceRefs: [] }]

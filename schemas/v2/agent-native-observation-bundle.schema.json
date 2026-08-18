@@ -4,7 +4,7 @@
   "title": "Agent Native Observation Bundle",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "kind", "runId", "previousRunId", "repairBatchId", "reviewId", "jobId", "purpose", "subjects", "environment", "execution", "outcome", "coverage", "effects", "findings", "evidenceRefs", "claims", "completedAt", "createdAt", "createdBy", "sensitivity"],
+  "required": ["schemaVersion", "kind", "runId", "previousRunId", "repairBatchId", "reviewId", "jobId", "purpose", "subjects", "environment", "execution", "outcome", "coverage", "exploration", "effects", "findings", "evidenceRefs", "claims", "completedAt", "createdAt", "createdBy", "sensitivity"],
   "properties": {
     "schemaVersion": { "const": 2 },
     "kind": { "const": "agent-native-observation-bundle" },
@@ -44,6 +44,7 @@
         "screenshots": { "$ref": "#/$defs/count" }, "networkObservations": { "$ref": "#/$defs/count" }
       }
     },
+    "exploration": { "$ref": "#/$defs/exploration" },
     "effects": {
       "type": "object", "additionalProperties": false, "required": ["occurred", "systems", "summaries"],
       "properties": { "occurred": { "type": "boolean" }, "systems": { "$ref": "#/$defs/stringArray" }, "summaries": { "$ref": "#/$defs/stringArray" } }
@@ -64,6 +65,63 @@
     "dateTime": { "type": "string", "format": "date-time" },
     "count": { "type": "integer", "minimum": 0, "maximum": 1000000 },
     "nullableString": { "anyOf": [{ "type": "string", "minLength": 1, "maxLength": 4096 }, { "type": "null" }] },
+    "exploration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scope", "inventory", "candidateFlows", "queue"],
+      "properties": {
+        "scope": { "enum": ["WHOLE_CASE", "AFFECTED_FLOWS"] },
+        "inventory": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["smokeTestCompleted", "staticArtifactsInspected", "runtimeSurfaceInspected", "navigationInspected", "serviceCallsInspected"],
+          "properties": {
+            "smokeTestCompleted": { "type": "boolean" },
+            "staticArtifactsInspected": { "type": "boolean" },
+            "runtimeSurfaceInspected": { "type": "boolean" },
+            "navigationInspected": { "type": "boolean" },
+            "serviceCallsInspected": { "type": "boolean" }
+          }
+        },
+        "candidateFlows": { "type": "array", "maxItems": 1000, "items": { "$ref": "#/$defs/candidateFlow" } },
+        "queue": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["candidateCount", "fullyExecutedCount", "preSubmitCount", "blockedCount", "notExecutedCount", "unknownEffectCount", "exhausted"],
+          "properties": {
+            "candidateCount": { "$ref": "#/$defs/count" },
+            "fullyExecutedCount": { "$ref": "#/$defs/count" },
+            "preSubmitCount": { "$ref": "#/$defs/count" },
+            "blockedCount": { "$ref": "#/$defs/count" },
+            "notExecutedCount": { "$ref": "#/$defs/count" },
+            "unknownEffectCount": { "$ref": "#/$defs/count" },
+            "exhausted": { "type": "boolean" }
+          }
+        }
+      }
+    },
+    "candidateFlow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["flowId", "summary", "discoverySources", "effectClass", "executionScope", "result", "stepCount", "stopReason", "evidenceRefs"],
+      "properties": {
+        "flowId": { "$ref": "#/$defs/id" },
+        "summary": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        "discoverySources": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "uniqueItems": true,
+          "items": { "enum": ["STATIC_ARTIFACT", "RUNTIME_UI", "RUNTIME_NETWORK", "USER_INPUT"] }
+        },
+        "effectClass": { "enum": ["READ_ONLY", "WRITE", "UNKNOWN"] },
+        "executionScope": { "enum": ["FULLY_EXECUTED", "PRE_SUBMIT_BOUNDARY", "BLOCKED", "NOT_EXECUTED"] },
+        "result": { "enum": ["MATCHED", "MISMATCH", "INCONCLUSIVE", "NOT_OBSERVED"] },
+        "stepCount": { "$ref": "#/$defs/count" },
+        "stopReason": { "$ref": "#/$defs/nullableString" },
+        "evidenceRefs": { "$ref": "#/$defs/pathArray" }
+      }
+    },
     "subject": {
       "type": "object", "additionalProperties": false, "required": ["nid", "workId", "url", "origin"],
       "properties": {

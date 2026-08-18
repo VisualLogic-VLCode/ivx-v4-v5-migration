@@ -586,7 +586,7 @@ export class RuntimeReviewStore {
         invariant(runStat?.isDirectory() && !runStat.isSymbolicLink(), 'DIAGNOSIS_EVIDENCE_INVALID', 'Agent Native run evidence directory is unsafe');
         const artifact = relativeArtifactPath('agent-native', 'runs', runId, 'observation.json');
         const target = this.#assertPrivateRegularArtifact(reviewId, artifact, 'DIAGNOSIS_EVIDENCE_INVALID', 'Agent Native observation evidence is missing or unsafe');
-        nativeEntries.push({ observation: validateAgentNativeObservationBundle(readJson(target)), artifact });
+        nativeEntries.push({ observation: validateAgentNativeObservationBundle(readJson(target), { allowLegacyExploration: true }), artifact });
       }
     }
     return [...createRuntimeIssueCandidates(entries), ...createAgentNativeIssueCandidates(nativeEntries)]

@@ -161,6 +161,10 @@ export class AgentNativeStore {
         outcomes: ['OBSERVED_EQUIVALENT', 'OBSERVED_MISMATCH', 'INCONCLUSIVE'],
         strictParityClaimAllowed: false,
         secretsAllowed: false,
+        businessFlowCoverageRequired: true,
+        completeInventoryRequiredForEquivalent: true,
+        unknownEffectRequiresInconclusive: true,
+        writeMayStopAtPreSubmitBoundary: true,
       },
     };
   }
@@ -175,7 +179,11 @@ export class AgentNativeStore {
       if (observation.previousRunId !== null) this.status(reviewId, observation.previousRunId);
       if (observation.purpose !== 'INITIAL_TEST') invariant(observation.previousRunId !== null, 'AGENT_NATIVE_PREVIOUS_RUN_REQUIRED', 'Retest and repair regression observations must link a previous run');
       const root = this.runDir(reviewId, observation.runId);
-      const allRefs = [...observation.evidenceRefs, ...observation.findings.flatMap((finding) => finding.evidenceRefs)];
+      const allRefs = [
+        ...observation.evidenceRefs,
+        ...observation.findings.flatMap((finding) => finding.evidenceRefs),
+        ...(observation.exploration?.candidateFlows || []).flatMap((flow) => flow.evidenceRefs),
+      ];
       if (fs.existsSync(root)) {
         const stat = fs.lstatSync(root);
         invariant(stat.isDirectory() && !stat.isSymbolicLink(), 'AGENT_NATIVE_RUN_UNSAFE', `Agent Native run path is not a safe directory: ${observation.runId}`);
@@ -216,7 +224,7 @@ export class AgentNativeStore {
     const observation = readJson(path.join(root, 'observation.json'), null);
     if (!observation) throw new WorkflowError('AGENT_NATIVE_RUN_NOT_FOUND', `Agent Native run not found: ${runId}`);
     return {
-      observation: validateAgentNativeObservationBundle(observation),
+      observation: validateAgentNativeObservationBundle(observation, { allowLegacyExploration: true }),
       evidenceManifest: readJson(path.join(root, 'evidence-manifest.json'), null),
     };
   }
