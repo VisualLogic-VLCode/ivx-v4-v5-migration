@@ -56,6 +56,6 @@
 
 - 如果用户本次只要求安装或初始化，不得自行选择 `nid`，不得创建 Migration Job、Runtime Review 或 V5 案例。向用户简短汇报平台地址、脱敏 Token 状态、Workflow/Converter/Knowledge 版本和 Agent 配置状态，并说明现在可以提交任务。
 - 如果用户已经给出明确案例任务，立即改由刚读取的受管 Skill 解释授权并执行。用户没有明确给出 `gid` 时不要猜测或补传。
-- 转换、问题分类、诊断副本、默认 Agent Native 测试、显式旧 Agent Direct 审计模式、历史 Playwright 场景、自动修复、Human Finding 和所有平台写入的具体规则只以受管 Skill 和 CLI 门禁为准，不在本引导中重复实现。
+- 转换、问题分类、诊断副本、Agent Native 测试、历史 Playwright 场景、自动修复、Human Finding 和所有平台写入的具体规则只以受管 Skill 和 CLI 门禁为准，不在本引导中重复实现。
 
 Agent 不得输出 Token、Cookie、完整案例 JSON、完整诊断记录、业务公式或用户目录。普通用户的自然语言示例见同一 Release 中的 `docs/AI-USER-GUIDE.md`；维护者外部验收另见 `docs/EXTERNAL-USER-ACCEPTANCE.md`。

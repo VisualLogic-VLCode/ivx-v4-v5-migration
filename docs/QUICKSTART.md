@@ -200,7 +200,7 @@ ivx-migrate review agent-native-submit --review <reviewId> --file <agent-native-
 
 Agent 可复用当前会话、浏览器状态、缓存和用户直接提供的运行时认证信息，但必须遵循所在 Agent 的安全规则；Workflow 不接收这些值，观察包、证据、文件与输出中也不得包含 Token、Cookie、session 或浏览器存储内容。工具切换、初始化时机、页面就绪等待和重试均由 Agent 自主决定。
 
-提交结果只能是 `OBSERVED_EQUIVALENT`、`OBSERVED_MISMATCH` 或 `INCONCLUSIVE`，不是严格 parity。两端实际 revision/origin、环境差异和发生过的副作用都作为事实记录，不用于阻止测试。用户要求复测时直接生成带 `previousRunId` 的新 run；修复后的复测还要带 `REPAIR_REGRESSION` 与 `repairBatchId`。旧 `agent-test-*` 命令仅在用户明确要求 Agent Direct 审计模式时使用。
+提交结果只能是 `OBSERVED_EQUIVALENT`、`OBSERVED_MISMATCH` 或 `INCONCLUSIVE`，不是严格 parity。两端实际 revision/origin、环境差异和发生过的副作用都作为事实记录，不用于阻止测试。用户要求复测时直接生成带 `previousRunId` 的新 run；修复后的复测还要带 `REPAIR_REGRESSION` 与 `repairBatchId`。Agent Native 是当前唯一的运行时测试接口。
 
 另存成功后平台可能只推进源案例的 `workId`。`create-platform` 会在创建 Review 前读取当前完整源 JSON，并与 Job 中不可变的转换输入做规范化摘要比较；内容完全相同时，自动把 Review 固定到新 revision 并留下私有审计记录。对于 Workflow 0.5.1 已创建但尚未产生环境证据的 Review，首次 `environment-check` 会执行相同协调。若内容确实变化，则返回 `REVIEW_SOURCE_CONTENT_CHANGED` 并保留已有 V5；不要重新迁移或再次 Save As。已有环境或运行时证据后不会自动改写 source baseline。
 
@@ -210,7 +210,7 @@ Workflow 0.7.3 修复平台默认值省略导致的误报：当平台没有返�
 
 Workflow 0.7.4 修复旧 Job 创建 Runtime Review 时缺少 Workflow SHA-256 的兼容缺口。只有已安装的精确 Workflow 版本、包名和摘要证据一致时，才把真实摘要派生到新 Review；缺失、无效或互相矛盾的证据会在访问平台前安全停止，不修改旧 Job。新建 Job 会直接持久化完整的 Workflow 版本、包名和摘要，避免升级后再次丢失谱系。
 
-Workflow 0.8.0–0.8.3 引入并逐步完善 Agent Direct。Workflow 0.9.0 将普通运行时测试进一步移出 Workflow 控制面，改为 Agent Native handoff + observation bundle + Agent/LLM diagnosis；Agent Direct、Protocol-8 Exploration/Scenario 和历史证据仍可读取与恢复，但不再是默认路径。
+Workflow 0.8.0–0.8.3 曾引入并逐步完善 Agent Direct。Workflow 0.9.0 将普通运行时测试移出 Workflow 控制面，改为 Agent Native handoff + observation bundle + Agent/LLM diagnosis。Workflow 0.10.0 从当前运行时中删除 Agent Direct 命令、Schema 和兼容读取；重新安装后的测试只使用 Agent Native。Protocol-8 Exploration/Scenario 仍作为独立的声明式历史能力保留。
 
 Workflow 会对 V4/V5 的配置、设置、域名、路由和绑定做脱敏环境比较。Agent Native 把差异作为提示与诊断置信度输入，不再因此阻止浏览器测试；受管 V5 修复仍要求满足独立的环境、CAS 和权限门禁。`/config/name` 按 `IGNORE_FOR_PARITY` 处理，其他未知字段如实保留。预览 URL 来自平台当前元数据，不需要用户手填。
 

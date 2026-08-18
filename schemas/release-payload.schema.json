@@ -36,7 +36,7 @@
           "contentSha256": { "type": ["string", "null"], "pattern": "^[0-9a-f]{64}$" },
           "agentProtocolVersion": { "type": ["integer", "null"] },
           "jobSchemaVersion": { "type": ["integer", "null"] },
-          "runtimeTestMode": { "enum": ["AGENT_NATIVE", "AGENT_DIRECT", null] },
+          "runtimeTestMode": { "enum": ["AGENT_NATIVE", null] },
           "capabilities": { "type": "object" },
           "artifact": {
             "type": "object",

@@ -171,7 +171,13 @@ test('setup, managed converter updates, Agent protocol sync, and rollback work i
     assert.equal(initialDoctor.tokenError, null);
     assert.equal(initialDoctor.runtimeTestMode, 'AGENT_NATIVE');
     assert.equal(initialDoctor.agentNativeTest.workflowRestrictionsApplied, false);
+    assert.equal(Object.hasOwn(initialDoctor, 'agentDirectTest'), false);
     assert.equal(JSON.stringify(initialDoctor).includes(token), false);
+    const help = run(['help'], env);
+    assert.equal(help.usage.some((entry) => entry.includes('agent-test-')), false);
+    assert.equal(help.usage.some((entry) => entry.includes('agent-native-handoff-platform')), true);
+    const removedAgentTest = runFailure(['review', 'agent-test-list', '--review', 'legacy-review'], env);
+    assert.equal(removedAgentTest.code, 'CLI_COMMAND_UNKNOWN');
 
     const customizedSetup = run([
       'setup',

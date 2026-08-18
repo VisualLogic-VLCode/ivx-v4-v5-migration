@@ -660,14 +660,14 @@ test('unknown future schema versions fail closed', () => {
   assert.throws(() => readIssueClassificationCompatible({ schemaVersion: 99 }), { code: 'CLASSIFICATION_SCHEMA_VERSION_UNSUPPORTED' });
   assert.throws(() => validateSchemaV2Artifact({ schemaVersion: 3, kind: 'runtime-scenario' }), { code: 'SCHEMA_VERSION_UNSUPPORTED' });
   assert.throws(() => validateSchemaV2Artifact({ schemaVersion: 2, kind: 'future-kind' }), { code: 'SCHEMA_KIND_UNSUPPORTED' });
+  assert.throws(() => validateSchemaV2Artifact({ schemaVersion: 2, kind: 'agent-direct-test-authorization' }), { code: 'SCHEMA_KIND_UNSUPPORTED' });
+  assert.throws(() => validateSchemaV2Artifact({ schemaVersion: 2, kind: 'agent-test-attestation' }), { code: 'SCHEMA_KIND_UNSUPPORTED' });
 });
 
 test('all distributable schema-v2 documents are valid JSON with stable identifiers and resolvable local refs', () => {
   const schemaDir = path.join(projectRoot, 'schemas', 'v2');
   const expected = [
-    'agent-direct-test-authorization.schema.json',
     'agent-native-observation-bundle.schema.json',
-    'agent-test-attestation.schema.json',
     'automatic-repair-decision.schema.json',
     'behavior-trace.schema.json',
     'common.schema.json',

@@ -25,7 +25,7 @@ Use `ivx-migrate` as the sole managed migration, artifact, diagnosis-policy, Pat
 - “Refresh this existing V5 from current V4” selects the separate Existing Target Refresh flow. Prepare is read-only; apply needs its own exact plan authorization and never reuses Save As or Repair authority.
 - “Automatically test and repair” additionally permits a WRITE Review and one INITIAL repair lease for the eligible clusters, but not the `+2/+5` extension.
 - A known-issues diagnostic copy, manual-baseline acceptance, and repair extension each need separate explicit user authorization. Runtime actions and possible effects are decided between the user and local Agent under host safety rules; Agent Native creates no Workflow test authorization, capability lease, or side-effect scope.
-- Agent Native is the default runtime-test mode. Use managed Agent Direct only when the user explicitly requests its legacy/audit-grade authorization and attestation semantics.
+- Agent Native is the only runtime-test mode in the current Workflow.
 - If the user asks only to convert/create V5 and omits runtime testing, ask exactly once whether to continue with runtime testing after Save As. If testing, diagnosis, or automatic repair is already requested, do not ask again; proceed with Agent Native after target creation.
 
 ## Procedure

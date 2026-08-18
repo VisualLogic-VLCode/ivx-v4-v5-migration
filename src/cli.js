@@ -8,7 +8,7 @@ import { LocalConverterProvider } from './converter/local-provider.js';
 import { AGENT_PROTOCOL_VERSION, PUBLIC_RELEASE_PROFILE } from './distribution-profile.js';
 import { WorkflowError, invariant } from './errors.js';
 import { diagnosticOwnerBucket, issueAutoRepairAllowed, issueCause } from './contracts/compatibility.js';
-import { validateAgentNativeObservationBundle, validateAgentTestAttestation } from './contracts/schema-v2.js';
+import { validateAgentNativeObservationBundle } from './contracts/schema-v2.js';
 import { readJson, sha256File, writePrivateJson } from './fs/secure-json.js';
 import { JobStore } from './jobs/job-store.js';
 import { MIGRATION_INTENTS, normalizeMigrationIntent, normalizeRelatedJobIds } from './jobs/intents.js';
@@ -23,7 +23,6 @@ import { evaluateEnvironmentGate } from './environment/environment-gate.js';
 import { PlaywrightRuntimeDriver } from './runtime/playwright-driver.js';
 import { RuntimeReviewRunner } from './runtime/review-runner.js';
 import { RuntimeExplorationStore } from './runtime/exploration-store.js';
-import { AgentDirectTestStore } from './runtime/agent-direct-test-store.js';
 import { AgentNativeStore } from './runtime/agent-native-store.js';
 import { PlaywrightExplorationDriver } from './runtime/playwright-exploration-driver.js';
 import { AutonomousExplorationRunner } from './runtime/autonomous-exploration-runner.js';
@@ -125,11 +124,6 @@ function assertRefreshAgentProtocol(context) {
 function assertExplorationAgentProtocol(context) {
   const protocolVersion = agentProtocolVersion(context.registry.readCurrent().workflow);
   invariant(protocolVersion >= 8, 'EXPLORATION_AGENT_PROTOCOL_INCOMPATIBLE', 'Autonomous Runtime Exploration requires Workflow Agent protocol 8 or newer');
-}
-
-function assertAgentDirectTestProtocol(context) {
-  const protocolVersion = agentProtocolVersion(context.registry.readCurrent().workflow);
-  invariant(protocolVersion >= 9, 'AGENT_DIRECT_TEST_PROTOCOL_INCOMPATIBLE', 'Agent Direct Test requires Workflow Agent protocol 9 or newer');
 }
 
 function knowledgePin(descriptor) {
@@ -806,76 +800,6 @@ async function handleReview(positionals, options, context) {
     invariant(options.review, 'CLI_ARGUMENT_REQUIRED', '--review is required');
     return { scenarios: context.reviews.listRuntimeScenarios(options.review) };
   }
-  if (action === 'agent-test-authorize-platform') {
-    assertAgentDirectTestProtocol(context);
-    invariant(options.review, 'CLI_ARGUMENT_REQUIRED', '--review is required');
-    invariant(options['environment-id'], 'CLI_ARGUMENT_REQUIRED', '--environment-id is required');
-    const capability = options.capability || 'AGENT_DIRECT_READ_ONLY';
-    invariant(capability !== 'AGENT_DIRECT_SIDE_EFFECT', 'AGENT_DIRECT_SIDE_EFFECT_NOT_ENABLED', 'Agent Direct side-effect testing is reserved but not enabled in this Workflow release');
-    invariant(capability === 'AGENT_DIRECT_READ_ONLY', 'CLI_ARGUMENT_INVALID', '--capability must be AGENT_DIRECT_READ_ONLY');
-    invariant(options.confirm === 'RUN_AGENT_DIRECT_READ_ONLY_TEST', 'AGENT_DIRECT_TEST_CONFIRMATION_REQUIRED', '--confirm RUN_AGENT_DIRECT_READ_ONLY_TEST is required');
-    invariant(context.config.platform.writeMode === 'disabled', 'AGENT_DIRECT_TEST_WRITE_MODE_MUST_BE_DISABLED', 'Agent Direct read-only testing requires platform write mode to be disabled');
-    const review = context.reviews.load(options.review);
-    const job = context.jobs.load(review.jobId);
-    const adapter = createPlatformAdapter(options, context);
-    const [sourceInfo, targetInfo] = await Promise.all([
-      adapter.getCaseInfo(job.input.sourceNid),
-      adapter.getCaseInfo(review.target.nid),
-    ]);
-    invariant(sourceInfo?.workId === review.baseline.sourceWorkId && targetInfo?.workId === review.baseline.targetWorkId, 'AGENT_TEST_PLATFORM_REVISION_MISMATCH', 'Platform source or target revision changed before Agent Direct Test authorization');
-    return context.agentDirectTests.authorize(options.review, {
-      environmentComparisonId: options['environment-id'],
-      environmentMode: 'EQUIVALENT_ONLY',
-      capability,
-      expiresAt: options['expires-at'],
-      sourceOrigin: new URL(resolvePlatformPreviewUrl(sourceInfo)).origin,
-      targetOrigin: new URL(resolvePlatformPreviewUrl(targetInfo)).origin,
-    });
-  }
-  if (action === 'agent-test-context-platform') {
-    assertAgentDirectTestProtocol(context);
-    invariant(options.review && options.authorization, 'CLI_ARGUMENT_REQUIRED', '--review and --authorization are required');
-    invariant(context.config.platform.writeMode === 'disabled', 'AGENT_DIRECT_TEST_WRITE_MODE_MUST_BE_DISABLED', 'Agent Direct read-only testing requires platform write mode to be disabled');
-    const authorization = context.agentDirectTests.loadAuthorization(options.review, options.authorization);
-    const adapter = createPlatformAdapter(options, context);
-    const [sourceInfo, targetInfo] = await Promise.all([
-      adapter.getCaseInfo(authorization.source.nid),
-      adapter.getCaseInfo(authorization.target.nid),
-    ]);
-    invariant(sourceInfo?.workId === authorization.source.workId && targetInfo?.workId === authorization.target.workId, 'AGENT_TEST_PLATFORM_REVISION_MISMATCH', 'Platform source or target revision changed before Agent Direct Test context delivery');
-    return context.agentDirectTests.start(options.review, options.authorization, {
-      sourceBaseUrl: resolvePlatformPreviewUrl(sourceInfo),
-      targetBaseUrl: resolvePlatformPreviewUrl(targetInfo),
-    });
-  }
-  if (action === 'agent-test-submit-platform') {
-    assertAgentDirectTestProtocol(context);
-    invariant(options.review && options.session, 'CLI_ARGUMENT_REQUIRED', '--review and --session are required');
-    invariant(context.config.platform.writeMode === 'disabled', 'AGENT_DIRECT_TEST_WRITE_MODE_MUST_BE_DISABLED', 'Agent Direct read-only testing requires platform write mode to be disabled');
-    const attestation = validateAgentTestAttestation(readRequiredJson(options.file, 'Agent Test Attestation'));
-    const loaded = context.agentDirectTests.status(options.review, options.session);
-    const authorization = context.agentDirectTests.loadAuthorization(options.review, loaded.state.authorizationId);
-    const adapter = createPlatformAdapter(options, context);
-    const [sourceInfo, targetInfo] = await Promise.all([
-      adapter.getCaseInfo(authorization.source.nid),
-      adapter.getCaseInfo(authorization.target.nid),
-    ]);
-    return context.agentDirectTests.submit(options.review, options.session, {
-      attestation,
-      currentSourceWorkId: sourceInfo?.workId,
-      currentTargetWorkId: targetInfo?.workId,
-    });
-  }
-  if (action === 'agent-test-status') {
-    assertAgentDirectTestProtocol(context);
-    invariant(options.review && options.session, 'CLI_ARGUMENT_REQUIRED', '--review and --session are required');
-    return context.agentDirectTests.status(options.review, options.session);
-  }
-  if (action === 'agent-test-list') {
-    assertAgentDirectTestProtocol(context);
-    invariant(options.review, 'CLI_ARGUMENT_REQUIRED', '--review is required');
-    return { sessions: context.agentDirectTests.list(options.review) };
-  }
   if (action === 'agent-native-handoff-platform') {
     invariant(options.review, 'CLI_ARGUMENT_REQUIRED', '--review is required');
     const review = context.reviews.load(options.review);
@@ -1462,8 +1386,8 @@ export async function runCli(argv, dependencies = {}) {
   const jobs = new JobStore(appPaths);
   const refreshes = new RefreshStore(appPaths);
   const reviews = new RuntimeReviewStore(appPaths, { jobs });
-  const agentOwnedTestCommand = command === 'review' && /^(?:agent-test-|agent-native-)/.test(String(positionals[1] || ''));
-  const runtimeDriver = dependencies.runtimeDriver || (agentOwnedTestCommand ? null : new PlaywrightRuntimeDriver({
+  const agentNativeTestCommand = command === 'review' && /^agent-native-/.test(String(positionals[1] || ''));
+  const runtimeDriver = dependencies.runtimeDriver || (agentNativeTestCommand ? null : new PlaywrightRuntimeDriver({
     appPaths,
     allowInsecureLocalhost: config.platform.allowInsecureLocalhost === true,
     onTakeover: dependencies.runtimeTakeover || (() => waitForVisibleRuntimeTakeover()),
@@ -1483,9 +1407,8 @@ export async function runCli(argv, dependencies = {}) {
     promptPlatformToken: dependencies.promptPlatformToken || promptAndPersistPlatformToken,
   };
   context.explorations = dependencies.explorations || new RuntimeExplorationStore(appPaths, { jobs, reviews });
-  context.agentDirectTests = dependencies.agentDirectTests || new AgentDirectTestStore(appPaths, { jobs, reviews });
   context.agentNativeTests = dependencies.agentNativeTests || new AgentNativeStore(appPaths, { jobs, reviews });
-  context.explorationDriver = dependencies.explorationDriver || (agentOwnedTestCommand ? null : new PlaywrightExplorationDriver({
+  context.explorationDriver = dependencies.explorationDriver || (agentNativeTestCommand ? null : new PlaywrightExplorationDriver({
     appPaths,
     allowInsecureLocalhost: config.platform.allowInsecureLocalhost === true,
   }));
@@ -1524,12 +1447,6 @@ export async function runCli(argv, dependencies = {}) {
       agents: agentStatus(context, current.workflow),
       runtimeTestMode: 'AGENT_NATIVE',
       runtimeDriver: await runtimeDriver.status(),
-      agentDirectTest: {
-        browserDriver: 'NOT_PROVIDED',
-        execution: 'LOCAL_AGENT',
-        readOnlyCapability: 'AVAILABLE',
-        sideEffectCapability: 'RESERVED_NOT_ENABLED',
-      },
       agentNativeTest: {
         execution: 'LOCAL_AGENT',
         workflowRestrictionsApplied: false,
@@ -1619,11 +1536,6 @@ export async function runCli(argv, dependencies = {}) {
         'ivx-migrate review scenario-add --review <reviewId> --file <runtime-scenario.json>',
         'ivx-migrate review scenario-list --review <reviewId>',
         'ivx-migrate review environment-check --review <reviewId> [--binding-assertions-file <user-assertions.json>]',
-        'ivx-migrate review agent-test-authorize-platform --review <reviewId> --environment-id <id> --capability AGENT_DIRECT_READ_ONLY --confirm RUN_AGENT_DIRECT_READ_ONLY_TEST',
-        'ivx-migrate review agent-test-context-platform --review <reviewId> --authorization <authorizationId>',
-        'ivx-migrate review agent-test-submit-platform --review <reviewId> --session <sessionId> --file <agent-test-attestation.json>',
-        'ivx-migrate review agent-test-status --review <reviewId> --session <sessionId>',
-        'ivx-migrate review agent-test-list --review <reviewId>',
         'ivx-migrate review agent-native-handoff-platform --review <reviewId>',
         'ivx-migrate review agent-native-submit --review <reviewId> --file <agent-native-observation-bundle.json>',
         'ivx-migrate review agent-native-status --review <reviewId> --run <runId>',

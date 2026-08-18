@@ -1,6 +1,6 @@
 # V4→V5 工作流：运行时验证、问题诊断与 AI 修复设计
 
-> 状态：阶段 0–10、历史自主探索和 Agent Direct 已实现；Workflow `0.9.0` 候选新增阶段 11 Agent Native，将普通运行时测试完全移出 Workflow 控制面，同时保留受管证据、诊断政策、Patch 验证、预算、CAS、写后回读和审计。兼容 Converter `1.2.5` 与 Knowledge Runtime `0.1.6`，Agent protocol 仍为 9。
+> 状态：阶段 0–11 已实现；Workflow `0.10.0` 当前运行时只保留 Agent Native 测试，将执行、语义诊断与 Patch 生成交给本地 Agent，同时保留受管证据、诊断政策、Patch 验证、预算、CAS、写后回读和审计。兼容 Converter `1.2.5` 与 Knowledge Runtime `0.1.6`，Agent protocol 仍为 9。
 > 初稿：2026-08-12；本次修订：2026-08-18
 > 适用项目：`ivx-v4-v5-migration` 及其独立分发的 Workflow、Agent 适配器和知识运行时
 > 不修改：`tov5parser` 的转换规则；转换器继续由维护者在独立仓库中维护
@@ -965,7 +965,7 @@ Converter 修复后由维护者发布新 Converter；用户更新后可以对原
 2. **自动修复范围：**首版只允许明确的 `SOURCE_DATA` 和 `TARGET_CASE` 修改目标 V5；`TEST_HARNESS`/`ENVIRONMENT_CONFIGURATION` 只修测试或环境；`CONVERTER`、`PLATFORM_RUNTIME`、`KNOWLEDGE_GAP`、`AUTHORIZATION`、`UNKNOWN` 不自动改目标。
 3. **诊断副本：**所有根因分类均可独立评估并创建/保留 V5 诊断案例；分类本身不否决另存。认证、服务器权限、平台写入可用性、revision 安全、Saveable Checkpoint 和用户授权作为独立硬前提。
 4. **知识分发：**Workflow 只从 `ivx-v4-v5-knowledge` 的签名稳定通道安装不可变 Knowledge Release，不读取维护源、候选或仓库分支。
-5. **运行时当前架构：**协议 9 的普通测试默认 `AGENT_NATIVE`，由本地 AI Agent 直接控制浏览器与测试工具，可执行 JavaScript、CSS/XPath、循环和自适应业务探测；Workflow 只交付当前事实与私有工作区并归档脱敏 observation，不创建测试授权、Session、驱动或动作政策。Agent Direct、旧 Playwright Runtime Driver 与 Exploration 仅保留显式审计模式、历史证据和兼容命令。
+5. **运行时当前架构：**协议 9 只使用 `AGENT_NATIVE`，由本地 AI Agent 直接控制浏览器与测试工具，可执行 JavaScript、CSS/XPath、循环和自适应业务探测；Workflow 只交付当前事实与私有工作区并归档脱敏 observation，不创建测试授权、Session、驱动或动作政策。Agent Direct 已从当前运行时删除；旧 Playwright Runtime Driver 与 Exploration 仍是独立的声明式能力。
 6. **配置策略：**不完整复制；使用字段政策注册表，目标身份重映射、`customVars` 语义保留、secret 用户绑定、`/config/name` 作为已证明的预设名称元数据忽略、其他未知字段阻塞。用户可精确授权环境风险下诊断，但不能借此产生等价、归因或修复结论。
 7. **持久化：**完整 Job/Review 数据留在 `~/.ivx-v4-v5/jobs`；当前工作目录只保留可选的轻量引用。
 8. **人工续接：**用户后续反馈通过 Human Finding 进入同一 Review Session；用户手工修改目标后必须显式接纳新 revision。
@@ -974,11 +974,11 @@ Converter 修复后由维护者发布新 Converter；用户更新后可以对原
 
 ## 20. 当前状态与后续维护
 
-代码改造阶段 0–10 及自主无副作用探索已全部实现。Knowledge Runtime `0.1.6`、Workflow `0.8.3` 和兼容的独立 Converter `1.2.5` 已公开发布；Workflow `0.9.0` 候选新增阶段 11 的 Agent Native 默认链。0.8.2–0.8.3 的 Agent Direct 就绪预算与模块恢复规则继续用于显式审计模式，但不再约束普通 Native 测试。0.9.0 由 Agent 自主执行、由 Agent/LLM 语义诊断与生成 Patch，并由 Workflow 继续负责证据归档、政策验证、预算、全量静态验证、CAS、平台写入、读回与恢复。历史安装、更新和真实另存验收保持有效。
+代码改造阶段 0–11 及自主无副作用探索已全部实现。Knowledge Runtime `0.1.6`、Workflow `0.9.0` 和兼容的独立 Converter `1.2.5` 已公开发布；Workflow `0.10.0` 删除 Agent Direct 的当前运行时代码与兼容层，只保留阶段 11 的 Agent Native 链。Agent 自主执行、由 Agent/LLM 语义诊断与生成 Patch，Workflow 继续负责证据归档、政策验证、预算、全量静态验证、CAS、平台写入、读回与恢复。历史不可变 Release 仍保留，但不由 0.10.0 加载旧 Direct artifact。
 
 Workflow `0.5.0` 在此基础上增加 `/config/name` 的明确字段政策、精确范围的环境风险接受、诊断专用运行状态和 Agent 报告边界。Agent protocol 已提升到 6，Knowledge Runtime `0.1.3` 提供对应兼容范围。`0.5.1` 补齐 Workflow 回滚后的 Agent Skill 协调同步；`0.5.2` 增加以完整 V4 输入摘要为证据的 post-Save source revision 协调，并明确禁止通过重复 Save As 处理内容变化。签名 Release、稳定通道、全新安装、协调更新、回滚和既有 Review 恢复共同构成发布验收。
 
-阶段 0–11 的后续工作属于持续维护和扩大真实案例覆盖：继续收集稳定、可回滚的真实场景校准 Diagnosis/Repair 政策；按真实试点数据评估预算；为 Windows 建立原生 Token 文件 ACL 合同。0.6.x、0.7.x 与 0.8.x 的 Refresh、环境、探索和 Agent Direct 历史合同继续兼容；0.9.0 在协议 9 内新增 Native observation、`FLAKY_RUNTIME`、Native 诊断来源、修复来源关联和 Agent 自主回归闭环。Additional V5、Existing Target Refresh 与历史自主探索的公开安装/更新路径仍可使用。任何尚未由真实稳定场景覆盖的能力都必须明确标注为 mock、校准夹具或故障注入结果，不以静态结果替代运行时等价结论。Converter 后续继续独立发布；只要版本满足 Workflow `0.9.0` 的 `>=1.2.0 <2.0.0` 兼容范围，就不要求同步发布新的 Workflow。
+阶段 0–11 的后续工作属于持续维护和扩大真实案例覆盖：继续收集稳定、可回滚的真实场景校准 Diagnosis/Repair 政策；按真实试点数据评估预算；为 Windows 建立原生 Token 文件 ACL 合同。0.10.0 在协议 9 内仅保留 Native observation、`FLAKY_RUNTIME`、Native 诊断来源、修复来源关联和 Agent 自主回归闭环；不读取、迁移或恢复 Agent Direct artifact。Additional V5、Existing Target Refresh 与历史自主探索的公开安装/更新路径仍可使用。任何尚未由真实稳定场景覆盖的能力都必须明确标注为 mock、校准夹具或故障注入结果，不以静态结果替代运行时等价结论。Converter 后续继续独立发布；只要版本满足 Workflow `0.10.0` 的 `>=1.2.0 <2.0.0` 兼容范围，就不要求同步发布新的 Workflow。
 
 ## 21. Additional V5 Creation 与 Existing Target Refresh（阶段 10 已实现并发布）
 
@@ -1171,6 +1171,6 @@ Native mismatch/inconclusive finding 与旧 Runtime Comparison 一起生成稳�
 
 Agent 生成最小 RFC 6902 Patch 与 `affectedNativeRunIds`。Workflow 保留初始 `3` 次、扩展 `+2` 次、Review 目标 revision `10+5`、受保护路径、全量静态验证、CAS、事务写入、读回与未知结果对账。修复后的 `REPAIR_REGRESSION` 将 batch 关闭为 `RUNTIME_VERIFIED`、`RUNTIME_FAILED` 或 `RUNTIME_INCONCLUSIVE`。
 
-### 22.4 兼容策略
+### 22.4 当前运行时策略
 
-Agent Direct、旧 Runtime Scenario 和 Exploration 继续可读、可恢复，并仅在用户明确要求审计级托管语义时执行；旧 artifact 不被重解释为 Native observation。Agent protocol 保持 9，因为同一受管 Skill 生命周期即可分发新默认 SOP，且旧序列化产物没有被原地改写。Workflow 产品版本提升为 `0.9.0`。
+Workflow 0.10.0 不再提供 Agent Direct 命令、Schema、能力字段、序列化读取或恢复逻辑；旧 Direct artifact 不迁移，也不重解释为 Native observation。用户清理旧 Job 后，通过新的 Agent Native run 重新测试。旧 Runtime Scenario 与 Exploration 仍是独立的声明式能力。Agent Native SOP 未变化，因此 Agent protocol 保持 9；此次有意破坏旧 Direct 会话兼容性，Workflow 产品版本提升为 `0.10.0`。

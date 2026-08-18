@@ -1,6 +1,5 @@
 ---
 status: accepted
-supersedes: 0010 for ordinary runtime testing
 ---
 
 # Separate Agent Native execution from managed evidence and repair
@@ -13,4 +12,4 @@ Agent Native returns an immutable `agent-native-observation-bundle` with one of 
 
 Managed control resumes only at repair. Automatic target repair remains limited to high-confidence `SOURCE_DATA` or `TARGET_CASE` clusters targeting `V5_ARTIFACT`; `CONVERTER`, `PLATFORM_RUNTIME`, `ENVIRONMENT_CONFIGURATION`, `TEST_HARNESS`, `FLAKY_RUNTIME`, `KNOWLEDGE_GAP`, `AUTHORIZATION`, and `UNKNOWN` cannot generate an automatic V5 Patch. Workflow retains repair budgets, protected-path policy, whole-case validation, target CAS, transactional write/read-back, reconciliation, and audit history. Post-write verification is a linked `REPAIR_REGRESSION` Native run that closes the Repair Batch as verified, failed, or inconclusive.
 
-ADR 0010 and all Agent Direct artifacts/commands remain valid for backward compatibility and explicit audit-grade testing. They no longer define the default execution boundary.
+Workflow 0.10.0 makes this boundary exclusive. The current runtime exposes no Agent Direct authorization, Context, Session, Attestation, command, Schema, capability, migration, or recovery path. Old local artifacts are not loaded or reinterpreted; a clean installation starts a new Agent Native run. Immutable historical Releases remain release records rather than compatibility code.

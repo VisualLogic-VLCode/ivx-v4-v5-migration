@@ -113,7 +113,6 @@ Agent 返回 `jobId`、`refreshId` 或 `reviewId` 后应保留它。以后可以
 | `OBSERVED_EQUIVALENT` | Agent Native 在实际覆盖中观察到 V4/V5 一致；不是 Workflow 严格 parity |
 | `OBSERVED_MISMATCH` | Agent Native 观察到差异并提交脱敏证据；由当前 Agent/LLM 继续归因 |
 | `INCONCLUSIVE` | Agent Native 暂时无法得到确定结论，可直接调整策略并创建关联复测 run |
-| `AGENT_ATTESTED_*` | 仅为用户明确选择旧 Agent Direct 审计模式时保留的兼容结果 |
 | `RUNTIME_PARITY_PASSED` | 声明式运行时对照已通过 |
 | `RUNTIME_PARITY_PASSED_WITH_USER_DECLARED_ENVIRONMENT` | 用户已声明列出的目标绑定在业务语义上等价，运行时对照通过 |
 | `DIAGNOSTIC_RUNTIME_PASSED_WITH_ENVIRONMENT_RISK` | 在用户接受的未解决环境风险下，所选断言通过；不代表严格运行时等价 |

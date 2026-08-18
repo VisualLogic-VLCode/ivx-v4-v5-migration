@@ -4,7 +4,7 @@ This project is the distributable local workflow used by Codex or Claude Code. I
 
 ## Current status
 
-The current release candidate is Workflow `0.9.0` with Agent protocol 9, Converter `1.2.5`, and Knowledge Runtime `0.1.6`. Its capabilities are:
+The current release candidate is Workflow `0.10.0` with Agent protocol 9, Converter `1.2.5`, and Knowledge Runtime `0.1.6`. Its capabilities are:
 
 - private global Job storage with atomic state writes and per-Job locks;
 - metadata + physical work version classification;
@@ -26,7 +26,7 @@ The current release candidate is Workflow `0.9.0` with Agent protocol 9, Convert
 - a locked Playwright Runtime Driver with closed declarative scenarios, isolated V4/V5 contexts, private browser authentication state, redacted traces, reviewed normalization, side-effect gates, and report-only parity comparison;
 - default Agent Native runtime testing: Workflow exports current source/target facts, exact Job root, workspace, and advisory environment observations but creates no test authorization, Session, capability/expiry/revision/origin lease, browser driver, credential rule, action policy, or side-effect scope; the local Agent owns execution under the user's request and host safety policy;
 - linked redacted Native observation bundles (`OBSERVED_EQUIVALENT`, `OBSERVED_MISMATCH`, `INCONCLUSIVE`), Agent/LLM semantic diagnosis, `FLAKY_RUNTIME` attribution, Native-run repair provenance, and Agent Native post-write regression closure without synthetic Runtime Scenarios;
-- backward-compatible reading and recovery of protocol-8 Exploration and protocol-9 Agent Direct artifacts; Agent Direct remains an explicit legacy/audit mode rather than the default runtime path;
+- retained protocol-8 declarative Exploration support alongside the sole current Agent Native runtime-test path;
 - an exact-scoped, short-lived USER environment-risk acceptance for diagnostic runtime observation without rewriting environment equivalence, Converter attribution, or target-repair authority;
 - Diagnosis v2 with evidence-backed Issue Clusters, policy-computed automatic-repair decisions, independent diagnostic-save eligibility, calibration fixtures, and redacted owner-specific maintainer reports;
 - bounded target repair with private authorization leases, per-cluster `3+2` attempts, per-review `10+5` confirmed revisions, V5-only Patch policy, static regression gates, Saveable Checkpoints, target CAS, unknown-write reconciliation, verified read-back, and affected-scenario or affected-Native-run retesting;
@@ -218,7 +218,7 @@ ivx-migrate review agent-native-submit --review <reviewId> --file ./agent-native
 ivx-migrate review agent-native-list --review <reviewId>
 ```
 
-The Agent stores redacted evidence inside the returned workspace and submits `OBSERVED_EQUIVALENT`, `OBSERVED_MISMATCH`, or `INCONCLUSIVE` with `strictParityClaimed:false` and `workflowRestrictionsApplied:false`. Revisions, origins, environment differences, tools, and actual effects are recorded as facts, not execution gates. A retest is a new linked run; post-repair runs use `REPAIR_REGRESSION` plus `repairBatchId`. These observations never claim strict parity. The old `agent-test-*` Agent Direct commands remain available only for explicitly requested managed audit behavior.
+The Agent stores redacted evidence inside the returned workspace and submits `OBSERVED_EQUIVALENT`, `OBSERVED_MISMATCH`, or `INCONCLUSIVE` with `strictParityClaimed:false` and `workflowRestrictionsApplied:false`. Revisions, origins, environment differences, tools, and actual effects are recorded as facts, not execution gates. A retest is a new linked run; post-repair runs use `REPAIR_REGRESSION` plus `repairBatchId`. These observations never claim strict parity. Agent Native is the only current runtime-test interface.
 
 An unresolved Environment Gate is advisory for Agent Native execution and must be preserved in the observation. It may lower confidence or block a later managed repair, but it no longer prevents the Agent from testing. Legacy Runtime Cycles retain their original exact environment-risk contracts. `/config/name` remains an ignored saved-preset display label; other unknown fields remain visible rather than being silently normalized.
 

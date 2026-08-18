@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import * as publicApi from '../src/index.js';
 import { validateAgentNativeObservationBundle } from '../src/contracts/schema-v2.js';
 import { JobStore } from '../src/jobs/job-store.js';
 import { createAppPaths } from '../src/paths.js';
@@ -96,6 +97,9 @@ test('Agent Native handoff has no Workflow execution authorization, session, env
     assert.equal(handoff.subjects.source.workId, 'source-current-not-baseline');
     assert.equal(handoff.job.root, f.jobs.jobDir(f.job.jobId));
     assert.equal(fs.existsSync(path.join(f.reviews.reviewDir(f.review.reviewId), 'agent-direct-tests')), false);
+    assert.equal(Object.hasOwn(publicApi, 'AgentDirectTestStore'), false);
+    assert.equal(Object.hasOwn(publicApi, 'validateAgentDirectTestAuthorization'), false);
+    assert.equal(Object.hasOwn(publicApi, 'validateAgentTestAttestation'), false);
   } finally {
     fs.rmSync(f.temporary, { recursive: true, force: true });
   }

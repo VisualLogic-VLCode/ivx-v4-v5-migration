@@ -23,8 +23,6 @@ export {
   validateJobStateV2,
 } from './contracts/compatibility.js';
 export {
-  AGENT_DIRECT_TEST_CAPABILITIES,
-  AGENT_DIRECT_TEST_OUTCOMES,
   AGENT_NATIVE_OBSERVATION_OUTCOMES,
   AGENT_NATIVE_RUN_PURPOSES,
   AUTOMATIC_REPAIR_DECISIONS,
@@ -52,8 +50,6 @@ export {
   RUNTIME_OBSERVATION_CAPTURES,
   SCHEMA_V2_VALIDATORS,
   validateAutomaticRepairDecision,
-  validateAgentDirectTestAuthorization,
-  validateAgentTestAttestation,
   validateAgentNativeObservationBundle,
   validateBehaviorTrace,
   validateDiagnosisReport,
@@ -115,7 +111,6 @@ export { PlaywrightRuntimeDriver } from './runtime/playwright-driver.js';
 export { RuntimeReviewRunner } from './runtime/review-runner.js';
 export { createJobArtifactManifest } from './runtime/job-artifact-manifest.js';
 export { RuntimeExplorationStore } from './runtime/exploration-store.js';
-export { AgentDirectTestStore } from './runtime/agent-direct-test-store.js';
 export { compareVisualArtifacts } from './runtime/visual-comparator.js';
 export { PlaywrightExplorationDriver, classifyExplorationControl } from './runtime/playwright-exploration-driver.js';
 export { AutonomousExplorationRunner } from './runtime/autonomous-exploration-runner.js';
