@@ -4,7 +4,7 @@ This project is the distributable local workflow used by Codex or Claude Code. I
 
 ## Current status
 
-The current release candidate is Workflow `0.10.0` with Agent protocol 9, Converter `1.2.5`, and Knowledge Runtime `0.1.6`. Its capabilities are:
+The current signed stable release is Workflow `0.10.0` with Agent protocol 9, Converter `1.2.5`, and Knowledge Runtime `0.1.6`. Its capabilities are:
 
 - private global Job storage with atomic state writes and per-Job locks;
 - metadata + physical work version classification;
@@ -88,7 +88,7 @@ Ordinary users should start in Codex or Claude Code, not in a terminal. Give the
 
 The user intervenes only to type their own Token into a visible native macOS hidden-answer dialog owned by the Launcher. The Token is never pasted into Agent chat or command arguments, and the Agent never opens the Token file. Background PTYs and Agent-generated input scripts are forbidden. A healthy existing Token is preserved without asking the user to enter it again.
 
-After initialization, a user can ask the Agent `请使用 v4-to-v5-workflow，把 nid <NID> 转成 V5。` for one ordinary validated Save As. With Workflow `0.6.0` / Agent protocol 7 and a compatible Knowledge Runtime, the user may instead explicitly ask `再创建一个独立 V5` for Additional V5 Creation, or name both source and target nids to request an Existing Target Refresh. Retry/resume never implies an additional target or Refresh. Personal and Group cases use the same migration flow; an explicit `gid` is optional platform context and is never guessed. Examples and authorization boundaries are in the [AI user guide](docs/AI-USER-GUIDE.md).
+After initialization, a user can ask the Agent `请使用 v4-to-v5-workflow，把 nid <NID> 转成 V5。` for one ordinary validated Save As. Workflow `0.6.0` and later, with a compatible Knowledge Runtime, also support an explicit `再创建一个独立 V5` request for Additional V5 Creation or a request naming both source and target nids for Existing Target Refresh. Retry/resume never implies an additional target or Refresh. Personal and Group cases use the same migration flow; an explicit `gid` is optional platform context and is never guessed. Examples and authorization boundaries are in the [AI user guide](docs/AI-USER-GUIDE.md).
 
 ## CLI reference
 
@@ -143,7 +143,7 @@ ivx-migrate review finding-list --review <reviewId>
 
 `create-platform` reads the current source as well as the confirmed target. If Save As advanced only the source `workId`, the Workflow compares the complete current source snapshot with the immutable Job `v4/app.json` by canonical digest; equal content is pinned to the newer revision and recorded in a private `source-reconciliations` audit artifact. The first `environment-check` applies the same repair to an already-created, still-open Review before any environment or runtime evidence exists. Different source content fails as `REVIEW_SOURCE_CONTENT_CHANGED`, creates no new Review, and must reuse the existing target rather than repeating migration or Save As. A baseline is never changed after environment/runtime evidence exists.
 
-Workflow `0.6.0` also exposes separate Additional V5 and Existing Target Refresh operations. The Agent normally owns these commands:
+Workflow `0.6.0` and later also expose separate Additional V5 and Existing Target Refresh operations. The Agent normally owns these commands:
 
 ```bash
 ivx-migrate migrate --nid <sourceNid> --intent create-additional-v5
@@ -168,7 +168,7 @@ ivx-migrate config write-mode --mode disabled
 
 `finding-add` records USER evidence only. If the target may have been edited, `observe-platform-revision` reads it through the Platform Adapter, creates a bounded redacted diff, and pauses the review as `TARGET_EXTERNALLY_MODIFIED`. `accept-baseline` requires both that observation and a matching USER Human Finding that requested `ACCEPT_TARGET_REVISION`; it adopts the snapshot locally and returns to `LOCAL_VALIDATING`.
 
-The Runtime Driver stores a closed declarative scenario, persists a revision-pinned redacted Environment Gate, resolves the verified V4/V5 platform preview URLs, runs the same scenario in isolated browser contexts, and persists redacted traces plus assertion results:
+The separately retained legacy Runtime Driver stores a closed declarative scenario, persists a revision-pinned redacted Environment Gate, resolves the verified V4/V5 platform preview URLs, runs the same scenario in isolated browser contexts, and persists redacted traces plus assertion results:
 
 ```bash
 ivx-migrate runtime status

@@ -974,7 +974,7 @@ Converter 修复后由维护者发布新 Converter；用户更新后可以对原
 
 ## 20. 当前状态与后续维护
 
-代码改造阶段 0–11 及自主无副作用探索已全部实现。Knowledge Runtime `0.1.6`、Workflow `0.9.0` 和兼容的独立 Converter `1.2.5` 已公开发布；Workflow `0.10.0` 删除 Agent Direct 的当前运行时代码与兼容层，只保留阶段 11 的 Agent Native 链。Agent 自主执行、由 Agent/LLM 语义诊断与生成 Patch，Workflow 继续负责证据归档、政策验证、预算、全量静态验证、CAS、平台写入、读回与恢复。历史不可变 Release 仍保留，但不由 0.10.0 加载旧 Direct artifact。
+代码改造阶段 0–11 及自主无副作用探索已全部实现。Knowledge Runtime `0.1.6`、Workflow `0.10.0` 和兼容的独立 Converter `1.2.5` 已公开发布；Workflow `0.10.0` 在 `0.9.0` 的 Agent Native 链基础上删除 Agent Direct 的当前运行时代码与兼容层。Agent 自主执行、由 Agent/LLM 语义诊断与生成 Patch，Workflow 继续负责证据归档、政策验证、预算、全量静态验证、CAS、平台写入、读回与恢复。历史不可变 Release 仍保留，但不由 0.10.0 加载旧 Direct artifact。
 
 Workflow `0.5.0` 在此基础上增加 `/config/name` 的明确字段政策、精确范围的环境风险接受、诊断专用运行状态和 Agent 报告边界。Agent protocol 已提升到 6，Knowledge Runtime `0.1.3` 提供对应兼容范围。`0.5.1` 补齐 Workflow 回滚后的 Agent Skill 协调同步；`0.5.2` 增加以完整 V4 输入摘要为证据的 post-Save source revision 协调，并明确禁止通过重复 Save As 处理内容变化。签名 Release、稳定通道、全新安装、协调更新、回滚和既有 Review 恢复共同构成发布验收。
 

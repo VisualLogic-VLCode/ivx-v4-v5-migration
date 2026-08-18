@@ -12,7 +12,7 @@
 
 > 请使用 v4-to-v5-workflow，把 nid 12345678 转成 V5。
 
-这句话已经授权一次通过确定性门禁后的普通 V5 另存。如果只想检查而不创建案例，应明确说“完成诊断和验证，但不要创建 V5 案例”。如果还要 Playwright 运行时对照和受限自动修复，可以在同一句中增加“创建成功后进行无副作用运行时对照，并自动修复工作流允许的高置信非转换器问题”。完整自然语言示例见[通过 AI Agent 使用工作流](AI-USER-GUIDE.md)。
+这句话已经授权一次通过确定性门禁后的普通 V5 另存。如果只想检查而不创建案例，应明确说“完成诊断和验证，但不要创建 V5 案例”。如果还要 Agent Native 运行时对照和受限自动修复，可以在同一句中增加“创建成功后由你自主进行运行时对照，并自动修复工作流允许的高置信非转换器问题”。完整自然语言示例见[通过 AI Agent 使用工作流](AI-USER-GUIDE.md)。
 
 下面的命令用于说明 Agent 实际执行的流程，也可作为故障排查时的人工参考；Agent-first 用户不需要逐条复制。
 
@@ -183,20 +183,14 @@ ivx-migrate review create-platform \
   --capability WRITE
 
 ivx-migrate review environment-check --review <reviewId>
-ivx-migrate review scenario-add --review <reviewId> --file <scenario.json>
-ivx-migrate review runtime-run-platform \
-  --review <reviewId> \
-  --scenario <scenarioId> \
-  --environment-id <comparisonId>
-```
-
-Agent protocol 9 默认使用 Agent Native 测试。Workflow 只返回当前 V4/V5 地址与 workId/origin、完整 Job 根目录、Agent 私有工作区和环境差异提示；它不创建测试授权、Session、过期时间、revision/origin lease、浏览器驱动、动作规划器、认证规则或副作用范围。Agent 依据用户要求和自身安全政策自主选择浏览器、Playwright/CDP、JavaScript、CSS/XPath、循环、动态点击、截图/像素比较、业务动作与重试：
-
-```bash
 ivx-migrate review agent-native-handoff-platform --review <reviewId>
 # Agent 在返回的 workspace 中自主测试并生成 observation bundle
-ivx-migrate review agent-native-submit --review <reviewId> --file <agent-native-observation-bundle.json>
+ivx-migrate review agent-native-submit \
+  --review <reviewId> \
+  --file <agent-native-observation-bundle.json>
 ```
+
+Agent protocol 9 默认使用 Agent Native 测试。Workflow 只返回当前 V4/V5 地址与 workId/origin、完整 Job 根目录、Agent 私有工作区和环境差异提示；它不创建测试授权、Session、过期时间、revision/origin lease、浏览器驱动、动作规划器、认证规则或副作用范围。Agent 依据用户要求和自身安全政策自主选择浏览器、Playwright/CDP、JavaScript、CSS/XPath、循环、动态点击、截图/像素比较、业务动作与重试。
 
 Agent 可复用当前会话、浏览器状态、缓存和用户直接提供的运行时认证信息，但必须遵循所在 Agent 的安全规则；Workflow 不接收这些值，观察包、证据、文件与输出中也不得包含 Token、Cookie、session 或浏览器存储内容。工具切换、初始化时机、页面就绪等待和重试均由 Agent 自主决定。
 
