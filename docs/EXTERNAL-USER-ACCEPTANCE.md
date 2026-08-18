@@ -5,7 +5,7 @@
 本轮公开基线（2026-08-18）：
 
 - 首次引导使用的稳定 Launcher：`0.8.3`
-- 本文发布后签名通道安装的 Workflow：`0.10.0`
+- 本文发布后签名通道安装的 Workflow：`0.11.0`
 - Converter：`1.2.5`
 - Knowledge Runtime：`0.1.6`
 - Agent protocol：`9`

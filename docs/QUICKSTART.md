@@ -206,7 +206,7 @@ Workflow 0.7.3 修复平台默认值省略导致的误报：当平台没有返�
 
 Workflow 0.7.4 修复旧 Job 创建 Runtime Review 时缺少 Workflow SHA-256 的兼容缺口。只有已安装的精确 Workflow 版本、包名和摘要证据一致时，才把真实摘要派生到新 Review；缺失、无效或互相矛盾的证据会在访问平台前安全停止，不修改旧 Job。新建 Job 会直接持久化完整的 Workflow 版本、包名和摘要，避免升级后再次丢失谱系。
 
-Workflow 0.8.0–0.8.3 曾引入并逐步完善 Agent Direct。Workflow 0.9.0 将普通运行时测试移出 Workflow 控制面，改为 Agent Native handoff + observation bundle + Agent/LLM diagnosis。Workflow 0.10.0 从当前运行时中删除 Agent Direct 命令、Schema 和兼容读取；重新安装后的测试只使用 Agent Native。Protocol-8 Exploration/Scenario 仍作为独立的声明式历史能力保留。
+Workflow 0.8.0–0.8.3 曾引入并逐步完善 Agent Direct。Workflow 0.9.0 将普通运行时测试移出 Workflow 控制面，改为 Agent Native handoff + observation bundle + Agent/LLM diagnosis。Workflow 0.10.0 从当前运行时中删除 Agent Direct 命令、Schema 和兼容读取；Workflow 0.11.0 要求 Agent 提交完整的业务流程盘点、分类、执行范围和剩余队列，拒绝首屏一致但仍有未知或未执行路径的浅层等价结论。重新安装后的测试只使用 Agent Native。Protocol-8 Exploration/Scenario 仍作为独立的声明式历史能力保留。
 
 Workflow 会对 V4/V5 的配置、设置、域名、路由和绑定做脱敏环境比较。Agent Native 把差异作为提示与诊断置信度输入，不再因此阻止浏览器测试；受管 V5 修复仍要求满足独立的环境、CAS 和权限门禁。`/config/name` 按 `IGNORE_FOR_PARITY` 处理，其他未知字段如实保留。预览 URL 来自平台当前元数据，不需要用户手填。
 
