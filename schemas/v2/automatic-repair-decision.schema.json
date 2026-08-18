@@ -10,7 +10,7 @@
     "decisionId": { "$ref": "common.schema.json#/$defs/id" },
     "reviewId": { "$ref": "common.schema.json#/$defs/reviewId" },
     "clusterId": { "$ref": "common.schema.json#/$defs/id" },
-    "cause": { "enum": ["CONVERTER", "SOURCE_DATA", "TARGET_CASE", "TEST_HARNESS", "ENVIRONMENT_CONFIGURATION", "PLATFORM_RUNTIME", "KNOWLEDGE_GAP", "AUTHORIZATION", "UNKNOWN"] },
+    "cause": { "enum": ["CONVERTER", "SOURCE_DATA", "TARGET_CASE", "TEST_HARNESS", "ENVIRONMENT_CONFIGURATION", "PLATFORM_RUNTIME", "KNOWLEDGE_GAP", "AUTHORIZATION", "FLAKY_RUNTIME", "UNKNOWN"] },
     "repairTarget": { "enum": ["NONE", "V5_ARTIFACT", "RUNTIME_SCENARIO", "ENVIRONMENT_BINDING", "KNOWLEDGE_RULE", "AUTHORIZATION_PREREQUISITE"] },
     "decision": { "enum": ["AUTO_REPAIR_ALLOWED", "AUTO_REPAIR_PAUSED", "AUTO_REPAIR_STOPPED"] },
     "reasonCode": { "$ref": "common.schema.json#/$defs/id" },

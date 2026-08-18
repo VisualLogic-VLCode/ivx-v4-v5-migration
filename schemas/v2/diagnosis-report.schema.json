@@ -8,12 +8,12 @@
     "schemaVersion": { "const": 2 },
     "kind": { "const": "diagnosis-report" },
     "reportId": { "$ref": "common.schema.json#/$defs/id" },
-    "reportType": { "enum": ["CONVERTER_DEFECT", "SOURCE_DATA", "TARGET_CASE", "TEST_HARNESS", "ENVIRONMENT", "PLATFORM_RUNTIME", "KNOWLEDGE_GAP", "AUTHORIZATION", "UNKNOWN"] },
+    "reportType": { "enum": ["CONVERTER_DEFECT", "SOURCE_DATA", "TARGET_CASE", "TEST_HARNESS", "ENVIRONMENT", "PLATFORM_RUNTIME", "KNOWLEDGE_GAP", "AUTHORIZATION", "FLAKY_RUNTIME", "UNKNOWN"] },
     "diagnosisId": { "$ref": "common.schema.json#/$defs/id" },
     "jobId": { "$ref": "common.schema.json#/$defs/jobId" },
     "reviewId": { "$ref": "common.schema.json#/$defs/reviewId" },
     "clusterId": { "$ref": "common.schema.json#/$defs/id" },
-    "cause": { "enum": ["CONVERTER", "SOURCE_DATA", "TARGET_CASE", "TEST_HARNESS", "ENVIRONMENT_CONFIGURATION", "PLATFORM_RUNTIME", "KNOWLEDGE_GAP", "AUTHORIZATION", "UNKNOWN"] },
+    "cause": { "enum": ["CONVERTER", "SOURCE_DATA", "TARGET_CASE", "TEST_HARNESS", "ENVIRONMENT_CONFIGURATION", "PLATFORM_RUNTIME", "KNOWLEDGE_GAP", "AUTHORIZATION", "FLAKY_RUNTIME", "UNKNOWN"] },
     "responsibleParty": { "enum": ["CONVERTER_MAINTAINER", "WORKFLOW_AI", "USER", "PLATFORM_MAINTAINER", "KNOWLEDGE_MAINTAINER", "UNKNOWN"] },
     "repairTarget": { "enum": ["NONE", "V5_ARTIFACT", "RUNTIME_SCENARIO", "ENVIRONMENT_BINDING", "KNOWLEDGE_RULE", "AUTHORIZATION_PREREQUISITE"] },
     "runtime": {
@@ -58,15 +58,21 @@
       "maxItems": 2000,
       "items": {
         "type": "object",
-        "required": ["issueId", "comparisonId", "assertionId", "status", "reasonCode", "evidenceRef"],
         "properties": {
+          "sourceKind": { "enum": ["RUNTIME_COMPARISON", "AGENT_NATIVE_OBSERVATION"] },
           "issueId": { "$ref": "common.schema.json#/$defs/id" },
-          "comparisonId": { "$ref": "common.schema.json#/$defs/id" },
-          "assertionId": { "$ref": "common.schema.json#/$defs/id" },
+          "comparisonId": { "oneOf": [{ "$ref": "common.schema.json#/$defs/id" }, { "type": "null" }] },
+          "assertionId": { "oneOf": [{ "$ref": "common.schema.json#/$defs/id" }, { "type": "null" }] },
+          "nativeRunId": { "oneOf": [{ "$ref": "common.schema.json#/$defs/id" }, { "type": "null" }] },
+          "findingId": { "oneOf": [{ "$ref": "common.schema.json#/$defs/id" }, { "type": "null" }] },
           "status": { "enum": ["FAILED", "INCONCLUSIVE"] },
           "reasonCode": { "$ref": "common.schema.json#/$defs/id" },
           "evidenceRef": { "type": "string", "minLength": 1, "maxLength": 512 }
         },
+        "oneOf": [
+          { "required": ["issueId", "comparisonId", "assertionId", "status", "reasonCode", "evidenceRef"], "not": { "required": ["sourceKind"] } },
+          { "required": ["sourceKind", "issueId", "comparisonId", "assertionId", "nativeRunId", "findingId", "status", "reasonCode", "evidenceRef"] }
+        ],
         "additionalProperties": false
       }
     },

@@ -169,6 +169,8 @@ test('setup, managed converter updates, Agent protocol sync, and rollback work i
     assert.equal(initialDoctor.tokenSource, 'file');
     assert.equal(initialDoctor.tokenFile, tokenFile);
     assert.equal(initialDoctor.tokenError, null);
+    assert.equal(initialDoctor.runtimeTestMode, 'AGENT_NATIVE');
+    assert.equal(initialDoctor.agentNativeTest.workflowRestrictionsApplied, false);
     assert.equal(JSON.stringify(initialDoctor).includes(token), false);
 
     const customizedSetup = run([

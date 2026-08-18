@@ -27,7 +27,7 @@
           "issueId": { "$ref": "common.schema.json#/$defs/id" },
           "clusterId": { "$ref": "common.schema.json#/$defs/id" },
           "cause": {
-            "enum": ["CONVERTER", "SOURCE_DATA", "TARGET_CASE", "TEST_HARNESS", "ENVIRONMENT_CONFIGURATION", "PLATFORM_RUNTIME", "KNOWLEDGE_GAP", "AUTHORIZATION", "UNKNOWN"]
+            "enum": ["CONVERTER", "SOURCE_DATA", "TARGET_CASE", "TEST_HARNESS", "ENVIRONMENT_CONFIGURATION", "PLATFORM_RUNTIME", "KNOWLEDGE_GAP", "AUTHORIZATION", "FLAKY_RUNTIME", "UNKNOWN"]
           },
           "responsibleParty": {
             "enum": ["CONVERTER_MAINTAINER", "WORKFLOW_AI", "USER", "PLATFORM_MAINTAINER", "KNOWLEDGE_MAINTAINER", "UNKNOWN"]

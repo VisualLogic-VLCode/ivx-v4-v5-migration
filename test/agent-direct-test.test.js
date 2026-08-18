@@ -219,47 +219,22 @@ test('Agent Direct evidence cannot be missing or escape the private workspace th
   }
 });
 
-test('Agent adapters require the explicit Context policy before using current-user ephemeral browser credentials', () => {
+test('Agent adapters default to Agent Native without a Workflow authorization, Session, credential probe, or readiness budget', () => {
   for (const relative of ['agents/codex/SKILL.md', 'agents/claude/SKILL.md']) {
     const skill = fs.readFileSync(path.resolve(import.meta.dirname, '..', relative), 'utf8');
-    assert.match(skill, /credentialPolicy\.userDirectInput: EPHEMERAL_BROWSER_USE_ALLOWED/);
-    assert.match(skill, /agentToolTransport: MINIMUM_BROWSER_OPERATION_ONLY/);
-    assert.match(skill, /exact authorized V4\/V5 subjects/);
-    assert.match(skill, /minimum Agent-controlled browser operation/);
-    assert.match(skill, /another origin/);
-    assert.match(skill, /another task or authorization/);
-    assert.match(skill, /non-sensitive capability probe/);
-    assert.match(skill, /generated sentinel/);
-    assert.match(skill, /set\/read\/remove/);
-    assert.match(skill, /follow-up non-sensitive DOM\/accessibility read/);
-    assert.match(skill, /do not consume the real credential/);
-  }
-});
-
-test('Agent adapters keep readiness and evidence timeouts under Agent control', () => {
-  for (const relative of ['agents/codex/SKILL.md', 'agents/claude/SKILL.md']) {
-    const skill = fs.readFileSync(path.resolve(import.meta.dirname, '..', relative), 'utf8');
-    assert.match(skill, /default 300-second business-root readiness budget for each V4\/V5 subject/);
-    assert.match(skill, /poll about every 10 seconds/);
-    assert.match(skill, /platform loading shell is not readiness/);
-    assert.match(skill, /independent aggregate operation budgets of at least 120 seconds/);
-    assert.match(skill, /retry that stage at most once with an expanded call or alternate non-secret strategy/);
-    assert.match(skill, /TEST_HARNESS/);
-    assert.match(skill, /Workflow (?:does not|neither).*choose(?:s)? budgets/);
-  }
-});
-
-test('Agent adapters recover local Playwright resolution without a Workflow loading bridge', () => {
-  for (const relative of ['agents/codex/SKILL.md', 'agents/claude/SKILL.md']) {
-    const skill = fs.readFileSync(path.resolve(import.meta.dirname, '..', relative), 'utf8');
-    assert.match(skill, /normal Agent-local Playwright\/module loading fails/);
-    assert.match(skill, /do not ask Workflow to provide a module-loading bridge/);
-    assert.match(skill, /active signed managed Workflow package root from installed runtime state/);
-    assert.match(skill, /anchor an Agent-local module resolver at its package metadata/);
-    assert.match(skill, /createRequire.*package\.json/);
-    assert.match(skill, /without hard-coding a Workflow version or copying dependencies/);
-    assert.match(skill, /Verify browser launch and rerun the complete non-sensitive probe/);
-    assert.match(skill, /only after those safe local loading strategies fail may you stop as `TEST_HARNESS`/);
-    assert.doesNotMatch(skill, /workflows\/0\.8\.2/);
+    assert.match(skill, /Agent Native is the default runtime-test mode/);
+    assert.match(skill, /ask exactly once whether.*runtime testing/);
+    assert.match(skill, /testing, diagnosis, or automatic repair.*do not ask again/);
+    assert.match(skill, /agent-native-handoff-platform/);
+    assert.match(skill, /creates no authorization.*Session/);
+    assert.match(skill, /workflowRestrictionsApplied:false/);
+    assert.match(skill, /Workflow does not require a sentinel/);
+    assert.match(skill, /does not.*impose.*readiness budget/);
+    assert.match(skill, /previousRunId/);
+    assert.match(skill, /repairBatchId/);
+    assert.match(skill, /FLAKY_RUNTIME/);
+    assert.match(skill, /legacy\/audit/);
+    assert.doesNotMatch(skill, /RUN_AGENT_DIRECT_READ_ONLY_TEST/);
+    assert.doesNotMatch(skill, /default 300-second business-root readiness budget/);
   }
 });

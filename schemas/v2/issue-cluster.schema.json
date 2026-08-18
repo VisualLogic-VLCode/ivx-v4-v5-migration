@@ -12,7 +12,7 @@
     "jobId": { "$ref": "common.schema.json#/$defs/jobId" },
     "reviewId": { "$ref": "common.schema.json#/$defs/reviewId" },
     "issueIds": { "$ref": "common.schema.json#/$defs/stringArray" },
-    "cause": { "enum": ["CONVERTER", "SOURCE_DATA", "TARGET_CASE", "TEST_HARNESS", "ENVIRONMENT_CONFIGURATION", "PLATFORM_RUNTIME", "KNOWLEDGE_GAP", "AUTHORIZATION", "UNKNOWN"] },
+    "cause": { "enum": ["CONVERTER", "SOURCE_DATA", "TARGET_CASE", "TEST_HARNESS", "ENVIRONMENT_CONFIGURATION", "PLATFORM_RUNTIME", "KNOWLEDGE_GAP", "AUTHORIZATION", "FLAKY_RUNTIME", "UNKNOWN"] },
     "responsibleParty": { "enum": ["CONVERTER_MAINTAINER", "WORKFLOW_AI", "USER", "PLATFORM_MAINTAINER", "KNOWLEDGE_MAINTAINER", "UNKNOWN"] },
     "repairTarget": { "enum": ["NONE", "V5_ARTIFACT", "RUNTIME_SCENARIO", "ENVIRONMENT_BINDING", "KNOWLEDGE_RULE", "AUTHORIZATION_PREREQUISITE"] },
     "confidence": {

@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import {
+  validateAgentNativeObservationBundle,
   validateBehaviorTrace,
   validateAutomaticRepairDecision,
   validateDiagnosisReport,
@@ -27,7 +28,7 @@ import { withFileLock } from '../fs/file-lock.js';
 import { ensurePrivateDir, readJson, sha256File, writePrivateFile, writePrivateJson } from '../fs/secure-json.js';
 import { JobStore } from '../jobs/job-store.js';
 import { createAppPaths } from '../paths.js';
-import { createRuntimeIssueCandidates, evaluateDiagnosis } from '../diagnosis/diagnosis-engine.js';
+import { createAgentNativeIssueCandidates, createRuntimeIssueCandidates, evaluateDiagnosis } from '../diagnosis/diagnosis-engine.js';
 import { createRedactedRevisionDiff, revisionValueDigest } from './revision-diff.js';
 import { redactRuntimeText } from '../runtime/trace-redaction.js';
 import { validateConvertedCase } from '../validation/basic-validator.js';
@@ -557,30 +558,44 @@ export class RuntimeReviewStore {
   diagnosisCandidates(reviewId) {
     this.load(reviewId);
     const cyclesDir = this.#artifactPath(reviewId, 'cycles');
-    if (!fs.existsSync(cyclesDir)) return [];
     const entries = [];
-    for (const cycleId of fs.readdirSync(cyclesDir).sort()) {
-      const cycleDir = path.join(cyclesDir, cycleId);
-      const cycleStat = fs.lstatSync(cycleDir, { throwIfNoEntry: false });
-      invariant(cycleStat?.isDirectory() && !cycleStat.isSymbolicLink(), 'DIAGNOSIS_EVIDENCE_INVALID', 'Runtime cycle evidence directory is unsafe');
-      const comparisonsDir = path.join(cyclesDir, cycleId, 'comparisons');
-      if (!fs.existsSync(comparisonsDir)) continue;
-      const comparisonsStat = fs.lstatSync(comparisonsDir);
-      invariant(comparisonsStat.isDirectory() && !comparisonsStat.isSymbolicLink(), 'DIAGNOSIS_EVIDENCE_INVALID', 'Runtime comparison evidence directory is unsafe');
-      for (const file of fs.readdirSync(comparisonsDir).filter((name) => name.endsWith('.json')).sort()) {
-        const fileStat = fs.lstatSync(path.join(comparisonsDir, file));
-        invariant(fileStat.isFile() && !fileStat.isSymbolicLink(), 'DIAGNOSIS_EVIDENCE_INVALID', 'Runtime comparison evidence file is unsafe');
-        const comparison = validateRuntimeComparison(readJson(path.join(comparisonsDir, file)));
-        if (!['ENVIRONMENT_EQUIVALENT', 'NORMALIZED_EQUIVALENT'].includes(comparison.environment.status)) continue;
-        entries.push({ comparison, artifact: relativeArtifactPath('cycles', cycleId, 'comparisons', file) });
+    if (fs.existsSync(cyclesDir)) {
+      for (const cycleId of fs.readdirSync(cyclesDir).sort()) {
+        const cycleDir = path.join(cyclesDir, cycleId);
+        const cycleStat = fs.lstatSync(cycleDir, { throwIfNoEntry: false });
+        invariant(cycleStat?.isDirectory() && !cycleStat.isSymbolicLink(), 'DIAGNOSIS_EVIDENCE_INVALID', 'Runtime cycle evidence directory is unsafe');
+        const comparisonsDir = path.join(cyclesDir, cycleId, 'comparisons');
+        if (!fs.existsSync(comparisonsDir)) continue;
+        const comparisonsStat = fs.lstatSync(comparisonsDir);
+        invariant(comparisonsStat.isDirectory() && !comparisonsStat.isSymbolicLink(), 'DIAGNOSIS_EVIDENCE_INVALID', 'Runtime comparison evidence directory is unsafe');
+        for (const file of fs.readdirSync(comparisonsDir).filter((name) => name.endsWith('.json')).sort()) {
+          const fileStat = fs.lstatSync(path.join(comparisonsDir, file));
+          invariant(fileStat.isFile() && !fileStat.isSymbolicLink(), 'DIAGNOSIS_EVIDENCE_INVALID', 'Runtime comparison evidence file is unsafe');
+          const comparison = validateRuntimeComparison(readJson(path.join(comparisonsDir, file)));
+          if (!['ENVIRONMENT_EQUIVALENT', 'NORMALIZED_EQUIVALENT'].includes(comparison.environment.status)) continue;
+          entries.push({ comparison, artifact: relativeArtifactPath('cycles', cycleId, 'comparisons', file) });
+        }
       }
     }
-    return createRuntimeIssueCandidates(entries);
+    const nativeEntries = [];
+    const nativeRunsDir = this.#artifactPath(reviewId, relativeArtifactPath('agent-native', 'runs'));
+    if (fs.existsSync(nativeRunsDir)) {
+      for (const runId of fs.readdirSync(nativeRunsDir).sort()) {
+        const runDir = path.join(nativeRunsDir, runId);
+        const runStat = fs.lstatSync(runDir, { throwIfNoEntry: false });
+        invariant(runStat?.isDirectory() && !runStat.isSymbolicLink(), 'DIAGNOSIS_EVIDENCE_INVALID', 'Agent Native run evidence directory is unsafe');
+        const artifact = relativeArtifactPath('agent-native', 'runs', runId, 'observation.json');
+        const target = this.#assertPrivateRegularArtifact(reviewId, artifact, 'DIAGNOSIS_EVIDENCE_INVALID', 'Agent Native observation evidence is missing or unsafe');
+        nativeEntries.push({ observation: validateAgentNativeObservationBundle(readJson(target)), artifact });
+      }
+    }
+    return [...createRuntimeIssueCandidates(entries), ...createAgentNativeIssueCandidates(nativeEntries)]
+      .sort((left, right) => left.issueId.localeCompare(right.issueId));
   }
 
   submitDiagnosis(reviewId, { classification, eligibilityContext } = {}) {
     return this.#mutate(reviewId, (review) => {
-      invariant(['MISMATCH_DETECTED', 'DIAGNOSING', 'AWAITING_HUMAN_EVIDENCE', 'BLOCKED_PLATFORM_RUNTIME'].includes(review.status), 'REVIEW_STATE_MISMATCH', 'Review is not ready for Diagnosis v2', { status: review.status });
+      invariant(['MISMATCH_DETECTED', 'AGENT_NATIVE_MISMATCH_OBSERVED', 'AGENT_NATIVE_INCONCLUSIVE', 'DIAGNOSING', 'AWAITING_HUMAN_EVIDENCE', 'BLOCKED_PLATFORM_RUNTIME'].includes(review.status), 'REVIEW_STATE_MISMATCH', 'Review is not ready for Diagnosis v2', { status: review.status });
       validateIssueClassificationV2(classification);
       invariant(classification.createdBy === 'AGENT' && classification.sensitivity === 'REDACTED', 'DIAGNOSIS_PROVENANCE_INVALID', 'Root Cause Classification must be a redacted AGENT artifact');
       for (const issue of classification.issues) {
@@ -646,7 +661,7 @@ export class RuntimeReviewStore {
       writePrivateJson(path.join(diagnosisDir, 'summary.json'), summary);
       review.issueClusterIds.sort();
       review.repairBudgetIds.sort();
-      if (review.status === 'MISMATCH_DETECTED' || review.status === 'AWAITING_HUMAN_EVIDENCE' || review.status === 'BLOCKED_PLATFORM_RUNTIME') {
+      if (['MISMATCH_DETECTED', 'AGENT_NATIVE_MISMATCH_OBSERVED', 'AGENT_NATIVE_INCONCLUSIVE', 'AWAITING_HUMAN_EVIDENCE', 'BLOCKED_PLATFORM_RUNTIME'].includes(review.status)) {
         assertReviewTransition(review.status, 'DIAGNOSING');
         this.#setStatus(review, 'DIAGNOSING', `diagnosis-submitted:${diagnosis.diagnosisId}`);
       } else {
@@ -701,6 +716,57 @@ export class RuntimeReviewStore {
     const comparison = readJson(target, null);
     invariant(comparison, 'ENVIRONMENT_COMPARISON_NOT_FOUND', `Environment Comparison not found: ${comparisonId}`);
     return validateEnvironmentComparison(comparison);
+  }
+
+  latestEnvironmentComparison(reviewId) {
+    this.load(reviewId);
+    const comparisons = this.#listArtifacts(reviewId, 'environment')
+      .filter((entry) => entry?.kind === 'environment-comparison')
+      .map(validateEnvironmentComparison);
+    return comparisons.at(-1) || null;
+  }
+
+  recordAgentNativeObservation(reviewId, observation) {
+    validateAgentNativeObservationBundle(observation);
+    return this.#mutate(reviewId, (review) => {
+      invariant(observation.reviewId === reviewId && observation.jobId === review.jobId, 'AGENT_NATIVE_SCOPE_MISMATCH', 'Agent Native Observation belongs to another Review or Job');
+      const nextStatus = {
+        OBSERVED_EQUIVALENT: 'AGENT_NATIVE_EQUIVALENCE_OBSERVED',
+        OBSERVED_MISMATCH: 'AGENT_NATIVE_MISMATCH_OBSERVED',
+        INCONCLUSIVE: 'AGENT_NATIVE_INCONCLUSIVE',
+      }[observation.outcome];
+      const reason = `agent-native-observation:${observation.runId}`;
+      const isIdempotentReplay = review.status === nextStatus && review.history.at(-1)?.reason === reason;
+      if (!isIdempotentReplay && review.status !== nextStatus) assertReviewTransition(review.status, nextStatus);
+      let repairBatch = null;
+      if (observation.repairBatchId !== null) {
+        repairBatch = this.#repairBatch(reviewId, observation.repairBatchId);
+        if (repairBatch.affectedNativeRunIds?.length) {
+          invariant(repairBatch.affectedNativeRunIds.includes(observation.previousRunId), 'AGENT_NATIVE_REPAIR_RUN_NOT_LINKED', 'Agent Native repair regression must link an originating run from the Repair Batch');
+        }
+        const targetBatchState = {
+          OBSERVED_EQUIVALENT: 'RUNTIME_VERIFIED',
+          OBSERVED_MISMATCH: 'RUNTIME_FAILED',
+          INCONCLUSIVE: 'RUNTIME_INCONCLUSIVE',
+        }[observation.outcome];
+        invariant(['READBACK_VERIFIED', targetBatchState].includes(repairBatch.state), 'AGENT_NATIVE_REPAIR_BATCH_STATE_INVALID', 'Agent Native repair regression requires a read-back-verified Repair Batch');
+        if (repairBatch.state === 'READBACK_VERIFIED') {
+          repairBatch.state = targetBatchState;
+          repairBatch.updatedAt = observation.createdAt;
+          writePrivateJson(this.#batchPath(reviewId, repairBatch.batchId), repairBatch);
+        }
+      }
+      if (isIdempotentReplay) {
+        return { review, repairBatch };
+      }
+      if (review.status !== nextStatus) {
+        this.#setStatus(review, nextStatus, reason);
+      } else {
+        review.updatedAt = observation.createdAt;
+        review.history.push({ status: review.status, at: observation.createdAt, reason });
+      }
+      return { review, repairBatch };
+    });
   }
 
   runtimeCycleDir(reviewId, cycleId) {
@@ -1306,8 +1372,13 @@ export class RuntimeReviewStore {
       for (const evidenceRef of proposal.evidenceRefs) this.#assertDiagnosisEvidenceRef(reviewId, evidenceRef);
       invariant(proposal.knowledgeRuleIds.every((ruleId) => review.runtime.knowledge.ruleIds.includes(ruleId)), 'REPAIR_KNOWLEDGE_RULE_NOT_USED', 'Repair Proposal may cite only Knowledge rules retrieved by this review');
       const requiredScenarioIds = [...new Set(clusters.flatMap((cluster) => this.#clusterScenarioIds(reviewId, cluster)))].sort();
+      const requiredNativeRunIds = [...new Set(clusters.flatMap((cluster) => this.#clusterNativeRunIds(reviewId, cluster)))].sort();
       invariant(requiredScenarioIds.every((scenarioId) => proposal.affectedScenarioIds.includes(scenarioId)), 'REPAIR_AFFECTED_SCENARIOS_INCOMPLETE', 'Repair Proposal must include every originating failed runtime scenario', { requiredScenarioIds });
       invariant(proposal.affectedScenarioIds.every((scenarioId) => review.scenarioIds.includes(scenarioId)), 'REPAIR_SCENARIO_NOT_LINKED', 'Repair Proposal references a scenario not linked to this review');
+      invariant(requiredNativeRunIds.every((runId) => (proposal.affectedNativeRunIds || []).includes(runId)), 'REPAIR_AFFECTED_NATIVE_RUNS_INCOMPLETE', 'Repair Proposal must include every originating Agent Native run', { requiredNativeRunIds });
+      for (const runId of proposal.affectedNativeRunIds || []) {
+        this.#assertPrivateRegularArtifact(reviewId, relativeArtifactPath('agent-native', 'runs', runId, 'observation.json'), 'REPAIR_NATIVE_RUN_NOT_LINKED', 'Repair Proposal references an Agent Native run not linked to this review');
+      }
 
       const proposalPath = this.#artifactPath(reviewId, relativeArtifactPath('repairs', 'proposals', `${proposal.proposalId}.json`));
       invariant(!fs.existsSync(proposalPath), 'REPAIR_PROPOSAL_EXISTS', `Repair Proposal already exists: ${proposal.proposalId}`);
@@ -1403,6 +1474,7 @@ export class RuntimeReviewStore {
           expectedTarget: { nid: review.target.nid, workId: review.baseline.targetWorkId, sha256: baseSha256 },
           candidate: { checkpointId: checkpoint.checkpointId, artifact: checkpoint.artifact, sha256: checkpoint.sha256 },
           affectedScenarioIds: [...proposal.affectedScenarioIds].sort(),
+          affectedNativeRunIds: [...(proposal.affectedNativeRunIds || [])].sort(),
           write: { requestedAt: null, outcome: 'NOT_ATTEMPTED', observedWorkId: null, observedSha256: null, errorCode: null },
           createdAt,
           updatedAt: createdAt,
@@ -1442,7 +1514,7 @@ export class RuntimeReviewStore {
         invariant(authorization.scope === 'EXTENSION', 'TARGET_REVISION_EXTENSION_AUTHORIZATION_REQUIRED', 'The initial 10 target revisions are exhausted; an extension authorization is required');
         invariant(sessionBudget.targetRevisions.extensionUsed < sessionBudget.targetRevisions.extensionLimit, 'TARGET_REVISION_BUDGET_EXHAUSTED', 'Target revision extension budget is exhausted');
       }
-      const writesByAuthorization = this.listRepairBatches(reviewId).filter((entry) => entry.authorizationId === authorization.authorizationId && ['READBACK_VERIFIED', 'RUNTIME_TESTING', 'RUNTIME_VERIFIED', 'RUNTIME_FAILED'].includes(entry.state)).length;
+      const writesByAuthorization = this.listRepairBatches(reviewId).filter((entry) => entry.authorizationId === authorization.authorizationId && ['READBACK_VERIFIED', 'RUNTIME_TESTING', 'RUNTIME_VERIFIED', 'RUNTIME_FAILED', 'RUNTIME_INCONCLUSIVE'].includes(entry.state)).length;
       invariant(writesByAuthorization < authorization.maxTargetRevisions, 'REPAIR_AUTHORIZATION_ALLOWANCE_EXHAUSTED', 'Target revision allowance is exhausted for this authorization');
       const candidate = readJson(this.#artifactPath(reviewId, batch.candidate.artifact));
       invariant(revisionValueDigest(candidate) === batch.candidate.sha256, 'TARGET_REPAIR_CANDIDATE_CORRUPT', 'Repair candidate does not match its checkpoint digest');
@@ -1687,6 +1759,19 @@ export class RuntimeReviewStore {
     return [...new Set(scenarioIds)].sort();
   }
 
+  #clusterNativeRunIds(reviewId, cluster) {
+    const runIds = [];
+    for (const evidenceRef of cluster.evidenceRefs) {
+      if (!evidenceRef.startsWith('artifact:agent-native/runs/') || !evidenceRef.endsWith('/observation.json')) continue;
+      const segments = evidenceRef.slice('artifact:'.length).split('/');
+      const runId = segments[2];
+      normalizeId(runId, ARTIFACT_ID_PATTERN, 'INVALID_AGENT_NATIVE_RUN_ID', 'Invalid Agent Native run id');
+      validateAgentNativeObservationBundle(readJson(this.#artifactPath(reviewId, segments.join('/'))));
+      runIds.push(runId);
+    }
+    return [...new Set(runIds)].sort();
+  }
+
   #writeCheckpoint(reviewId, {
     checkpointType,
     artifact,
@@ -1767,7 +1852,7 @@ export class RuntimeReviewStore {
     invariant(typeof evidenceRef === 'string' && evidenceRef.startsWith('artifact:'), 'DIAGNOSIS_EVIDENCE_INVALID', 'Diagnosis evidence must be an artifact:<relative-path> reference');
     const relativePath = evidenceRef.slice('artifact:'.length);
     invariant(relativePath && !path.isAbsolute(relativePath) && !relativePath.split('/').includes('..'), 'DIAGNOSIS_EVIDENCE_INVALID', 'Diagnosis evidence path is unsafe');
-    const allowedRoots = new Set(['cycles', 'environment', 'findings', 'knowledge', 'revision-observations', 'reports']);
+    const allowedRoots = new Set(['cycles', 'agent-native', 'environment', 'findings', 'knowledge', 'revision-observations', 'reports']);
     invariant(allowedRoots.has(relativePath.split('/')[0]), 'DIAGNOSIS_EVIDENCE_INVALID', 'Diagnosis evidence root is not allowed');
     this.#assertPrivateRegularArtifact(reviewId, relativePath, 'DIAGNOSIS_EVIDENCE_MISSING', 'Diagnosis evidence must reference an existing regular review artifact', { evidenceRef });
   }

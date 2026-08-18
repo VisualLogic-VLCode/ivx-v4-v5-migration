@@ -22,6 +22,7 @@ const REPORT_TYPES = Object.freeze({
   PLATFORM_RUNTIME: 'PLATFORM_RUNTIME',
   KNOWLEDGE_GAP: 'KNOWLEDGE_GAP',
   AUTHORIZATION: 'AUTHORIZATION',
+  FLAKY_RUNTIME: 'FLAKY_RUNTIME',
   UNKNOWN: 'UNKNOWN',
 });
 
@@ -34,6 +35,7 @@ const RECOMMENDED_ACTIONS = Object.freeze({
   PLATFORM_RUNTIME: ['Send this report to the platform maintainer.', 'Retain the diagnostic target and retry only after platform recovery.'],
   KNOWLEDGE_GAP: ['Submit a redacted Knowledge Feedback Report.', 'Do not infer a target patch from insufficient rules.'],
   AUTHORIZATION: ['Restore authentication, server permission, or explicit user authorization.', 'Do not bypass platform authorization checks.'],
+  FLAKY_RUNTIME: ['Preserve linked observations and repeat the Agent Native test before attribution.', 'Do not patch the target from unstable evidence.'],
   UNKNOWN: ['Preserve the evidence and request a Human Finding.', 'Do not generate a target patch without a unique supported cause.'],
 });
 
@@ -45,6 +47,10 @@ export function runtimeIssueId(comparisonId, assertionId) {
   return digestId('runtime', { comparisonId, assertionId });
 }
 
+export function agentNativeIssueId(runId, findingId) {
+  return digestId('native', { runId, findingId });
+}
+
 export function createRuntimeIssueCandidates(comparisons) {
   const candidates = [];
   for (const entry of comparisons) {
@@ -53,11 +59,35 @@ export function createRuntimeIssueCandidates(comparisons) {
       if (assertion.status === 'PASSED') continue;
       candidates.push({
         issueId: runtimeIssueId(entry.comparison.comparisonId, assertion.assertionId),
+        sourceKind: 'RUNTIME_COMPARISON',
         comparisonId: entry.comparison.comparisonId,
         assertionId: assertion.assertionId,
+        nativeRunId: null,
+        findingId: null,
         status: assertion.status,
         reasonCode: assertion.reasonCode,
         evidenceRef: `artifact:${relativePath}`,
+      });
+    }
+  }
+  return candidates.sort((left, right) => left.issueId.localeCompare(right.issueId));
+}
+
+export function createAgentNativeIssueCandidates(observations) {
+  const candidates = [];
+  for (const entry of observations) {
+    for (const finding of entry.observation.findings) {
+      if (finding.status === 'MATCHED') continue;
+      candidates.push({
+        issueId: agentNativeIssueId(entry.observation.runId, finding.findingId),
+        sourceKind: 'AGENT_NATIVE_OBSERVATION',
+        comparisonId: null,
+        assertionId: null,
+        nativeRunId: entry.observation.runId,
+        findingId: finding.findingId,
+        status: finding.status === 'MISMATCH' ? 'FAILED' : 'INCONCLUSIVE',
+        reasonCode: finding.status === 'MISMATCH' ? 'AGENT_OBSERVED_MISMATCH' : 'AGENT_OBSERVED_INCONCLUSIVE',
+        evidenceRef: `artifact:${entry.artifact}`,
       });
     }
   }
@@ -208,7 +238,9 @@ function createEligibility(review, clusterId, context, createdAt) {
 
 function reproducibility(evidenceRefs) {
   const cycles = new Set(evidenceRefs.filter((value) => value.startsWith('artifact:cycles/')).map((value) => value.split('/')[1]));
-  return cycles.size >= 2 ? 'REPRODUCIBLE' : cycles.size === 1 ? 'PARTIAL' : 'INSUFFICIENT_EVIDENCE';
+  const nativeRuns = new Set(evidenceRefs.filter((value) => value.startsWith('artifact:agent-native/runs/')).map((value) => value.split('/')[2]));
+  const observations = cycles.size + nativeRuns.size;
+  return observations >= 2 ? 'REPRODUCIBLE' : observations === 1 ? 'PARTIAL' : 'INSUFFICIENT_EVIDENCE';
 }
 
 function reportSummary(cluster, issues) {
@@ -243,9 +275,12 @@ function createReport(review, job, cluster, issues, candidatesById, decision, el
     evidence: cluster.issueIds.map((issueId) => {
       const candidate = candidatesById.get(issueId);
       return {
+        sourceKind: candidate.sourceKind || 'RUNTIME_COMPARISON',
         issueId,
-        comparisonId: candidate.comparisonId,
-        assertionId: candidate.assertionId,
+        comparisonId: candidate.comparisonId ?? null,
+        assertionId: candidate.assertionId ?? null,
+        nativeRunId: candidate.nativeRunId ?? null,
+        findingId: candidate.findingId ?? null,
         status: candidate.status,
         reasonCode: candidate.reasonCode,
         evidenceRef: candidate.evidenceRef,
@@ -286,7 +321,7 @@ export function renderDiagnosisReportMarkdown(report) {
     '',
     '## Evidence references',
     '',
-    ...report.evidence.map((value) => `- ${value.issueId}: ${value.status} ${value.reasonCode} (${value.comparisonId}/${value.assertionId})`),
+    ...report.evidence.map((value) => `- ${value.issueId}: ${value.status} ${value.reasonCode} (${value.sourceKind === 'AGENT_NATIVE_OBSERVATION' ? `${value.nativeRunId}/${value.findingId}` : `${value.comparisonId}/${value.assertionId}`})`),
     ...report.evidenceRefs.map((value) => `- ${value}`),
     '',
     '## Recommended actions',

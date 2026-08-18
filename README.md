@@ -4,7 +4,7 @@ This project is the distributable local workflow used by Codex or Claude Code. I
 
 ## Current status
 
-The current release candidate is Workflow `0.8.3` with Agent protocol 9, Converter `1.2.5`, and Knowledge Runtime `0.1.6`. Its capabilities are:
+The current release candidate is Workflow `0.9.0` with Agent protocol 9, Converter `1.2.5`, and Knowledge Runtime `0.1.6`. Its capabilities are:
 
 - private global Job storage with atomic state writes and per-Job locks;
 - metadata + physical work version classification;
@@ -24,11 +24,12 @@ The current release candidate is Workflow `0.8.3` with Agent protocol 9, Convert
 - independent private Runtime Review Session persistence, one-writer-per-target-revision leases, Human Finding evidence, and external-revision baseline reconciliation;
 - exact-version legacy Workflow-pin recovery for Runtime Review, with complete forward Job pins and local-before-platform failure on missing or contradictory provenance;
 - a locked Playwright Runtime Driver with closed declarative scenarios, isolated V4/V5 contexts, private browser authentication state, redacted traces, reviewed normalization, side-effect gates, and report-only parity comparison;
-- explicitly authorized Agent Direct read-only testing: the Workflow freezes revisions/environment/full Job scope and archives evidence, while the local AI Agent exclusively controls its own browser, JavaScript, CSS/XPath, loops, screenshots, business assertions, and adaptive decisions without any Workflow browser driver or action planner;
-- backward-compatible reading and recovery of protocol-8 autonomous-exploration artifacts and commands, while new tests use Agent Direct sessions; current-user ephemeral credentials are allowed only after a non-sensitive same-surface capability probe, Agent-owned business readiness defaults to 300 seconds per subject, Agent-local Playwright resolution must recover through the active signed managed package before a harness stop, and the separately modeled side-effect capability remains explicitly disabled in 0.8.3;
+- default Agent Native runtime testing: Workflow exports current source/target facts, exact Job root, workspace, and advisory environment observations but creates no test authorization, Session, capability/expiry/revision/origin lease, browser driver, credential rule, action policy, or side-effect scope; the local Agent owns execution under the user's request and host safety policy;
+- linked redacted Native observation bundles (`OBSERVED_EQUIVALENT`, `OBSERVED_MISMATCH`, `INCONCLUSIVE`), Agent/LLM semantic diagnosis, `FLAKY_RUNTIME` attribution, Native-run repair provenance, and Agent Native post-write regression closure without synthetic Runtime Scenarios;
+- backward-compatible reading and recovery of protocol-8 Exploration and protocol-9 Agent Direct artifacts; Agent Direct remains an explicit legacy/audit mode rather than the default runtime path;
 - an exact-scoped, short-lived USER environment-risk acceptance for diagnostic runtime observation without rewriting environment equivalence, Converter attribution, or target-repair authority;
 - Diagnosis v2 with evidence-backed Issue Clusters, policy-computed automatic-repair decisions, independent diagnostic-save eligibility, calibration fixtures, and redacted owner-specific maintainer reports;
-- bounded target repair with private authorization leases, per-cluster `3+2` attempts, per-review `10+5` confirmed revisions, V5-only Patch policy, static regression gates, Saveable Checkpoints, target CAS, unknown-write reconciliation, verified read-back, and affected-scenario retesting;
+- bounded target repair with private authorization leases, per-cluster `3+2` attempts, per-review `10+5` confirmed revisions, V5-only Patch policy, static regression gates, Saveable Checkpoints, target CAS, unknown-write reconciliation, verified read-back, and affected-scenario or affected-Native-run retesting;
 - a complete local-file dry run, mock-platform fault coverage, and a controlled real-case Save As, environment-equivalence, and runtime-parity acceptance flow.
 
 Platform writes remain disabled by default. A verified save requires private config `platform.writeMode: "explicit"` and `--confirm-live-write SAVE_V5`. A Job with any fully classified known issue may use the separate command and confirmation `SAVE_V5_WITH_KNOWN_ISSUES`; it finishes as `DIAGNOSTIC_COPY_CREATED`, never `SUCCEEDED`. Classification never bypasses authentication, actual server permission, current platform availability, source-revision safety, or user authorization. Non-owner group participants remain blocked as `UNKNOWN_SERVER_POLICY` until their deployment-specific server permission is verified.
@@ -207,32 +208,21 @@ ivx-migrate review runtime-resume-platform \
 
 Runtime Scenario actions use only the published action/semantic-locator vocabulary; arbitrary JavaScript, CSS/XPath, credential entry, and native Playwright traces are rejected. `READ_ONLY` blocks non-idempotent requests. `REVERSIBLE` requires cleanup and a single-use USER authorization; `EXTERNAL_SIDE_EFFECT` additionally requires a visible takeover. Browser storage state is kept in separate private `0600` files per preview origin and is never returned. Runtime cycles remain evidence-only: they never apply a Patch or invoke a platform write. A later, separately authorized repair operation may consume their redacted evidence.
 
-Agent protocol 9 makes the local AI Agent the sole runtime-test executor. One exact user authorization binds the Review, immutable complete Job manifest, source/target revisions and preview origins, equivalent Environment Comparison, read-only capability, and expiry. `agent-test-context-platform` returns the authorized Job root, Agent workspace, and exact subjects; it supplies no browser driver, crawler, action planner, readiness gate, or test program. The Agent directly chooses and controls its browser/testing tools, JavaScript, semantic locators, CSS/XPath, loops, visual comparisons, and business assertions. Existing signed-in browser state is preferred. When the returned Context declares `credentialPolicy.userDirectInput: EPHEMERAL_BROWSER_USE_ALLOWED` and `agentToolTransport: MINIMUM_BROWSER_OPERATION_ONLY`, if the current user explicitly supplies a Token/Cookie/session value in the active Agent task, the Agent first proves the exact intended browser execution surface using a generated non-sensitive sentinel with the same before-load storage mechanism. Only after set/read/remove succeeds may the Agent use the real value ephemerally in the minimum browser operation needed to authenticate the exact authorized subjects. Workflow never receives it. The Agent must not repeat it or place it in shell/CLI arguments, environment variables, standalone or persisted scripts, files, screenshots, reports, evidence, or attestations; only the fact that authentication was initialized may be reported.
+Agent protocol 9 now defaults ordinary runtime testing to Agent Native. `agent-native-handoff-platform` returns current source/target URLs, observed workIds/origins, the exact Job root, a private evidence workspace, and the latest environment comparison as advisory data. It does not create an authorization, Session, expiry, browser driver, action planner, credential transport rule, side-effect policy, revision/origin lease, or Environment Gate. The Agent may choose and switch tools, reuse its current browser/session/cache, author code, retry, navigate, and exercise the user-authorized business flow subject to its host safety policy. Workflow never receives browser credentials and observation artifacts must contain no secrets.
 
-Business readiness remains an Agent decision. The default ceiling is 300 seconds for each V4/V5 subject, polled at roughly 10-second intervals without closing or reloading the browser context. A title, load event, or platform loading shell is insufficient; the Agent must observe stable business-root DOM/ARIA/state with no blocking authentication or runtime error. DOM/accessibility, visual, and console/network/runtime evidence operations each receive an independent budget of at least 120 seconds and one expanded retry. A tool watchdog must not silently shorten the 300-second readiness budget. If normal Agent-local Playwright loading fails, the Agent discovers the active signed managed Workflow package and anchors its own local resolver there; Workflow supplies no loading bridge and no version is hard-coded. Only bounded failure of those safe local strategies may end as `TEST_HARNESS`.
+`ivx-migrate doctor` reports this default as `runtimeTestMode: "AGENT_NATIVE"`. A conversion-only request causes the distributed Agent Skill to ask once whether testing should continue after Save As; a request that already includes testing, diagnosis, or repair proceeds without repeating that question.
 
 ```bash
-ivx-migrate review agent-test-authorize-platform \
-  --review <reviewId> \
-  --environment-id <comparisonId> \
-  --capability AGENT_DIRECT_READ_ONLY \
-  --confirm RUN_AGENT_DIRECT_READ_ONLY_TEST
-
-ivx-migrate review agent-test-context-platform \
-  --review <reviewId> \
-  --authorization <authorizationId>
-
-ivx-migrate review agent-test-submit-platform \
-  --review <reviewId> \
-  --session <sessionId> \
-  --file ./agent-test-attestation.json
+ivx-migrate review agent-native-handoff-platform --review <reviewId>
+ivx-migrate review agent-native-submit --review <reviewId> --file ./agent-native-observation-bundle.json
+ivx-migrate review agent-native-list --review <reviewId>
 ```
 
-The Agent writes redacted evidence only inside the returned workspace and submits an `AGENT_ATTESTED_PARITY_OBSERVED`, `AGENT_ATTESTED_MISMATCH`, or `AGENT_ATTESTED_INCONCLUSIVE` attestation. `strictParityClaimed` and `workflowDriverUsed` must remain false; the attestation does not silently promote legacy Review parity or authorize diagnosis, repair, Save As, or a write. Under `AGENT_DIRECT_READ_ONLY`, avoiding intended external effects is the Agent's responsibility because no Workflow driver is interposed. `AGENT_DIRECT_SIDE_EFFECT` has an explicit future scope schema but is rejected before platform access in 0.8.3.
+The Agent stores redacted evidence inside the returned workspace and submits `OBSERVED_EQUIVALENT`, `OBSERVED_MISMATCH`, or `INCONCLUSIVE` with `strictParityClaimed:false` and `workflowRestrictionsApplied:false`. Revisions, origins, environment differences, tools, and actual effects are recorded as facts, not execution gates. A retest is a new linked run; post-repair runs use `REPAIR_REGRESSION` plus `repairBatchId`. These observations never claim strict parity. The old `agent-test-*` Agent Direct commands remain available only for explicitly requested managed audit behavior.
 
-An unresolved Environment Gate still blocks by default. A user may separately accept exactly the current Review, source/target revisions, unresolved paths, and selected scenarios for at most eight hours. Such a cycle remains labeled `USER_ACCEPTED_RISK`: its Environment Comparison is not changed, its comparisons are excluded from Diagnosis v2, and its result cannot claim parity, attribute a Converter defect, or enable automatic repair. Environment-risk acceptance never substitutes for browser authentication, platform/revision checks, side-effect authorization, or a write confirmation. `/config/name` is the only newly ignored config field: it is a saved-preset display label absent from the platform runtime config contract; unknown fields remain fail-closed.
+An unresolved Environment Gate is advisory for Agent Native execution and must be preserved in the observation. It may lower confidence or block a later managed repair, but it no longer prevents the Agent from testing. Legacy Runtime Cycles retain their original exact environment-risk contracts. `/config/name` remains an ignored saved-preset display label; other unknown fields remain visible rather than being silently normalized.
 
-When a Runtime Cycle reports a mismatch, Diagnosis v2 exposes stable candidates and accepts only a complete Schema-v2 Root Cause Classification. Every issue must cite its actual local comparison artifact; Knowledge rule IDs must have been retrieved by this review. The Workflow independently computes repair and diagnostic-save decisions and produces a redacted JSON/Markdown owner report:
+When a Native observation or legacy Runtime Cycle reports a mismatch/inconclusive finding, Diagnosis v2 exposes stable candidates and accepts only a complete Agent-authored Schema-v2 Root Cause Classification. Every issue must cite its actual local artifact; Workflow validates the closed cause/target/repair policy but does not silently substitute semantic attribution. Knowledge rule IDs must have been retrieved by this Review. The Workflow independently computes repair and diagnostic-save decisions and produces a redacted JSON/Markdown owner report:
 
 ```bash
 ivx-migrate review diagnosis-candidates --review <reviewId>

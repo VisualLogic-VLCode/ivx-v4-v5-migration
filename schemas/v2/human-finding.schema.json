@@ -18,7 +18,7 @@
     "locations": { "$ref": "common.schema.json#/$defs/stringArray" },
     "suggestedCause": {
       "oneOf": [
-        { "enum": ["CONVERTER", "SOURCE_DATA", "TARGET_CASE", "TEST_HARNESS", "ENVIRONMENT_CONFIGURATION", "PLATFORM_RUNTIME", "KNOWLEDGE_GAP", "AUTHORIZATION", "UNKNOWN"] },
+        { "enum": ["CONVERTER", "SOURCE_DATA", "TARGET_CASE", "TEST_HARNESS", "ENVIRONMENT_CONFIGURATION", "PLATFORM_RUNTIME", "KNOWLEDGE_GAP", "AUTHORIZATION", "FLAKY_RUNTIME", "UNKNOWN"] },
         { "type": "null" }
       ]
     },

@@ -210,6 +210,7 @@ export function diagnosticOwnerBucket(classification, issue) {
   if (cause === 'PLATFORM_RUNTIME') return 'PLATFORM';
   if (cause === 'KNOWLEDGE_GAP') return 'KNOWLEDGE';
   if (cause === 'AUTHORIZATION') return 'AUTHORIZATION';
+  if (cause === 'FLAKY_RUNTIME') return 'FLAKY_RUNTIME';
   if (cause === 'UNKNOWN') return 'UNKNOWN';
   return null;
 }

@@ -12,6 +12,7 @@ import { evaluateRepairCandidate, repairPatchDigest } from '../src/repair/repair
 import { TargetUpdateOrchestrator } from '../src/repair/target-update-orchestrator.js';
 import { RuntimeReviewStore } from '../src/reviews/review-store.js';
 import { revisionValueDigest } from '../src/reviews/revision-diff.js';
+import { AgentNativeStore } from '../src/runtime/agent-native-store.js';
 
 const NOW = '2030-01-01T00:00:00.000Z';
 const HASH_A = 'a'.repeat(64);
@@ -320,6 +321,37 @@ function submitNextProposal(value, adapter, diagnosis, authorizationId, sequence
   });
 }
 
+function nativeObservation(value, { runId, previousRunId = null, purpose = 'INITIAL_TEST', repairBatchId = null, outcome = 'OBSERVED_MISMATCH' }) {
+  return {
+    schemaVersion: 2,
+    kind: 'agent-native-observation-bundle',
+    runId,
+    previousRunId,
+    repairBatchId,
+    reviewId: value.review.reviewId,
+    jobId: value.job.jobId,
+    purpose,
+    subjects: {
+      source: { nid: 100, workId: 'source-work-1', url: 'https://source.test/play', origin: 'https://source.test' },
+      target: { nid: 200, workId: 'target-work-2', url: 'https://target.test/play', origin: 'https://target.test' },
+    },
+    environment: { comparisonId: null, status: null, differences: [] },
+    execution: { tools: ['agent-native-browser'], startedAt: NOW, completedAt: NOW },
+    outcome,
+    coverage: { businessFlows: 1, states: 2, actions: 2, assertions: 1, screenshots: 0, networkObservations: 0 },
+    effects: { occurred: false, systems: [], summaries: [] },
+    findings: outcome === 'OBSERVED_MISMATCH'
+      ? [{ findingId: `${runId}-finding`, severity: 'ERROR', status: 'MISMATCH', summary: 'Observed mismatch.', candidateCause: 'TARGET_CASE', evidenceRefs: [] }]
+      : [{ findingId: `${runId}-finding`, severity: 'INFO', status: 'MATCHED', summary: 'Observed equivalent behavior after repair.', candidateCause: null, evidenceRefs: [] }],
+    evidenceRefs: [],
+    claims: { strictParityClaimed: false, workflowRestrictionsApplied: false },
+    completedAt: NOW,
+    createdAt: NOW,
+    createdBy: 'AGENT',
+    sensitivity: 'REDACTED',
+  };
+}
+
 test('bounded target repair writes with CAS/read-back and closes only after affected-scenario retest', async () => {
   const value = fixture('ivx-target-repair-success-');
   try {
@@ -384,6 +416,32 @@ test('bounded target repair writes with CAS/read-back and closes only after affe
     assert.equal(completed.review.status, 'RUNTIME_PARITY_PASSED');
     assert.equal(value.reviews.loadRepairBatch(value.review.reviewId, value.repair.batch.batchId).state, 'RUNTIME_VERIFIED');
     assert.equal(value.reviews.recover(value.review.reviewId).saveableCheckpoints.some((entry) => entry.targetWorkId === 'target-work-2'), true);
+  } finally {
+    fs.rmSync(value.temporary, { recursive: true, force: true });
+  }
+});
+
+test('a linked Agent Native repair regression closes a read-back-verified Repair Batch without a managed Runtime Cycle', async () => {
+  const value = fixture('ivx-target-repair-native-retest-');
+  try {
+    const adapter = new FaultAdapter();
+    const updated = await new TargetUpdateOrchestrator({ reviews: value.reviews, adapter }).run(value.review.reviewId, value.repair.batch.batchId);
+    assert.equal(updated.review.status, 'TARGET_UPDATED');
+    assert.equal(updated.batch.state, 'READBACK_VERIFIED');
+    const cycleCountBefore = fs.readdirSync(path.join(value.reviews.reviewDir(value.review.reviewId), 'cycles')).length;
+    const native = new AgentNativeStore(value.paths, { jobs: value.jobs, reviews: value.reviews, now: () => new Date(NOW) });
+    native.submit(value.review.reviewId, nativeObservation(value, { runId: 'native-before-regression' }));
+    const completed = native.submit(value.review.reviewId, nativeObservation(value, {
+      runId: 'native-repair-regression',
+      previousRunId: 'native-before-regression',
+      purpose: 'REPAIR_REGRESSION',
+      repairBatchId: value.repair.batch.batchId,
+      outcome: 'OBSERVED_EQUIVALENT',
+    }));
+    assert.equal(completed.review.status, 'AGENT_NATIVE_EQUIVALENCE_OBSERVED');
+    assert.equal(completed.repairBatch.state, 'RUNTIME_VERIFIED');
+    assert.equal(value.reviews.loadRepairBatch(value.review.reviewId, value.repair.batch.batchId).state, 'RUNTIME_VERIFIED');
+    assert.equal(fs.readdirSync(path.join(value.reviews.reviewDir(value.review.reviewId), 'cycles')).length, cycleCountBefore);
   } finally {
     fs.rmSync(value.temporary, { recursive: true, force: true });
   }

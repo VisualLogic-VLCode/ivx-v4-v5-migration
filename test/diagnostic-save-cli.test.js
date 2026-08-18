@@ -223,6 +223,7 @@ test('CLI permits every classified cause after independent diagnostic-save hard 
       PLATFORM: 0,
       KNOWLEDGE: 0,
       AUTHORIZATION: 0,
+      FLAKY_RUNTIME: 0,
       UNKNOWN: 1,
     });
     assert.equal(authorization.output.terminalStatus, 'DIAGNOSTIC_COPY_CREATED');

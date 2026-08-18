@@ -190,23 +190,17 @@ ivx-migrate review runtime-run-platform \
   --environment-id <comparisonId>
 ```
 
-Agent protocol 9 的 Agent Direct Test 把测试执行完整交给本地 AI Agent。用户确认一次精确范围后，Workflow 只冻结 Review、完整 Job、两端 revision/origin、等价环境、只读能力与过期时间，并返回 Agent 私有工作区；它不再提供浏览器驱动、爬虫、动作规划器、就绪判断或测试程序。Agent 可直接使用自己的浏览器工具、JavaScript、CSS/XPath、循环、动态点击、截图/像素比较和业务状态断言：
+Agent protocol 9 默认使用 Agent Native 测试。Workflow 只返回当前 V4/V5 地址与 workId/origin、完整 Job 根目录、Agent 私有工作区和环境差异提示；它不创建测试授权、Session、过期时间、revision/origin lease、浏览器驱动、动作规划器、认证规则或副作用范围。Agent 依据用户要求和自身安全政策自主选择浏览器、Playwright/CDP、JavaScript、CSS/XPath、循环、动态点击、截图/像素比较、业务动作与重试：
 
 ```bash
-ivx-migrate review agent-test-authorize-platform \
-  --review <reviewId> \
-  --environment-id <comparisonId> \
-  --capability AGENT_DIRECT_READ_ONLY \
-  --confirm RUN_AGENT_DIRECT_READ_ONLY_TEST
-
-ivx-migrate review agent-test-context-platform --review <reviewId> --authorization <authorizationId>
-# Agent 在返回的 workspace 中自主测试并生成 attestation
-ivx-migrate review agent-test-submit-platform --review <reviewId> --session <sessionId> --file <attestation.json>
+ivx-migrate review agent-native-handoff-platform --review <reviewId>
+# Agent 在返回的 workspace 中自主测试并生成 observation bundle
+ivx-migrate review agent-native-submit --review <reviewId> --file <agent-native-observation-bundle.json>
 ```
 
-Agent 优先使用本地已授权的认证/浏览器会话。当返回的 Context 明确包含 `credentialPolicy.userDirectInput: EPHEMERAL_BROWSER_USE_ALLOWED` 与 `agentToolTransport: MINIMUM_BROWSER_OPERATION_ONLY` 时，若当前用户在本次 Agent 任务中直接输入 Token、Cookie 或 session 值，并说明用于当前授权的 V4/V5 预览页，Agent 必须先在准备使用的同一浏览器执行面用随机非敏感哨兵完成相同加载前存储机制的写入、读取和删除；不能枚举或查看既有存储。探测失败时不得消费真实值，应先更换已授权工具。若普通 Playwright/模块加载失败，Agent 还必须从本机激活的签名受管 Workflow 定位包根，由 Agent 自己把模块解析锚定到该包并重新验证浏览器启动和完整哨兵探测；不得要求 Workflow 提供加载桥、复制依赖或硬编码版本。只有这些有界安全策略均失败后，才以 `TEST_HARNESS` 停止。探测成功后，真实值才可只在完成认证所需的一次最小浏览器控制调用中临时使用。Workflow 不接收该值；Agent 不得要求重复输入、回显、转发到其他地址、跨任务复用，或把它放进 shell/CLI 参数、环境变量、独立或落盘脚本、文件、截图、报告、证据和证明。证据只能记录“认证初始化成功/失败”。
+Agent 可复用当前会话、浏览器状态、缓存和用户直接提供的运行时认证信息，但必须遵循所在 Agent 的安全规则；Workflow 不接收这些值，观察包、证据、文件与输出中也不得包含 Token、Cookie、session 或浏览器存储内容。工具切换、初始化时机、页面就绪等待和重试均由 Agent 自主决定。
 
-页面业务就绪由 Agent 判断：V4、V5 每侧默认最多等待 300 秒，约每 10 秒做一次保持现有浏览器上下文的有界轮询。页面标题、load 事件或平台加载壳层不算就绪；必须观察到稳定的业务根 DOM/ARIA/状态，并排除阻断性的认证或运行时错误。DOM/无障碍树、视觉截图和控制台/网络/运行时取证各自使用至少 120 秒的独立操作预算，单阶段超时最多扩大预算重试一次。浏览器工具自身的 30 秒 watchdog 不得被误当成 300 秒业务等待已经结束。只读授权下，Agent 自己负责避免提交、保存、创建、更新、删除、支付、发布等业务副作用；无法安全继续时必须停止该路径。提交结果属于 `AGENT_ATTESTED` 证据，不能声称严格 parity，也不会自动修改 Review parity、应用 Patch 或更新平台案例。`AGENT_DIRECT_SIDE_EFFECT` 已建模但在 0.8.3 中尚未开放。
+提交结果只能是 `OBSERVED_EQUIVALENT`、`OBSERVED_MISMATCH` 或 `INCONCLUSIVE`，不是严格 parity。两端实际 revision/origin、环境差异和发生过的副作用都作为事实记录，不用于阻止测试。用户要求复测时直接生成带 `previousRunId` 的新 run；修复后的复测还要带 `REPAIR_REGRESSION` 与 `repairBatchId`。旧 `agent-test-*` 命令仅在用户明确要求 Agent Direct 审计模式时使用。
 
 另存成功后平台可能只推进源案例的 `workId`。`create-platform` 会在创建 Review 前读取当前完整源 JSON，并与 Job 中不可变的转换输入做规范化摘要比较；内容完全相同时，自动把 Review 固定到新 revision 并留下私有审计记录。对于 Workflow 0.5.1 已创建但尚未产生环境证据的 Review，首次 `environment-check` 会执行相同协调。若内容确实变化，则返回 `REVIEW_SOURCE_CONTENT_CHANGED` 并保留已有 V5；不要重新迁移或再次 Save As。已有环境或运行时证据后不会自动改写 source baseline。
 
@@ -216,11 +210,11 @@ Workflow 0.7.3 修复平台默认值省略导致的误报：当平台没有返�
 
 Workflow 0.7.4 修复旧 Job 创建 Runtime Review 时缺少 Workflow SHA-256 的兼容缺口。只有已安装的精确 Workflow 版本、包名和摘要证据一致时，才把真实摘要派生到新 Review；缺失、无效或互相矛盾的证据会在访问平台前安全停止，不修改旧 Job。新建 Job 会直接持久化完整的 Workflow 版本、包名和摘要，避免升级后再次丢失谱系。
 
-Workflow 0.8.0 将新运行时测试切换到 Agent Direct Test。Protocol-8 的 Exploration/Scenario 命令和历史证据仍可读取与恢复，但新测试不再经过 Workflow 浏览器驱动。Agent 获得完整受权 Job 与私有工作区后自主执行测试，再把脱敏证明交回 Workflow 做 revision/manifest 复核和不可变归档。Workflow 0.8.1 保持协议 9，并增加当前用户直接临时凭据的精确受权预览页浏览器使用政策。Workflow 0.8.2 加入先探测后使用凭据、每侧默认 300 秒业务就绪等待和独立长时取证预算；Workflow 0.8.3 进一步要求 Agent 在模块加载失败时从当前受管包自主恢复解析，再允许判定测试工具不可用。两者都不增加 Workflow 驱动。
+Workflow 0.8.0–0.8.3 引入并逐步完善 Agent Direct。Workflow 0.9.0 将普通运行时测试进一步移出 Workflow 控制面，改为 Agent Native handoff + observation bundle + Agent/LLM diagnosis；Agent Direct、Protocol-8 Exploration/Scenario 和历史证据仍可读取与恢复，但不再是默认路径。
 
-Workflow 会先对 V4/V5 的配置、设置、域名、路由和绑定做脱敏环境比较。`ENVIRONMENT_EQUIVALENT` 或 `NORMALIZED_EQUIVALENT` 可进入正常浏览器对照；需用户绑定或环境阻塞时默认停止，也不会把差异归因给 Converter。`/config/name` 是已确认不进入平台运行时的保存配置预设名称，因此明确按 `IGNORE_FOR_PARITY` 处理；其他未知字段仍默认阻塞。预览 URL 来自平台当前元数据并与源/目标 `workId` 复核，不需要用户手填。
+Workflow 会对 V4/V5 的配置、设置、域名、路由和绑定做脱敏环境比较。Agent Native 把差异作为提示与诊断置信度输入，不再因此阻止浏览器测试；受管 V5 修复仍要求满足独立的环境、CAS 和权限门禁。`/config/name` 按 `IGNORE_FOR_PARITY` 处理，其他未知字段如实保留。预览 URL 来自平台当前元数据，不需要用户手填。
 
-用户若暂时无法消除环境差异，可以在 Agent 完整列出当前 Review、源/目标 revision、全部未解决路径和所选场景后，明确确认 `ACCEPT_ENVIRONMENT_RISK`。Agent 随后创建最长 8 小时的私有 `environment-risk-acceptance`，并只为该精确范围增加：
+仅当用户明确要求运行旧版声明式 Runtime Scenario 时，若无法消除环境差异，才使用最长 8 小时的 `ACCEPT_ENVIRONMENT_RISK` 兼容流程：
 
 ```bash
 ivx-migrate review runtime-run-platform \
@@ -234,13 +228,13 @@ ivx-migrate review runtime-run-platform \
 
 平台场景的首个 `OPEN_PAGE` 使用 `"input": "$SUBJECT_URL"`，表示分别打开当前 V4 与 V5 的完整、revision-pinned 预览 URL。只有确实要访问同源固定路径时才填写 `/path`；不要用 `/` 代替案例预览地址。
 
-首次浏览器对照可能需要安装与 Workflow 锁定的 Chromium。登录必须由用户在可见浏览器完成，V4/V5 不同预览源使用彼此隔离的私有认证文件；Agent 不读取 Cookie 或 storage state。`READ_ONLY` 场景可无人值守，带副作用场景另行授权。
+旧 Runtime Scenario 仍使用 Workflow 锁定的 Chromium、隔离认证文件和原有副作用授权。Agent Native 不继承这些执行限制，由本地 Agent 根据用户要求和宿主安全策略管理浏览器与认证。
 
-出现差异后，Agent 只能依据本 Review 的脱敏证据和锁定 Knowledge 卡片提交完整分类。`CONVERTER`、平台运行时、知识缺口、认证和未知根因停止自动修改并生成报告；只有 CLI 判定为高置信 `SOURCE_DATA` / `TARGET_CASE` 且修复目标为 `V5_ARTIFACT` 的问题簇可以进入自动修复。
+出现差异后，Agent 只能依据本 Review 的脱敏证据和锁定 Knowledge 卡片提交完整分类。`CONVERTER`、平台、环境、测试工具、`FLAKY_RUNTIME`、知识缺口、认证和未知根因停止自动修改并生成报告；只有 CLI 判定为高置信 `SOURCE_DATA` / `TARGET_CASE` 且修复目标为 `V5_ARTIFACT` 的问题簇可以进入自动修复。
 
 初始授权最多允许每个问题簇 3 次本地 Repair Attempt，以及整个 Review 最多 10 个已读回确认的目标 revision。额外 `+2` 次尝试和 `+5` 个 revision 必须再次获得用户授权。重复 Patch、A→B→A 振荡、范围持续扩大、新高严重度问题、目标被外部修改或写入结果未知都会停止。每次目标更新都要先做 revision CAS、静态全量验证，再通过写后读回确认；未知写入结果只能对账，不能重放。
 
-修复后必须重新检查环境并复测原场景及受影响场景。只有 Review 到达 `RUNTIME_PARITY_PASSED` 才能无条件汇报运行时一致；`RUNTIME_PARITY_PASSED_WITH_USER_DECLARED_ENVIRONMENT` 必须同时说明用户声明的绑定范围。风险诊断的通过不是运行时等价；没有稳定断言时只能汇报 `RUNTIME_NOT_TESTED`。用户后续手动定位出的信息通过 `review finding-add` 追加到同一个 Review，它是证据而不是新的写入授权。
+修复后必须提交关联原 Native run 与 Repair Batch 的 `REPAIR_REGRESSION` 观察。`OBSERVED_EQUIVALENT` 只代表 Agent 实际覆盖内观察一致，不能升级为严格 parity；差异、不确定或波动继续进入诊断或安全停止。用户后续手动定位的信息通过 `review finding-add` 追加到同一 Review，它是证据而不是新的写入授权。
 
 ## 9. 更新和回滚
 

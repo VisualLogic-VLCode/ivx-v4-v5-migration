@@ -1,7 +1,7 @@
 # V4→V5 工作流：运行时验证、问题诊断与 AI 修复设计
 
-> 状态：阶段 0–10、历史自主探索及 Agent Direct Test 已实现；Workflow `0.8.3` 是当前候选，兼容 Converter `1.2.5` 与 Knowledge Runtime `0.1.6`，Agent protocol 为 9。新运行时测试由本地 AI Agent 独立执行，Workflow 不再提供浏览器驱动或模块加载桥；当前用户直接提供的临时凭据必须先经过同执行面的非敏感能力探测，V4/V5 每侧默认有 300 秒业务根就绪预算，Agent 在普通模块加载失败时还要从当前签名受管包自主恢复解析，有副作用能力已建模但尚未启用。阶段 10“Additional V5 Creation 与 Existing Target Refresh”已通过本地合同、模拟平台、故障注入和公开分发验收；Existing Target Refresh 的真实平台写入试点仍需单独授权，未以模拟结果替代真实平台结论
-> 初稿：2026-08-12；本次修订：2026-08-17
+> 状态：阶段 0–10、历史自主探索和 Agent Direct 已实现；Workflow `0.9.0` 候选新增阶段 11 Agent Native，将普通运行时测试完全移出 Workflow 控制面，同时保留受管证据、诊断政策、Patch 验证、预算、CAS、写后回读和审计。兼容 Converter `1.2.5` 与 Knowledge Runtime `0.1.6`，Agent protocol 仍为 9。
+> 初稿：2026-08-12；本次修订：2026-08-18
 > 适用项目：`ivx-v4-v5-migration` 及其独立分发的 Workflow、Agent 适配器和知识运行时
 > 不修改：`tov5parser` 的转换规则；转换器继续由维护者在独立仓库中维护
 
@@ -965,7 +965,7 @@ Converter 修复后由维护者发布新 Converter；用户更新后可以对原
 2. **自动修复范围：**首版只允许明确的 `SOURCE_DATA` 和 `TARGET_CASE` 修改目标 V5；`TEST_HARNESS`/`ENVIRONMENT_CONFIGURATION` 只修测试或环境；`CONVERTER`、`PLATFORM_RUNTIME`、`KNOWLEDGE_GAP`、`AUTHORIZATION`、`UNKNOWN` 不自动改目标。
 3. **诊断副本：**所有根因分类均可独立评估并创建/保留 V5 诊断案例；分类本身不否决另存。认证、服务器权限、平台写入可用性、revision 安全、Saveable Checkpoint 和用户授权作为独立硬前提。
 4. **知识分发：**Workflow 只从 `ivx-v4-v5-knowledge` 的签名稳定通道安装不可变 Knowledge Release，不读取维护源、候选或仓库分支。
-5. **运行时当前架构：**协议 9 的新测试由本地 AI Agent 直接控制其浏览器与测试工具，可执行 JavaScript、CSS/XPath、循环和自适应业务探测；Workflow 只冻结授权/上下文并复核、归档 Agent 证明。旧 Playwright Runtime Driver 与 Exploration 仅保留历史证据和兼容命令，不参与新 Agent Direct Test。
+5. **运行时当前架构：**协议 9 的普通测试默认 `AGENT_NATIVE`，由本地 AI Agent 直接控制浏览器与测试工具，可执行 JavaScript、CSS/XPath、循环和自适应业务探测；Workflow 只交付当前事实与私有工作区并归档脱敏 observation，不创建测试授权、Session、驱动或动作政策。Agent Direct、旧 Playwright Runtime Driver 与 Exploration 仅保留显式审计模式、历史证据和兼容命令。
 6. **配置策略：**不完整复制；使用字段政策注册表，目标身份重映射、`customVars` 语义保留、secret 用户绑定、`/config/name` 作为已证明的预设名称元数据忽略、其他未知字段阻塞。用户可精确授权环境风险下诊断，但不能借此产生等价、归因或修复结论。
 7. **持久化：**完整 Job/Review 数据留在 `~/.ivx-v4-v5/jobs`；当前工作目录只保留可选的轻量引用。
 8. **人工续接：**用户后续反馈通过 Human Finding 进入同一 Review Session；用户手工修改目标后必须显式接纳新 revision。
@@ -974,11 +974,11 @@ Converter 修复后由维护者发布新 Converter；用户更新后可以对原
 
 ## 20. 当前状态与后续维护
 
-代码改造阶段 0–10 及自主无副作用探索已全部实现。Knowledge Runtime `0.1.6`、Workflow `0.8.2` 和兼容的独立 Converter `1.2.5` 已公开发布；Workflow `0.8.3` 正在形成协议 9 兼容补丁候选。0.8.2 已增加非敏感同面探测、每侧 300 秒业务根就绪预算和独立长时取证预算；0.8.3 根据真实验收继续要求 Agent 在普通 Playwright/模块加载失败时，从当前激活的签名受管包自主锚定本地解析并重跑完整探测，不向 Workflow 增加浏览器驱动或加载桥。受控真实案例已完成普通另存、环境门禁和 Agent-owned Playwright 能力探测；完整业务运行时对照仍需当前任务的新临时认证输入后继续，不以登录页或静态结果替代。Workflow `0.4.0` 公共全新安装暴露的 GitHub Release 正文下载超时，已由 `0.4.1` 的受校验系统下载路径、`0.4.2` 的显式防降级 Launcher 恢复，以及 `0.4.3` 的协调式 setup 依次修复。`0.4.3` 的全新安装、旧用户恢复、Agent 同步和回滚验收均通过；`0.4.4` 仅重构普通用户入口、授权说明与维护者验收信息架构，不改变运行时行为。
+代码改造阶段 0–10 及自主无副作用探索已全部实现。Knowledge Runtime `0.1.6`、Workflow `0.8.3` 和兼容的独立 Converter `1.2.5` 已公开发布；Workflow `0.9.0` 候选新增阶段 11 的 Agent Native 默认链。0.8.2–0.8.3 的 Agent Direct 就绪预算与模块恢复规则继续用于显式审计模式，但不再约束普通 Native 测试。0.9.0 由 Agent 自主执行、由 Agent/LLM 语义诊断与生成 Patch，并由 Workflow 继续负责证据归档、政策验证、预算、全量静态验证、CAS、平台写入、读回与恢复。历史安装、更新和真实另存验收保持有效。
 
 Workflow `0.5.0` 在此基础上增加 `/config/name` 的明确字段政策、精确范围的环境风险接受、诊断专用运行状态和 Agent 报告边界。Agent protocol 已提升到 6，Knowledge Runtime `0.1.3` 提供对应兼容范围。`0.5.1` 补齐 Workflow 回滚后的 Agent Skill 协调同步；`0.5.2` 增加以完整 V4 输入摘要为证据的 post-Save source revision 协调，并明确禁止通过重复 Save As 处理内容变化。签名 Release、稳定通道、全新安装、协调更新、回滚和既有 Review 恢复共同构成发布验收。
 
-阶段 0–10 的后续工作属于持续维护和扩大真实案例覆盖：继续收集稳定、可回滚的真实场景校准 Diagnosis/Repair 政策；按真实试点数据评估预算；为 Windows 建立原生 Token 文件 ACL 合同。阶段 10 的领域合同、CLI、Agent SOP、协议兼容和模拟平台故障分支已经随签名 Knowledge `0.1.4` 与 Workflow `0.6.0` 按依赖顺序公开发布；`0.6.1` 在不改变协议的前提下补齐旧 Group Job 的 null-gid 谱系兼容，`0.6.2` 继续保持协议 7，并将组件静态校验收窄到权威拥有边，避免把 `props` 用户业务数据误判为组件；`0.7.0` 与内容不变的 Knowledge `0.1.5` 按依赖顺序增加协议 8 的自主无副作用探索，`0.7.1`–`0.7.4` 保持协议 8 并依次校正 Converter 基线、增加域名配置检查点、修复域名语义读回及旧 Job Review 摘要恢复；`0.8.0` 与内容不变的 Knowledge `0.1.6` 按依赖顺序提升至协议 9，让新运行时测试完全由本地 Agent 执行并只向 Workflow 返回证明，旧 Exploration 保持兼容；`0.8.1` 增加用户直接临时凭据的闭合 Context/Agent 使用政策，`0.8.2` 增加非敏感同面探测、每侧 300 秒 Agent 就绪预算和独立长时取证预算，`0.8.3` 再要求 Agent 在模块互操作或解析失败时从当前受管包自主恢复，三者都保持协议 9。Additional V5、Existing Target Refresh 与历史自主探索的公开安装/更新路径仍可使用，但 Existing Target Refresh 的真实平台写入仍应作为单独授权的试点逐步扩大覆盖。任何尚未由真实稳定场景覆盖的能力都必须明确标注为 mock、校准夹具或故障注入结果，不以静态结果替代运行时等价结论。Converter 的后续修复继续独立发布；只要版本仍满足 Workflow `0.8.3` 的 `>=1.2.0 <2.0.0` 兼容范围，就不要求同步发布新的 Workflow。
+阶段 0–11 的后续工作属于持续维护和扩大真实案例覆盖：继续收集稳定、可回滚的真实场景校准 Diagnosis/Repair 政策；按真实试点数据评估预算；为 Windows 建立原生 Token 文件 ACL 合同。0.6.x、0.7.x 与 0.8.x 的 Refresh、环境、探索和 Agent Direct 历史合同继续兼容；0.9.0 在协议 9 内新增 Native observation、`FLAKY_RUNTIME`、Native 诊断来源、修复来源关联和 Agent 自主回归闭环。Additional V5、Existing Target Refresh 与历史自主探索的公开安装/更新路径仍可使用。任何尚未由真实稳定场景覆盖的能力都必须明确标注为 mock、校准夹具或故障注入结果，不以静态结果替代运行时等价结论。Converter 后续继续独立发布；只要版本满足 Workflow `0.9.0` 的 `>=1.2.0 <2.0.0` 兼容范围，就不要求同步发布新的 Workflow。
 
 ## 21. Additional V5 Creation 与 Existing Target Refresh（阶段 10 已实现并发布）
 
@@ -1144,3 +1144,33 @@ Knowledge Runtime `0.1.4` 是 compatibility-only 发布：它把协议兼容上�
 - 中断后新 Agent 会话可从 Refresh Job/journal 恢复，不依赖聊天记忆；
 - Refresh 不消耗或伪造 Repair Attempt/Batch 预算，不复制 secret，不隐式改配置；
 - 旧 Agent protocol、旧 Knowledge 兼容范围和旧 Workflow 不会把尚未支持的 Refresh 误报为可用。
+
+## 22. 阶段 11：Agent Native 执行与受管修复分层
+
+### 22.1 最终职责边界
+
+普通运行时测试使用 `AGENT_NATIVE`。Workflow 只输出当前源/目标 nid、workId、预览 URL/origin、精确 Job 根目录、私有 Agent workspace 和最新环境比较；不创建 authorization、Session、expiry、capability、revision/origin lease、Environment Gate、浏览器驱动、动作规划、凭据传输规则、副作用范围、就绪等待或重试政策。Agent 按用户请求和宿主安全政策自主选择工具、会话、缓存、认证初始化、脚本、交互、取证与重试。
+
+环境、revision、origin 和实际副作用只作为观察事实。环境差异不阻止测试，但会影响根因置信度和受管修复资格。Workflow 仍不接收浏览器 Token/Cookie/session；任何 Native observation/evidence 都必须脱敏。
+
+### 22.2 观察与复测
+
+每次测试提交一个不可变 `agent-native-observation-bundle`：
+
+- `INITIAL_TEST`：第一次自主测试；
+- `USER_RETEST`：用户或 Agent 调整策略后的关联复测，绑定 `previousRunId`；
+- `REPAIR_REGRESSION`：目标写回后的关联复测，同时绑定 `repairBatchId`。
+
+结果只有 `OBSERVED_EQUIVALENT`、`OBSERVED_MISMATCH`、`INCONCLUSIVE`。`strictParityClaimed` 和 `workflowRestrictionsApplied` 必须为 false。每个 bundle 记录实际测试覆盖、工具、两端观察事实、环境差异、业务 effect、findings 和 workspace 内的脱敏证据摘要；它不是 Workflow 驱动或严格 parity 证明。
+
+### 22.3 Agent/LLM 诊断与受管 Patch
+
+Native mismatch/inconclusive finding 与旧 Runtime Comparison 一起生成稳定 Diagnosis v2 candidate。当前 Agent/LLM 负责语义分类，Workflow 只校验完整性、证据归属、闭合 cause/responsibility/repairTarget、置信度和修复政策，不得静默替换 Agent 的根因。
+
+闭合原因包含 `CONVERTER`、`SOURCE_DATA`、`TARGET_CASE`、`PLATFORM_RUNTIME`、`ENVIRONMENT_CONFIGURATION`、`TEST_HARNESS`、`FLAKY_RUNTIME`、`KNOWLEDGE_GAP`、`AUTHORIZATION`、`UNKNOWN`。只有高置信 `SOURCE_DATA` / `TARGET_CASE` 且目标为 `V5_ARTIFACT` 能进入自动 Patch；其余原因全部停止 V5 自动修复并生成归属报告。
+
+Agent 生成最小 RFC 6902 Patch 与 `affectedNativeRunIds`。Workflow 保留初始 `3` 次、扩展 `+2` 次、Review 目标 revision `10+5`、受保护路径、全量静态验证、CAS、事务写入、读回与未知结果对账。修复后的 `REPAIR_REGRESSION` 将 batch 关闭为 `RUNTIME_VERIFIED`、`RUNTIME_FAILED` 或 `RUNTIME_INCONCLUSIVE`。
+
+### 22.4 兼容策略
+
+Agent Direct、旧 Runtime Scenario 和 Exploration 继续可读、可恢复，并仅在用户明确要求审计级托管语义时执行；旧 artifact 不被重解释为 Native observation。Agent protocol 保持 9，因为同一受管 Skill 生命周期即可分发新默认 SOP，且旧序列化产物没有被原地改写。Workflow 产品版本提升为 `0.9.0`。

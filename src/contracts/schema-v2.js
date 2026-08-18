@@ -9,7 +9,20 @@ export const ISSUE_CAUSES = Object.freeze([
   'PLATFORM_RUNTIME',
   'KNOWLEDGE_GAP',
   'AUTHORIZATION',
+  'FLAKY_RUNTIME',
   'UNKNOWN',
+]);
+
+export const AGENT_NATIVE_OBSERVATION_OUTCOMES = Object.freeze([
+  'OBSERVED_EQUIVALENT',
+  'OBSERVED_MISMATCH',
+  'INCONCLUSIVE',
+]);
+
+export const AGENT_NATIVE_RUN_PURPOSES = Object.freeze([
+  'INITIAL_TEST',
+  'USER_RETEST',
+  'REPAIR_REGRESSION',
 ]);
 
 export const RESPONSIBLE_PARTIES = Object.freeze([
@@ -75,6 +88,7 @@ export const REPAIR_BATCH_STATES = Object.freeze([
   'RUNTIME_TESTING',
   'RUNTIME_VERIFIED',
   'RUNTIME_FAILED',
+  'RUNTIME_INCONCLUSIVE',
 ]);
 
 export const DIAGNOSTIC_SAVE_STATUSES = Object.freeze([
@@ -112,6 +126,9 @@ export const REVIEW_STATUSES = Object.freeze([
   'RUNTIME_REPAIR_EXHAUSTED',
   'BLOCKED_PLATFORM_RUNTIME',
   'RUNTIME_NOT_TESTED',
+  'AGENT_NATIVE_EQUIVALENCE_OBSERVED',
+  'AGENT_NATIVE_MISMATCH_OBSERVED',
+  'AGENT_NATIVE_INCONCLUSIVE',
   'REVIEW_SUPERSEDED_BY_REFRESH',
 ]);
 
@@ -350,6 +367,7 @@ const CAUSE_DEFAULTS = Object.freeze({
   PLATFORM_RUNTIME: ['PLATFORM_MAINTAINER', 'NONE'],
   KNOWLEDGE_GAP: ['KNOWLEDGE_MAINTAINER', 'KNOWLEDGE_RULE'],
   AUTHORIZATION: ['USER', 'AUTHORIZATION_PREREQUISITE'],
+  FLAKY_RUNTIME: ['UNKNOWN', 'NONE'],
   UNKNOWN: ['UNKNOWN', 'NONE'],
 });
 
@@ -899,6 +917,89 @@ export function validateAgentTestAttestation(document) {
   return document;
 }
 
+function validateAgentNativeSubject(subject, path) {
+  exactKeys(subject, ['nid', 'workId', 'url', 'origin'], ['nid', 'workId', 'url', 'origin'], path);
+  integer(subject.nid, `${path}.nid`, { min: 1 });
+  nullableString(subject.workId, `${path}.workId`, { max: 256 });
+  for (const key of ['url', 'origin']) {
+    nullableString(subject[key], `${path}.${key}`, { max: 4096 });
+    if (subject[key] !== null) {
+      let parsed;
+      try { parsed = new URL(subject[key]); } catch { fail(`${path}.${key} must be an absolute HTTP(S) URL without credentials`); }
+      if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) {
+        fail(`${path}.${key} must be an absolute HTTP(S) URL without credentials`);
+      }
+      if (key === 'origin' && parsed.origin !== subject[key]) fail(`${path}.origin must contain only the URL origin`);
+    }
+  }
+}
+
+export function validateAgentNativeObservationBundle(document) {
+  schemaHeader(document, 'agent-native-observation-bundle');
+  exactKeys(document,
+    ['schemaVersion', 'kind', 'runId', 'previousRunId', 'repairBatchId', 'reviewId', 'jobId', 'purpose', 'subjects', 'environment', 'execution', 'outcome', 'coverage', 'effects', 'findings', 'evidenceRefs', 'claims', 'completedAt', 'createdAt', 'createdBy', 'sensitivity'],
+    ['schemaVersion', 'kind', 'runId', 'previousRunId', 'repairBatchId', 'reviewId', 'jobId', 'purpose', 'subjects', 'environment', 'execution', 'outcome', 'coverage', 'effects', 'findings', 'evidenceRefs', 'claims', 'completedAt', 'createdAt', 'createdBy', 'sensitivity'],
+    '$');
+  id(document.runId, '$.runId');
+  if (document.previousRunId !== null) id(document.previousRunId, '$.previousRunId');
+  if (document.repairBatchId !== null) id(document.repairBatchId, '$.repairBatchId');
+  reviewId(document.reviewId);
+  jobId(document.jobId);
+  enumValue(document.purpose, AGENT_NATIVE_RUN_PURPOSES, '$.purpose');
+  if (document.purpose === 'REPAIR_REGRESSION' && document.repairBatchId === null) fail('REPAIR_REGRESSION requires repairBatchId');
+  if (document.purpose !== 'REPAIR_REGRESSION' && document.repairBatchId !== null) fail('Only REPAIR_REGRESSION may reference repairBatchId');
+  exactKeys(document.subjects, ['source', 'target'], ['source', 'target'], '$.subjects');
+  validateAgentNativeSubject(document.subjects.source, '$.subjects.source');
+  validateAgentNativeSubject(document.subjects.target, '$.subjects.target');
+  exactKeys(document.environment, ['comparisonId', 'status', 'differences'], ['comparisonId', 'status', 'differences'], '$.environment');
+  if (document.environment.comparisonId !== null) id(document.environment.comparisonId, '$.environment.comparisonId');
+  if (document.environment.status !== null) enumValue(document.environment.status, ENVIRONMENT_GATE_STATUSES, '$.environment.status');
+  array(document.environment.differences, '$.environment.differences', { max: 1000 }).forEach((difference, index) => {
+    const path = `$.environment.differences[${index}]`;
+    exactKeys(difference, ['path', 'summary'], ['path', 'summary'], path);
+    string(difference.path, `${path}.path`, { max: 1024 });
+    string(difference.summary, `${path}.summary`, { max: 2048 });
+  });
+  exactKeys(document.execution, ['tools', 'startedAt', 'completedAt'], ['tools', 'startedAt', 'completedAt'], '$.execution');
+  uniqueStrings(document.execution.tools, '$.execution.tools', { max: 100 });
+  isoDate(document.execution.startedAt, '$.execution.startedAt');
+  isoDate(document.execution.completedAt, '$.execution.completedAt');
+  if (Date.parse(document.execution.completedAt) < Date.parse(document.execution.startedAt)) fail('execution.completedAt must not precede execution.startedAt');
+  enumValue(document.outcome, AGENT_NATIVE_OBSERVATION_OUTCOMES, '$.outcome');
+  exactKeys(document.coverage, ['businessFlows', 'states', 'actions', 'assertions', 'screenshots', 'networkObservations'], ['businessFlows', 'states', 'actions', 'assertions', 'screenshots', 'networkObservations'], '$.coverage');
+  for (const key of Object.keys(document.coverage)) integer(document.coverage[key], `$.coverage.${key}`, { min: 0, max: 1000000 });
+  exactKeys(document.effects, ['occurred', 'systems', 'summaries'], ['occurred', 'systems', 'summaries'], '$.effects');
+  boolean(document.effects.occurred, '$.effects.occurred');
+  uniqueStrings(document.effects.systems, '$.effects.systems', { max: 100 });
+  uniqueStrings(document.effects.summaries, '$.effects.summaries', { max: 200 });
+  if (!document.effects.occurred && (document.effects.systems.length || document.effects.summaries.length)) fail('effects systems/summaries require occurred=true');
+  const findings = array(document.findings, '$.findings', { max: 1000 });
+  findings.forEach((finding, index) => {
+    const path = `$.findings[${index}]`;
+    exactKeys(finding, ['findingId', 'severity', 'status', 'summary', 'candidateCause', 'evidenceRefs'], ['findingId', 'severity', 'status', 'summary', 'candidateCause', 'evidenceRefs'], path);
+    id(finding.findingId, `${path}.findingId`);
+    enumValue(finding.severity, ['INFO', 'WARNING', 'ERROR'], `${path}.severity`);
+    enumValue(finding.status, ['MATCHED', 'MISMATCH', 'INCONCLUSIVE'], `${path}.status`);
+    string(finding.summary, `${path}.summary`, { max: 4096 });
+    if (finding.candidateCause !== null) enumValue(finding.candidateCause, ISSUE_CAUSES, `${path}.candidateCause`);
+    const refs = uniqueStrings(finding.evidenceRefs, `${path}.evidenceRefs`, { max: 200 });
+    refs.forEach((ref, refIndex) => safeArtifactPath(ref, `${path}.evidenceRefs[${refIndex}]`));
+  });
+  if (document.outcome === 'OBSERVED_MISMATCH' && !findings.some((finding) => finding.status === 'MISMATCH')) fail('OBSERVED_MISMATCH requires a MISMATCH finding');
+  if (document.outcome === 'OBSERVED_EQUIVALENT' && findings.some((finding) => finding.status !== 'MATCHED')) fail('OBSERVED_EQUIVALENT may contain only MATCHED findings');
+  const evidenceRefs = uniqueStrings(document.evidenceRefs, '$.evidenceRefs', { max: 2000 });
+  evidenceRefs.forEach((ref, index) => safeArtifactPath(ref, `$.evidenceRefs[${index}]`));
+  exactKeys(document.claims, ['strictParityClaimed', 'workflowRestrictionsApplied'], ['strictParityClaimed', 'workflowRestrictionsApplied'], '$.claims');
+  boolean(document.claims.strictParityClaimed, '$.claims.strictParityClaimed');
+  boolean(document.claims.workflowRestrictionsApplied, '$.claims.workflowRestrictionsApplied');
+  if (document.claims.strictParityClaimed || document.claims.workflowRestrictionsApplied) fail('Agent Native Observation cannot claim strict parity or Workflow test restrictions');
+  isoDate(document.completedAt, '$.completedAt');
+  validateArtifactMetadata(document);
+  if (document.createdAt !== document.completedAt || document.completedAt !== document.execution.completedAt) fail('Agent Native Observation timestamps must close at the same instant');
+  if (document.createdBy !== 'AGENT' || document.sensitivity !== 'REDACTED') fail('Agent Native Observation must be a redacted AGENT artifact');
+  return document;
+}
+
 function validateTraceSubject(subject) {
   exactKeys(subject, ['generation', 'nid', 'workId'], ['generation', 'nid', 'workId'], '$.subject');
   enumValue(subject.generation, ['V4', 'V5'], '$.subject.generation');
@@ -1301,7 +1402,7 @@ export function validateRepairProposal(document) {
   schemaHeader(document, 'repair-proposal');
   exactKeys(document,
     ['schemaVersion', 'kind', 'proposalId', 'reviewId', 'authorizationId', 'clusterIds', 'baseTarget', 'patch', 'affectedScenarioIds', 'evidenceRefs', 'knowledgeRuleIds', 'confidence', 'rationale', 'createdAt', 'createdBy', 'sensitivity'],
-    ['schemaVersion', 'kind', 'proposalId', 'reviewId', 'authorizationId', 'clusterIds', 'baseTarget', 'patch', 'affectedScenarioIds', 'evidenceRefs', 'knowledgeRuleIds', 'confidence', 'rationale', 'createdAt', 'createdBy', 'sensitivity'],
+    ['schemaVersion', 'kind', 'proposalId', 'reviewId', 'authorizationId', 'clusterIds', 'baseTarget', 'patch', 'affectedScenarioIds', 'affectedNativeRunIds', 'evidenceRefs', 'knowledgeRuleIds', 'confidence', 'rationale', 'createdAt', 'createdBy', 'sensitivity'],
     '$');
   id(document.proposalId, '$.proposalId');
   reviewId(document.reviewId);
@@ -1316,7 +1417,8 @@ export function validateRepairProposal(document) {
   if (patch.length === 0) fail('$.patch must contain at least one operation');
   patch.forEach(validateJsonPatchOperation);
   uniqueStrings(document.affectedScenarioIds, '$.affectedScenarioIds', { max: 100 });
-  if (document.affectedScenarioIds.length === 0) fail('$.affectedScenarioIds must contain at least one scenario');
+  if (document.affectedNativeRunIds !== undefined) uniqueStrings(document.affectedNativeRunIds, '$.affectedNativeRunIds', { max: 1000 });
+  if (document.affectedScenarioIds.length === 0 && (document.affectedNativeRunIds || []).length === 0) fail('Repair Proposal must reference at least one affected Runtime Scenario or Agent Native run');
   validateEvidenceRefs(document, '$');
   number(document.confidence, '$.confidence');
   string(document.rationale, '$.rationale', { max: 8192 });
@@ -1384,7 +1486,7 @@ export function validateRepairBatch(document) {
   schemaHeader(document, 'repair-batch');
   exactKeys(document,
     ['schemaVersion', 'kind', 'batchId', 'reviewId', 'attemptIds', 'clusterIds', 'state', 'authorizationId', 'expectedTarget', 'candidate', 'affectedScenarioIds', 'write', 'createdAt', 'updatedAt', 'createdBy', 'sensitivity'],
-    ['schemaVersion', 'kind', 'batchId', 'reviewId', 'attemptIds', 'clusterIds', 'state', 'authorizationId', 'expectedTarget', 'candidate', 'affectedScenarioIds', 'write', 'createdAt', 'updatedAt', 'createdBy', 'sensitivity'],
+    ['schemaVersion', 'kind', 'batchId', 'reviewId', 'attemptIds', 'clusterIds', 'state', 'authorizationId', 'expectedTarget', 'candidate', 'affectedScenarioIds', 'affectedNativeRunIds', 'write', 'createdAt', 'updatedAt', 'createdBy', 'sensitivity'],
     '$');
   id(document.batchId, '$.batchId');
   reviewId(document.reviewId);
@@ -1401,6 +1503,7 @@ export function validateRepairBatch(document) {
   string(document.candidate.artifact, '$.candidate.artifact', { max: 1024 });
   sha256(document.candidate.sha256, '$.candidate.sha256');
   uniqueStrings(document.affectedScenarioIds, '$.affectedScenarioIds', { max: 100 });
+  if (document.affectedNativeRunIds !== undefined) uniqueStrings(document.affectedNativeRunIds, '$.affectedNativeRunIds', { max: 1000 });
   exactKeys(document.write, ['requestedAt', 'outcome', 'observedWorkId', 'observedSha256', 'errorCode'], ['requestedAt', 'outcome', 'observedWorkId', 'observedSha256', 'errorCode'], '$.write');
   nullableIsoDate(document.write.requestedAt, '$.write.requestedAt');
   enumValue(document.write.outcome, ['NOT_ATTEMPTED', 'REQUESTED', 'UNKNOWN', 'VERIFIED', 'RECONCILIATION_REQUIRED'], '$.write.outcome');
@@ -1520,6 +1623,7 @@ const REPORT_TYPE_BY_CAUSE = Object.freeze({
   PLATFORM_RUNTIME: 'PLATFORM_RUNTIME',
   KNOWLEDGE_GAP: 'KNOWLEDGE_GAP',
   AUTHORIZATION: 'AUTHORIZATION',
+  FLAKY_RUNTIME: 'FLAKY_RUNTIME',
   UNKNOWN: 'UNKNOWN',
 });
 
@@ -1554,10 +1658,19 @@ export function validateDiagnosisReport(document) {
   if (document.issueIds.length === 0) fail('$.issueIds must contain at least one issue');
   array(document.evidence, '$.evidence', { max: 2000 }).forEach((entry, index) => {
     const path = `$.evidence[${index}]`;
-    exactKeys(entry, ['issueId', 'comparisonId', 'assertionId', 'status', 'reasonCode', 'evidenceRef'], ['issueId', 'comparisonId', 'assertionId', 'status', 'reasonCode', 'evidenceRef'], path);
+    const nativeShape = entry.sourceKind !== undefined;
+    exactKeys(entry,
+      nativeShape ? ['sourceKind', 'issueId', 'comparisonId', 'assertionId', 'nativeRunId', 'findingId', 'status', 'reasonCode', 'evidenceRef'] : ['issueId', 'comparisonId', 'assertionId', 'status', 'reasonCode', 'evidenceRef'],
+      nativeShape ? ['sourceKind', 'issueId', 'comparisonId', 'assertionId', 'nativeRunId', 'findingId', 'status', 'reasonCode', 'evidenceRef'] : ['issueId', 'comparisonId', 'assertionId', 'status', 'reasonCode', 'evidenceRef'],
+      path);
+    if (nativeShape) enumValue(entry.sourceKind, ['RUNTIME_COMPARISON', 'AGENT_NATIVE_OBSERVATION'], `${path}.sourceKind`);
     id(entry.issueId, `${path}.issueId`);
-    id(entry.comparisonId, `${path}.comparisonId`);
-    id(entry.assertionId, `${path}.assertionId`);
+    if (entry.comparisonId !== null) id(entry.comparisonId, `${path}.comparisonId`);
+    if (entry.assertionId !== null) id(entry.assertionId, `${path}.assertionId`);
+    if (nativeShape && entry.nativeRunId !== null) id(entry.nativeRunId, `${path}.nativeRunId`);
+    if (nativeShape && entry.findingId !== null) id(entry.findingId, `${path}.findingId`);
+    if (nativeShape && entry.sourceKind === 'RUNTIME_COMPARISON' && (entry.comparisonId === null || entry.assertionId === null || entry.nativeRunId !== null || entry.findingId !== null)) fail(`${path} runtime evidence identifiers are inconsistent`);
+    if (nativeShape && entry.sourceKind === 'AGENT_NATIVE_OBSERVATION' && (entry.nativeRunId === null || entry.findingId === null || entry.comparisonId !== null || entry.assertionId !== null)) fail(`${path} Agent Native evidence identifiers are inconsistent`);
     enumValue(entry.status, ['FAILED', 'INCONCLUSIVE'], `${path}.status`);
     id(entry.reasonCode, `${path}.reasonCode`);
     string(entry.evidenceRef, `${path}.evidenceRef`, { max: 512 });
@@ -1791,6 +1904,7 @@ export const SCHEMA_V2_VALIDATORS = Object.freeze({
   'runtime-exploration-report': validateRuntimeExplorationReport,
   'agent-direct-test-authorization': validateAgentDirectTestAuthorization,
   'agent-test-attestation': validateAgentTestAttestation,
+  'agent-native-observation-bundle': validateAgentNativeObservationBundle,
   'environment-manifest': validateEnvironmentManifest,
   'environment-comparison': validateEnvironmentComparison,
   'environment-risk-acceptance': validateEnvironmentRiskAcceptance,

@@ -64,7 +64,7 @@
         "properties": {
           "findingId": { "$ref": "common.schema.json#/$defs/id" }, "severity": { "enum": ["INFO", "WARNING", "ERROR"] },
           "summary": { "type": "string", "minLength": 1, "maxLength": 2048 },
-          "cause": { "enum": ["CONVERTER", "SOURCE_DATA", "TARGET_CASE", "TEST_HARNESS", "ENVIRONMENT_CONFIGURATION", "PLATFORM_RUNTIME", "KNOWLEDGE_GAP", "AUTHORIZATION", "UNKNOWN"] },
+          "cause": { "enum": ["CONVERTER", "SOURCE_DATA", "TARGET_CASE", "TEST_HARNESS", "ENVIRONMENT_CONFIGURATION", "PLATFORM_RUNTIME", "KNOWLEDGE_GAP", "AUTHORIZATION", "FLAKY_RUNTIME", "UNKNOWN"] },
           "evidenceRefs": { "type": "array", "maxItems": 100, "uniqueItems": true, "items": { "type": "string", "minLength": 1, "maxLength": 1024 } }
         }, "additionalProperties": false
       }

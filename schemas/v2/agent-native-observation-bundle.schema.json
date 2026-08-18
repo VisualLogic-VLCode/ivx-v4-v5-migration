@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.ivx.local/migration/v2/agent-native-observation-bundle.schema.json",
+  "title": "Agent Native Observation Bundle",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "kind", "runId", "previousRunId", "repairBatchId", "reviewId", "jobId", "purpose", "subjects", "environment", "execution", "outcome", "coverage", "effects", "findings", "evidenceRefs", "claims", "completedAt", "createdAt", "createdBy", "sensitivity"],
+  "properties": {
+    "schemaVersion": { "const": 2 },
+    "kind": { "const": "agent-native-observation-bundle" },
+    "runId": { "$ref": "#/$defs/id" },
+    "previousRunId": { "anyOf": [{ "$ref": "#/$defs/id" }, { "type": "null" }] },
+    "repairBatchId": { "anyOf": [{ "$ref": "#/$defs/id" }, { "type": "null" }] },
+    "reviewId": { "type": "string", "pattern": "^rev_[A-Za-z0-9_]+$" },
+    "jobId": { "type": "string", "pattern": "^mig_[A-Za-z0-9_]+$" },
+    "purpose": { "enum": ["INITIAL_TEST", "USER_RETEST", "REPAIR_REGRESSION"] },
+    "subjects": {
+      "type": "object", "additionalProperties": false, "required": ["source", "target"],
+      "properties": { "source": { "$ref": "#/$defs/subject" }, "target": { "$ref": "#/$defs/subject" } }
+    },
+    "environment": {
+      "type": "object", "additionalProperties": false, "required": ["comparisonId", "status", "differences"],
+      "properties": {
+        "comparisonId": { "anyOf": [{ "$ref": "#/$defs/id" }, { "type": "null" }] },
+        "status": { "enum": ["ENVIRONMENT_EQUIVALENT", "NORMALIZED_EQUIVALENT", "REQUIRES_USER_BINDING", "BLOCKED_ENVIRONMENT", null] },
+        "differences": { "type": "array", "maxItems": 1000, "items": { "$ref": "#/$defs/difference" } }
+      }
+    },
+    "execution": {
+      "type": "object", "additionalProperties": false, "required": ["tools", "startedAt", "completedAt"],
+      "properties": {
+        "tools": { "$ref": "#/$defs/stringArray" },
+        "startedAt": { "$ref": "#/$defs/dateTime" },
+        "completedAt": { "$ref": "#/$defs/dateTime" }
+      }
+    },
+    "outcome": { "enum": ["OBSERVED_EQUIVALENT", "OBSERVED_MISMATCH", "INCONCLUSIVE"] },
+    "coverage": {
+      "type": "object", "additionalProperties": false,
+      "required": ["businessFlows", "states", "actions", "assertions", "screenshots", "networkObservations"],
+      "properties": {
+        "businessFlows": { "$ref": "#/$defs/count" }, "states": { "$ref": "#/$defs/count" },
+        "actions": { "$ref": "#/$defs/count" }, "assertions": { "$ref": "#/$defs/count" },
+        "screenshots": { "$ref": "#/$defs/count" }, "networkObservations": { "$ref": "#/$defs/count" }
+      }
+    },
+    "effects": {
+      "type": "object", "additionalProperties": false, "required": ["occurred", "systems", "summaries"],
+      "properties": { "occurred": { "type": "boolean" }, "systems": { "$ref": "#/$defs/stringArray" }, "summaries": { "$ref": "#/$defs/stringArray" } }
+    },
+    "findings": { "type": "array", "maxItems": 1000, "items": { "$ref": "#/$defs/finding" } },
+    "evidenceRefs": { "$ref": "#/$defs/pathArray" },
+    "claims": {
+      "type": "object", "additionalProperties": false, "required": ["strictParityClaimed", "workflowRestrictionsApplied"],
+      "properties": { "strictParityClaimed": { "const": false }, "workflowRestrictionsApplied": { "const": false } }
+    },
+    "completedAt": { "$ref": "#/$defs/dateTime" },
+    "createdAt": { "$ref": "#/$defs/dateTime" },
+    "createdBy": { "const": "AGENT" },
+    "sensitivity": { "const": "REDACTED" }
+  },
+  "$defs": {
+    "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
+    "dateTime": { "type": "string", "format": "date-time" },
+    "count": { "type": "integer", "minimum": 0, "maximum": 1000000 },
+    "nullableString": { "anyOf": [{ "type": "string", "minLength": 1, "maxLength": 4096 }, { "type": "null" }] },
+    "subject": {
+      "type": "object", "additionalProperties": false, "required": ["nid", "workId", "url", "origin"],
+      "properties": {
+        "nid": { "type": "integer", "minimum": 1 }, "workId": { "$ref": "#/$defs/nullableString" },
+        "url": { "$ref": "#/$defs/nullableString" }, "origin": { "$ref": "#/$defs/nullableString" }
+      }
+    },
+    "difference": {
+      "type": "object", "additionalProperties": false, "required": ["path", "summary"],
+      "properties": { "path": { "type": "string", "minLength": 1, "maxLength": 1024 }, "summary": { "type": "string", "minLength": 1, "maxLength": 2048 } }
+    },
+    "stringArray": { "type": "array", "maxItems": 200, "uniqueItems": true, "items": { "type": "string", "minLength": 1, "maxLength": 512 } },
+    "pathArray": { "type": "array", "maxItems": 2000, "uniqueItems": true, "items": { "type": "string", "minLength": 1, "maxLength": 1024, "pattern": "^(?!/)(?!.*\\.\\.).+$" } },
+    "finding": {
+      "type": "object", "additionalProperties": false,
+      "required": ["findingId", "severity", "status", "summary", "candidateCause", "evidenceRefs"],
+      "properties": {
+        "findingId": { "$ref": "#/$defs/id" }, "severity": { "enum": ["INFO", "WARNING", "ERROR"] },
+        "status": { "enum": ["MATCHED", "MISMATCH", "INCONCLUSIVE"] }, "summary": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        "candidateCause": { "enum": ["CONVERTER", "SOURCE_DATA", "TARGET_CASE", "TEST_HARNESS", "ENVIRONMENT_CONFIGURATION", "PLATFORM_RUNTIME", "KNOWLEDGE_GAP", "AUTHORIZATION", "FLAKY_RUNTIME", "UNKNOWN", null] },
+        "evidenceRefs": { "$ref": "#/$defs/pathArray" }
+      }
+    }
+  }
+}

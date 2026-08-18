@@ -91,6 +91,7 @@ export class ArtifactInstaller {
         artifactSha256: actualSha256,
         installedAt: new Date().toISOString(),
         capabilities: descriptor.capabilities || {},
+        runtimeTestMode: descriptor.runtimeTestMode || null,
         compatibility: {
           workflow: descriptor.compatibleWorkflow || null,
           converter: descriptor.compatibleConverter || null,

@@ -70,6 +70,7 @@ function releaseDescriptor({ kind, packageJson, artifactUrl, artifactSha256, opt
       compatibleConverter: options['compatible-converter'] || defaults.compatibleConverter,
       agentProtocolVersion: Number(options['agent-protocol-version'] || AGENT_PROTOCOL_VERSION),
       jobSchemaVersion: Number(options['job-schema-version'] || 1),
+      runtimeTestMode: 'AGENT_NATIVE',
       capabilities: {
         managedRuntimeUpdates: true,
         structuredConverterDiagnostics: true,
@@ -78,6 +79,9 @@ function releaseDescriptor({ kind, packageJson, artifactUrl, artifactSha256, opt
         agentDirectReadOnlyTest: true,
         agentDirectUserSuppliedEphemeralCredential: true,
         agentDirectSideEffectTest: false,
+        agentNativeRuntimeTest: true,
+        agentNativeObservationDiagnosis: true,
+        agentNativeRepairRegression: true,
       },
       artifact: { url: artifactUrl, sha256: artifactSha256 },
     };

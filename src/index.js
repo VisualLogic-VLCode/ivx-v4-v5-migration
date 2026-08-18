@@ -4,6 +4,7 @@ export { createAppPaths, resolveAppHome } from './paths.js';
 export { JobStore } from './jobs/job-store.js';
 export { MIGRATION_INTENTS, normalizeMigrationIntent, normalizeRelatedJobIds } from './jobs/intents.js';
 export { RuntimeReviewStore } from './reviews/review-store.js';
+export { AgentNativeStore } from './runtime/agent-native-store.js';
 export { RefreshStore } from './refresh/refresh-store.js';
 export { RefreshPrepareOrchestrator } from './refresh/refresh-prepare-orchestrator.js';
 export { RefreshApplyOrchestrator } from './refresh/refresh-apply-orchestrator.js';
@@ -24,6 +25,8 @@ export {
 export {
   AGENT_DIRECT_TEST_CAPABILITIES,
   AGENT_DIRECT_TEST_OUTCOMES,
+  AGENT_NATIVE_OBSERVATION_OUTCOMES,
+  AGENT_NATIVE_RUN_PURPOSES,
   AUTOMATIC_REPAIR_DECISIONS,
   DIAGNOSTIC_SAVE_STATUSES,
   ENVIRONMENT_FIELD_POLICIES,
@@ -51,6 +54,7 @@ export {
   validateAutomaticRepairDecision,
   validateAgentDirectTestAuthorization,
   validateAgentTestAttestation,
+  validateAgentNativeObservationBundle,
   validateBehaviorTrace,
   validateDiagnosisReport,
   validateRuntimeComparison,
@@ -80,6 +84,8 @@ export {
 } from './contracts/schema-v2.js';
 export {
   AUTO_REPAIR_CONFIDENCE_THRESHOLD,
+  agentNativeIssueId,
+  createAgentNativeIssueCandidates,
   createRuntimeIssueCandidates,
   evaluateDiagnosis,
   renderDiagnosisReportMarkdown,

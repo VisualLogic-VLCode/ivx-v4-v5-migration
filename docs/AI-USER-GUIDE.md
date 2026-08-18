@@ -28,6 +28,8 @@
 
 “转成 V5”已经授权当前任务中一次通过确定性门禁后的普通 Save As。Agent 不应再要求同一个 Job 的第二次普通另存确认；保存期间仍必须临时开启写入门禁，并在成功、失败或中断后恢复为 `disabled`。
 
+若请求只到“转成 V5”且未提运行时测试，Agent 会询问一次是否在另存后继续测试；若用户已经要求测试、诊断或自动修复，则不重复询问，直接进入 Agent Native。
+
 如果源案例已经是 V5、版本不明确、当前用户无权限或当前平台条件不满足，工作流会安全停止，而不是强行调用 Converter 或另存。
 
 个人案例与 Group 案例使用完全相同的判版、转换、诊断、验证、另存和运行时测试流程，用户通常只需提供 `nid`。只有用户明确知道且平台上下文确实需要时才同时提供 `gid`；Agent 不得猜测。Group 的实际读取和另存能力以平台权限预检结果为准。
@@ -55,38 +57,23 @@ Agent 先执行只读 Refresh prepare：证明该目标来自相同源案例的�
 ### 转换后自动进行运行时测试和受限修复
 
 ```text
-请使用 v4-to-v5-workflow，把 nid <NID> 转成 V5。创建成功后进行无副作用的 V4/V5 运行时对照；对工作流允许自动修复的高置信非转换器问题自动修复并复测。
+请使用 v4-to-v5-workflow，把 nid <NID> 转成 V5；创建成功后由你自主完成 V4/V5 运行时测试，并对 Workflow 允许的高置信非转换器问题自动修复和复测，直至通过或命中安全停止条件。
 ```
 
-这同时授权一个 WRITE Runtime Review 和初始修复预算，但运行时测试仍需要一次精确的 Agent Direct 只读授权。Workflow 会先完成 Environment Gate，并展示当前 Review/Job、源/目标 revision 与预览 origin、完整 Job 读取范围、到期时间、本地认证使用规则，以及“不产生副作用、不修改 V5、不执行平台写入”的边界；用户确认后才把测试上下文交给 Agent。
+这句话同时授权创建 WRITE Review 和初始修复预算。测试默认使用 `AGENT_NATIVE`：Workflow 只交付当前 V4/V5 地址、Job 文件根目录和环境差异，不创建测试授权或 Session，也不限制 Agent 选择浏览器、Playwright、脚本、会话、重试或测试动作；具体操作仍受用户要求和本机 Agent 自身安全规则约束。
 
-若希望 Agent 在一次确认后自主遍历无副作用路径，可明确说：
-
-```text
-请在 Review <REVIEW_ID> 上进行 Agent Direct 无副作用运行时测试。先向我展示精确授权范围；我确认后，你可以读取该 Job 的全部文件，并用你自己的浏览器和测试工具自主规划、编写脚本、执行和判断，不需要逐个点击询问，但不得产生业务副作用、修改 V5 或执行任何平台写入。
-```
-
-Workflow 不提供浏览器驱动、爬虫、动作规划器、就绪判断、模块加载桥或测试程序。确认后，Agent 可以读取命令返回的精确 Job 根目录，包括原始 V4 JSON、转换后 V5 JSON、验证与诊断，并直接使用自己的浏览器工具、JavaScript、语义定位、CSS/XPath、循环、动态点击/填写、网络与控制台观察、截图/像素比较和业务状态断言。Agent 优先使用本机已有授权会话。若普通 Playwright/模块加载失败，Agent 应从本机激活的签名受管 Workflow 定位包根，把自己的模块解析锚定到该包并重新验证浏览器启动和完整非敏感探测；不得硬编码 Workflow 版本或复制依赖，只有有界安全策略均失败后才能报告 `TEST_HARNESS`。当返回的 Context 声明 `credentialPolicy.userDirectInput: EPHEMERAL_BROWSER_USE_ALLOWED` 与 `agentToolTransport: MINIMUM_BROWSER_OPERATION_ONLY` 时，若用户在当前任务中明确直接输入只供当前受权 V4/V5 预览页使用的 Token/Cookie/session，Agent 必须先在准备使用的同一浏览器执行面，用随机非敏感哨兵完成相同加载前存储机制的写入、读取和删除；失败时不消费真实值。探测成功后，真实值才可在一次最小浏览器认证调用中临时使用。Workflow 不接收该值，Agent 不得重复、回显、跨任务复用，或把它写入 shell/CLI 参数、环境变量、独立或落盘脚本、文件、截图、报告、证据与证明。测试记录只能说明认证初始化是否成功。
-
-V4、V5 每侧的默认业务就绪等待上限为 300 秒，约每 10 秒轮询一次。标题、load 事件和平台加载壳层不代表业务就绪；Agent 要以稳定的业务根 DOM/ARIA/状态和无阻断认证/运行时错误为依据。DOM、截图、控制台/网络等取证分别使用至少 120 秒的独立预算，单阶段超时最多扩大预算重试一次。超过预算后应报告 `TEST_HARNESS` 无法确定，不能把 30 秒工具超时写成案例不一致或 parity。
-
-在 `AGENT_DIRECT_READ_ONLY` 下，没有 Workflow 驱动代替 Agent 阻止操作，因此 Agent 自己负责避免提交、保存、创建、更新、删除、支付、发布、上传、发送消息或调用变更接口；无法安全继续时停止该路径。测试结论只能是 Agent 证明的“观察到一致”“观察到差异”或“无法确定”，不是 Workflow 验证的严格 Runtime Parity。Agent 把脱敏证据放在私有工作区，Workflow 在归档前复核 Job、revision、环境、授权与证据哈希。
-
-若 Agent 观察到差异，它会先形成证据和问题归属。直接测试证明本身不等于修复授权，也不会直接提升旧 Review parity；进入诊断/自动修复前仍需走既有的闭合分类、允许修复原因、初始预算、静态全量验证、目标 CAS、写后回读和复测门禁。`AGENT_DIRECT_SIDE_EFFECT` 已在协议中预留独立范围，但 Workflow 0.8.3 尚未开放；普通测试授权不能模拟或绕过它。
+Agent 将结果提交为 `OBSERVED_EQUIVALENT`、`OBSERVED_MISMATCH` 或 `INCONCLUSIVE`，它们是运行时观察而非严格 parity。发现差异后由当前 Agent/LLM 根据证据分类；只有高置信 `SOURCE_DATA` / `TARGET_CASE` 且修复目标为 `V5_ARTIFACT` 时，Workflow 才允许最小 RFC 6902 Patch、全量静态验证、CAS 写入、回读和 Agent Native 复测。`CONVERTER`、平台、环境、测试工具、波动、权限、知识缺口和未知问题只报告，不自动改 V5。
 
 如果 Save As 后平台只推进了源案例 revision，而完整源 JSON 与本次转换输入一致，Workflow 会在创建 Review 或首次环境检查时自动协调并记录审计证据，不需要再迁移或再创建一个 V5。若源内容确实变化，工作流会保留已创建的 V5 并以 `REVIEW_SOURCE_CONTENT_CHANGED` 停止；用户应审阅源变化，不能通过重复 Save As 绕过。
 
-只有工作流判定为高置信、修复目标为 V5 产物的 `SOURCE_DATA` / `TARGET_CASE` 问题才允许自动修复。`CONVERTER`、`PLATFORM_RUNTIME`、`KNOWLEDGE_GAP`、`AUTHORIZATION` 和 `UNKNOWN` 只报告，不自动修改。环境严格或经用户声明语义等价时，运行结果才能作为归因和修复证据。
-
-如果环境检查仍有差异，默认会停止浏览器。用户可以先解决绑定并声明其业务语义等价；也可以在 Agent 列出全部未解决路径和将要执行的场景后，明确接受这些差异带来的风险，仅继续一次有时限、精确范围的诊断运行。后者不会把环境改写为“等价”，不会归因 Converter，也不会自动修复目标；它只是帮助用户打开运行态继续观察。
+环境差异会被如实告知，并影响诊断置信度及能否执行受管修复，但不会阻止 Agent Native 测试。用户可继续补充手工定位结果，Agent 会把它作为 Human Finding 接入同一 Review。
 
 ## 3. 需要单独确认的操作
 
 下面这些操作不会从“转成 V5”或“自动测试并修复”中自动推导：
 
 - 为带已知问题的指定 Job 创建诊断副本；
-- 在仍有环境差异时，仅为已列出的 revision、字段路径和运行场景接受诊断运行风险；
-- 执行会造成业务副作用的运行时测试（Workflow 0.8.3 尚未开放 Agent Direct Side Effect）；
+- 超出当前用户请求范围的业务副作用操作；Workflow 不提供独立测试授权替代用户与 Agent 的确认；
 - 在初始预算之外增加每问题簇 `+2` 次尝试或整个 Review `+5` 个目标 revision；
 - 接受用户手工修改后的目标 revision 作为新基线。
 - 应用一份精确的 Existing Target Refresh 计划；该授权不能复用普通 Save As 或局部 Repair 授权。
@@ -123,9 +110,10 @@ Agent 返回 `jobId`、`refreshId` 或 `reviewId` 后应保留它。以后可以
 | `REVIEW_SUPERSEDED_BY_REFRESH` | 旧 Review 作为只读证据保留，写权限已移交到刷新后的新 Review |
 | `REFRESH_PLAN_STALE` | 源、目标、配置、权限或 runtime 与授权计划不再一致；必须重新 prepare |
 | `REFRESH_OUTCOME_UNKNOWN` | 只读对账仍显示旧基线，但写入结果不能安全证明；不能重放旧授权 |
-| `AGENT_ATTESTED_PARITY_OBSERVED` | 本地 Agent 在已声明覆盖中观察到 V4/V5 一致；不是 Workflow 严格 parity |
-| `AGENT_ATTESTED_MISMATCH` | 本地 Agent 观察到差异并提交了脱敏证据；尚未自动等同于 Converter 缺陷或修复授权 |
-| `AGENT_ATTESTED_INCONCLUSIVE` | Agent 无法在当前授权、环境或运行条件下得出确定结论 |
+| `OBSERVED_EQUIVALENT` | Agent Native 在实际覆盖中观察到 V4/V5 一致；不是 Workflow 严格 parity |
+| `OBSERVED_MISMATCH` | Agent Native 观察到差异并提交脱敏证据；由当前 Agent/LLM 继续归因 |
+| `INCONCLUSIVE` | Agent Native 暂时无法得到确定结论，可直接调整策略并创建关联复测 run |
+| `AGENT_ATTESTED_*` | 仅为用户明确选择旧 Agent Direct 审计模式时保留的兼容结果 |
 | `RUNTIME_PARITY_PASSED` | 声明式运行时对照已通过 |
 | `RUNTIME_PARITY_PASSED_WITH_USER_DECLARED_ENVIRONMENT` | 用户已声明列出的目标绑定在业务语义上等价，运行时对照通过 |
 | `DIAGNOSTIC_RUNTIME_PASSED_WITH_ENVIRONMENT_RISK` | 在用户接受的未解决环境风险下，所选断言通过；不代表严格运行时等价 |

@@ -8,7 +8,7 @@ import { LocalConverterProvider } from './converter/local-provider.js';
 import { AGENT_PROTOCOL_VERSION, PUBLIC_RELEASE_PROFILE } from './distribution-profile.js';
 import { WorkflowError, invariant } from './errors.js';
 import { diagnosticOwnerBucket, issueAutoRepairAllowed, issueCause } from './contracts/compatibility.js';
-import { validateAgentTestAttestation } from './contracts/schema-v2.js';
+import { validateAgentNativeObservationBundle, validateAgentTestAttestation } from './contracts/schema-v2.js';
 import { readJson, sha256File, writePrivateJson } from './fs/secure-json.js';
 import { JobStore } from './jobs/job-store.js';
 import { MIGRATION_INTENTS, normalizeMigrationIntent, normalizeRelatedJobIds } from './jobs/intents.js';
@@ -24,6 +24,7 @@ import { PlaywrightRuntimeDriver } from './runtime/playwright-driver.js';
 import { RuntimeReviewRunner } from './runtime/review-runner.js';
 import { RuntimeExplorationStore } from './runtime/exploration-store.js';
 import { AgentDirectTestStore } from './runtime/agent-direct-test-store.js';
+import { AgentNativeStore } from './runtime/agent-native-store.js';
 import { PlaywrightExplorationDriver } from './runtime/playwright-exploration-driver.js';
 import { AutonomousExplorationRunner } from './runtime/autonomous-exploration-runner.js';
 import { resolvePlatformPreviewUrl } from './runtime/platform-preview.js';
@@ -275,7 +276,7 @@ function authorizeKnownIssuesDiagnosticSave(jobId, context) {
     readJson(path.join(context.jobs.jobDir(jobId), 'reports', 'issue-classification.json'), null),
     validation,
   );
-  const ownerBuckets = ['CONVERTER', 'SOURCE', 'TEST_HARNESS', 'ENVIRONMENT', 'PLATFORM', 'KNOWLEDGE', 'AUTHORIZATION', 'UNKNOWN'];
+  const ownerBuckets = ['CONVERTER', 'SOURCE', 'TEST_HARNESS', 'ENVIRONMENT', 'PLATFORM', 'KNOWLEDGE', 'AUTHORIZATION', 'FLAKY_RUNTIME', 'UNKNOWN'];
   const unclassifiedIssues = classification.issues.filter((issue) => diagnosticOwnerBucket(classification, issue) === null);
   invariant(classification.issues.length > 0, 'DIAGNOSTIC_SAVE_ISSUES_REQUIRED', 'Diagnostic Save As requires at least one classified issue');
   invariant(unclassifiedIssues.length === 0, 'DIAGNOSTIC_SAVE_CLASSIFICATION_UNSUPPORTED', 'Diagnostic Save As contains an unsupported issue classification', {
@@ -875,6 +876,43 @@ async function handleReview(positionals, options, context) {
     invariant(options.review, 'CLI_ARGUMENT_REQUIRED', '--review is required');
     return { sessions: context.agentDirectTests.list(options.review) };
   }
+  if (action === 'agent-native-handoff-platform') {
+    invariant(options.review, 'CLI_ARGUMENT_REQUIRED', '--review is required');
+    const review = context.reviews.load(options.review);
+    const job = context.jobs.loadForRead(review.jobId).state;
+    const adapter = createPlatformAdapter(options, context);
+    const [sourceInfo, targetInfo] = await Promise.all([
+      adapter.getCaseInfo(job.input.sourceNid),
+      adapter.getCaseInfo(review.target.nid),
+    ]);
+    return context.agentNativeTests.handoff(options.review, {
+      sourceInfo: {
+        nid: Number(job.input.sourceNid),
+        workId: sourceInfo?.workId || null,
+        url: resolvePlatformPreviewUrl(sourceInfo),
+        origin: new URL(resolvePlatformPreviewUrl(sourceInfo)).origin,
+      },
+      targetInfo: {
+        nid: review.target.nid,
+        workId: targetInfo?.workId || null,
+        url: resolvePlatformPreviewUrl(targetInfo),
+        origin: new URL(resolvePlatformPreviewUrl(targetInfo)).origin,
+      },
+    });
+  }
+  if (action === 'agent-native-submit') {
+    invariant(options.review, 'CLI_ARGUMENT_REQUIRED', '--review is required');
+    const observation = validateAgentNativeObservationBundle(readRequiredJson(options.file, 'Agent Native Observation Bundle'));
+    return context.agentNativeTests.submit(options.review, observation);
+  }
+  if (action === 'agent-native-status') {
+    invariant(options.review && options.run, 'CLI_ARGUMENT_REQUIRED', '--review and --run are required');
+    return context.agentNativeTests.status(options.review, options.run);
+  }
+  if (action === 'agent-native-list') {
+    invariant(options.review, 'CLI_ARGUMENT_REQUIRED', '--review is required');
+    return { runs: context.agentNativeTests.list(options.review) };
+  }
   if (['exploration-authorize', 'exploration-authorize-platform'].includes(action)) {
     assertExplorationAgentProtocol(context);
     invariant(options.review, 'CLI_ARGUMENT_REQUIRED', '--review is required');
@@ -1424,8 +1462,8 @@ export async function runCli(argv, dependencies = {}) {
   const jobs = new JobStore(appPaths);
   const refreshes = new RefreshStore(appPaths);
   const reviews = new RuntimeReviewStore(appPaths, { jobs });
-  const agentDirectTestCommand = command === 'review' && String(positionals[1] || '').startsWith('agent-test-');
-  const runtimeDriver = dependencies.runtimeDriver || (agentDirectTestCommand ? null : new PlaywrightRuntimeDriver({
+  const agentOwnedTestCommand = command === 'review' && /^(?:agent-test-|agent-native-)/.test(String(positionals[1] || ''));
+  const runtimeDriver = dependencies.runtimeDriver || (agentOwnedTestCommand ? null : new PlaywrightRuntimeDriver({
     appPaths,
     allowInsecureLocalhost: config.platform.allowInsecureLocalhost === true,
     onTakeover: dependencies.runtimeTakeover || (() => waitForVisibleRuntimeTakeover()),
@@ -1446,7 +1484,8 @@ export async function runCli(argv, dependencies = {}) {
   };
   context.explorations = dependencies.explorations || new RuntimeExplorationStore(appPaths, { jobs, reviews });
   context.agentDirectTests = dependencies.agentDirectTests || new AgentDirectTestStore(appPaths, { jobs, reviews });
-  context.explorationDriver = dependencies.explorationDriver || (agentDirectTestCommand ? null : new PlaywrightExplorationDriver({
+  context.agentNativeTests = dependencies.agentNativeTests || new AgentNativeStore(appPaths, { jobs, reviews });
+  context.explorationDriver = dependencies.explorationDriver || (agentOwnedTestCommand ? null : new PlaywrightExplorationDriver({
     appPaths,
     allowInsecureLocalhost: config.platform.allowInsecureLocalhost === true,
   }));
@@ -1483,12 +1522,20 @@ export async function runCli(argv, dependencies = {}) {
       update: config.update,
       releaseManifests: config.releaseManifests,
       agents: agentStatus(context, current.workflow),
+      runtimeTestMode: 'AGENT_NATIVE',
       runtimeDriver: await runtimeDriver.status(),
       agentDirectTest: {
         browserDriver: 'NOT_PROVIDED',
         execution: 'LOCAL_AGENT',
         readOnlyCapability: 'AVAILABLE',
         sideEffectCapability: 'RESERVED_NOT_ENABLED',
+      },
+      agentNativeTest: {
+        execution: 'LOCAL_AGENT',
+        workflowRestrictionsApplied: false,
+        authorizationRequired: false,
+        observationIngestion: 'AVAILABLE',
+        managedRepairRegression: 'AVAILABLE',
       },
     };
   } else if (command === 'setup') result = await handleSetup(options, context);
@@ -1577,6 +1624,10 @@ export async function runCli(argv, dependencies = {}) {
         'ivx-migrate review agent-test-submit-platform --review <reviewId> --session <sessionId> --file <agent-test-attestation.json>',
         'ivx-migrate review agent-test-status --review <reviewId> --session <sessionId>',
         'ivx-migrate review agent-test-list --review <reviewId>',
+        'ivx-migrate review agent-native-handoff-platform --review <reviewId>',
+        'ivx-migrate review agent-native-submit --review <reviewId> --file <agent-native-observation-bundle.json>',
+        'ivx-migrate review agent-native-status --review <reviewId> --run <runId>',
+        'ivx-migrate review agent-native-list --review <reviewId>',
         'ivx-migrate review exploration-authorize --review <reviewId> --environment-id <id> --source-origin <origin> --target-origin <origin> [--profile QUICK|STANDARD|DEEP] [--environment-mode EQUIVALENT_ONLY|ALLOW_DIAGNOSTIC] --confirm RUN_AUTONOMOUS_READ_ONLY_EXPLORATION',
         'ivx-migrate review exploration-authorize-platform --review <reviewId> --environment-id <id> [--profile QUICK|STANDARD|DEEP] [--environment-mode EQUIVALENT_ONLY|ALLOW_DIAGNOSTIC] --confirm RUN_AUTONOMOUS_READ_ONLY_EXPLORATION',
         'ivx-migrate review exploration-context --review <reviewId> --authorization <authorizationId>',
