@@ -4,9 +4,7 @@ This project is the distributable local workflow used by Codex or Claude Code. I
 
 ## Current status
 
-The current signed stable release is Workflow `0.11.0` with Agent protocol 9, Converter `1.2.5`, and Knowledge Runtime `0.1.6`. Its capabilities are:
-
-The current source tree is preparing Workflow `0.12.0`; until its signed release is published, installed users remain on the stable version above.
+The current signed stable release is Workflow `0.12.0` with Agent protocol 9, Converter `1.2.5`, and Knowledge Runtime `0.1.6`. Its capabilities are:
 
 - private global Job storage with atomic state writes and per-Job locks;
 - metadata + physical work version classification;
