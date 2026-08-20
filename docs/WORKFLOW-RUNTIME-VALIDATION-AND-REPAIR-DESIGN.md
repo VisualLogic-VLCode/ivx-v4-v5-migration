@@ -1,6 +1,6 @@
 # V4→V5 工作流：运行时验证、问题诊断与 AI 修复设计
 
-> 状态：阶段 0–12 已实现；签名稳定版 Workflow `0.11.0` 只保留 Agent Native 测试并强制业务流程覆盖证据，将执行、语义诊断与 Patch 生成交给本地 Agent，同时保留受管证据、诊断政策、Patch 验证、预算、CAS、写后回读和审计。兼容 Converter `1.2.5` 与 Knowledge Runtime `0.1.6`，Agent protocol 仍为 9。
+> 状态：阶段 0–12 已公开实现于签名稳定版 Workflow `0.11.0`；当前源码正在实现阶段 13 / Workflow `0.12.0` 候选，增加 Agent 自主业务面逐项对账、独立覆盖状态及用户授权的有副作用写后验证。执行、语义诊断、测试动作与业务判断仍交给本地 Agent；Workflow 保留受管证据、诊断政策、Patch 验证、预算、CAS、写后回读和审计。兼容 Converter `1.2.5` 与 Knowledge Runtime `0.1.6`，Agent protocol 仍为 9。
 > 初稿：2026-08-12；本次修订：2026-08-18
 > 适用项目：`ivx-v4-v5-migration` 及其独立分发的 Workflow、Agent 适配器和知识运行时
 > 不修改：`tov5parser` 的转换规则；转换器继续由维护者在独立仓库中维护
@@ -1163,9 +1163,11 @@ Knowledge Runtime `0.1.4` 是 compatibility-only 发布：它把协议兼容上�
 
 结果只有 `OBSERVED_EQUIVALENT`、`OBSERVED_MISMATCH`、`INCONCLUSIVE`。`strictParityClaimed` 和 `workflowRestrictionsApplied` 必须为 false。每个 bundle 记录实际测试覆盖、工具、两端观察事实、环境差异、业务 effect、findings 和 workspace 内的脱敏证据摘要；它不是 Workflow 驱动或严格 parity 证明。
 
-Native 测试采用“冒烟基线 → 业务面盘点 → 候选流程 → 副作用分类 → V4/V5 配对执行 → 覆盖结论”的 Agent 自主过程。业务面盘点必须覆盖静态 artifact、运行时 UI、导航、事件和网络/服务请求；每条候选流程记录发现来源，并分类为 `READ_ONLY`、`WRITE` 或 `UNKNOWN`。只读流程自主完整执行；写入流程仅在用户请求与宿主安全政策允许时完整执行，否则测试到明确的提交前边界；未知流程必须继续分析，仍不能判断时作为未解决候选保留。
+Native 测试采用“冒烟基线 → 业务面单元 → 候选流程映射 → 副作用分类 → V4/V5 配对执行 → 观察 outcome + 覆盖 assessment”的 Agent 自主过程。业务面单元包括页面/视图、跳转、交互、事件/服务、角色/权限、业务状态、数据条件、异常分支和写入后置条件；Agent 自主决定关键性、流程拆分、顺序、工具、动作和业务判断。每个单元必须映射到流程，或明确排除/延期及原因，Workflow 只校验引用与汇总闭合。
 
-Workflow 不规划或执行这些动作，但会校验 Agent 提交的闭合覆盖契约。`OBSERVED_EQUIVALENT` 要求：初始/用户复测完成 `WHOLE_CASE` 盘点，修复复测完成 `AFFECTED_FLOWS` 盘点；五类 inventory checkpoint 完整；至少存在一个候选流程；队列已耗尽；无 `UNKNOWN` effect；每条流程均为完整执行或提交前边界后的 `MATCHED`。任一未知、阻断、未执行或不确定候选都只能提交 `INCONCLUSIVE`；存在不匹配候选才支持 `OBSERVED_MISMATCH`。这样既不把驱动交回 Workflow，也不能用首屏/截图一致替代业务流程覆盖。
+只读流程自主完整执行。业务副作用由用户与 Agent 一次性明确范围，Workflow 不发放测试 lease；范围内 Agent 自主执行，完整 WRITE 必须记录 `POST_WRITE_RESULT`、实际 effect、写后业务状态与脱敏证据。未授权时只到 `PRE_SUBMIT`，其写入后置条件仍是 gap。阻塞/未执行流程记录 blocker kind、安全解除尝试或不尝试原因。发现差异后，在安全和权限允许时继续其他独立流程以确定影响面。
+
+Workflow 分别校验观察结果和覆盖完整度。已执行流程全匹配可为 `OBSERVED_EQUIVALENT`，即使覆盖为 `PARTIAL`；已执行不匹配为 `OBSERVED_MISMATCH`；只有已执行观察本身无法判断时为 `INCONCLUSIVE`。`COMPLETE` 要求盘点完整、非空业务面已全部对账、无 gap、队列耗尽、无未知 effect，且写入后置条件完成写后验证；否则为 `PARTIAL` 或 `BLOCKED`。只有 `OBSERVED_EQUIVALENT + COMPLETE` 可设置整案观察等价声明，仍禁止 strict parity。
 
 ### 22.3 Agent/LLM 诊断与受管 Patch
 
@@ -1181,6 +1183,8 @@ Workflow 0.10.0 不再提供 Agent Direct 命令、Schema、能力字段、序�
 
 Workflow 0.11.0 保持 Agent protocol 9，不重新引入 Workflow 驱动，只收紧当前 Native observation 的业务流程覆盖证据。签名描述符增加 `agentNativeBusinessFlowCoverage:true`。旧 0.10.0 Native observation 可显式按 legacy read 读取、诊断和恢复，但不能作为新的浅层结果重新提交。
 
+Workflow 0.12.0 保持 Agent protocol 9，在同一 Agent Native 边界增加业务面逐项对账、独立覆盖状态、阻塞解除事实以及用户授权的写后结果验证。旧 0.10.0 无 exploration 和旧 0.11.0 exploration 均可显式 legacy read，但新提交必须使用 0.12.0 结构。签名描述符增加 `agentNativeCoverageReconciliation:true` 与 `agentNativeAuthorizedSideEffectTesting:true`；不增加 Workflow 驱动、动作规划、固定流程数、覆盖百分比或测试 authorization。
+
 ## 23. 阶段 12：防止浅层 Native 等价结论
 
 阶段 12 的验收条件是：
@@ -1192,3 +1196,16 @@ Workflow 0.11.0 保持 Agent protocol 9，不重新引入 Workflow 驱动，只�
 - 候选流程引用的脱敏证据与顶层/finding 证据一起执行存在性、安全路径、哈希与归档校验；
 - 0.10.0 已保存 Native observation 仍可读取并进入诊断，但缺少新 exploration 合同的 artifact 不能重新提交；
 - Codex/Claude Skill、JSON Schema、闭合 validator、handoff 能力、签名描述符和用户文档表达同一约束。
+
+## 24. 阶段 13：业务面、测试深度与有副作用闭环
+
+阶段 13 的验收条件是：
+
+- 每个 Agent 发现的业务面单元必须映射到候选流程或带理由的排除/延期 disposition；数量和 criticality 仍由 Agent 决定；
+- 业务面/流程/queue/coverage assessment 任一引用、计数或 gap 不一致都拒绝提交；
+- `PRE_SUBMIT` 可覆盖提交前交互，但 `WRITE_POSTCONDITION` 必须保持 gap，不能声明整案覆盖完成；
+- 完整 WRITE 仅在 `USER_AUTHORIZED` 的脱敏范围摘要下成立，并要求 `POST_WRITE_RESULT`、实际 effect observation、业务后置条件和证据；
+- outcome 与 coverage 独立：部分匹配可为 equivalent+partial，只有 equivalent+complete 可声明 whole-case observed equivalence；
+- blocker 记录原因与 `ATTEMPTED` / `NOT_SAFE` / `NOT_AVAILABLE` / `NOT_AUTHORIZED`，不强制 Workflow 决定解除方式；
+- 0.10.0 与 0.11.0 Native artifact 可读取但不能按旧结构重新提交；
+- 全部能力不引入 Workflow 驱动、动作计划、固定候选数、百分比阈值或测试授权 lease。

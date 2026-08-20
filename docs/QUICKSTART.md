@@ -192,11 +192,13 @@ ivx-migrate review agent-native-submit \
 
 Agent protocol 9 默认使用 Agent Native 测试。Workflow 只返回当前 V4/V5 地址与 workId/origin、完整 Job 根目录、Agent 私有工作区和环境差异提示；它不创建测试授权、Session、过期时间、revision/origin lease、浏览器驱动、动作规划器、认证规则或副作用范围。Agent 依据用户要求和自身安全政策自主选择浏览器、Playwright/CDP、JavaScript、CSS/XPath、循环、动态点击、截图/像素比较、业务动作与重试。
 
-测试必须先完成首屏冒烟，再结合 V4/V5 静态 artifact 与运行时 UI、导航、事件和服务请求建立候选业务流程清单。每条流程都要标记 `READ_ONLY`、`WRITE` 或 `UNKNOWN`，记录发现来源、执行范围、逐步结果和证据。只读流程自动继续；写入流程在用户与 Agent 安全政策不允许完整执行时停在明确的提交前边界；未知请求应先分析，仍无法判定则保留为未解决项。只要还有未知、被阻断或未执行的候选流程，提交结果必须是 `INCONCLUSIVE`，而不能仅凭首屏相同提交 `OBSERVED_EQUIVALENT`。
+测试必须先完成首屏冒烟，再结合 V4/V5 静态 artifact 与运行时 UI、导航、事件和服务请求建立业务面清单，覆盖页面、跳转、交互、服务、角色、状态、数据条件、异常分支和写入后置条件。每个已发现单元必须映射到候选流程，或明确标记排除/延期及原因；流程数量、拆分方式、优先级与执行工具均由 Agent 自主决定。
+
+每条流程都要标记 `READ_ONLY`、`WRITE` 或 `UNKNOWN`。只读流程自动继续；写入流程只有在用户一次性明确授权的范围与 Agent 宿主安全政策内才能执行到 `POST_WRITE_RESULT`，并通过持久化回读、业务状态、后续动作及可观察外部影响验证结果。未授权时只能到 `PRE_SUBMIT`，这不会证明写入闭环。遇到阻塞时记录原因和安全解除尝试；发现差异后仍继续其他独立安全流程，以确认影响范围。
 
 Agent 可复用当前会话、浏览器状态、缓存和用户直接提供的运行时认证信息，但必须遵循所在 Agent 的安全规则；Workflow 不接收这些值，观察包、证据、文件与输出中也不得包含 Token、Cookie、session 或浏览器存储内容。工具切换、初始化时机、页面就绪等待和重试均由 Agent 自主决定。
 
-提交结果只能是 `OBSERVED_EQUIVALENT`、`OBSERVED_MISMATCH` 或 `INCONCLUSIVE`，不是严格 parity。观察包还必须包含完整业务面盘点、候选流程和可核对的队列汇总；Workflow 会拒绝覆盖不足的等价结论。两端实际 revision/origin、环境差异和发生过的副作用都作为事实记录，不用于阻止测试。用户要求复测时直接生成带 `previousRunId` 的新 run；修复后的复测还要带 `REPAIR_REGRESSION` 与 `repairBatchId`。Agent Native 是当前唯一的运行时测试接口。
+提交结果与覆盖完整度分开记录。`OBSERVED_EQUIVALENT` 说明实际执行且可比较的流程一致，但可同时标记 `PARTIAL`；`OBSERVED_MISMATCH` 说明至少一个已执行流程不同；`INCONCLUSIVE` 说明已执行观察本身无法确定。覆盖状态为 `COMPLETE`、`PARTIAL` 或 `BLOCKED`；只有 `OBSERVED_EQUIVALENT + COMPLETE` 才能声明整案观察等价，仍不是严格 parity。两端 revision/origin、环境差异和副作用均作为事实记录。复测使用 `previousRunId`；修复复测还带 `REPAIR_REGRESSION` 与 `repairBatchId`。
 
 另存成功后平台可能只推进源案例的 `workId`。`create-platform` 会在创建 Review 前读取当前完整源 JSON，并与 Job 中不可变的转换输入做规范化摘要比较；内容完全相同时，自动把 Review 固定到新 revision 并留下私有审计记录。对于 Workflow 0.5.1 已创建但尚未产生环境证据的 Review，首次 `environment-check` 会执行相同协调。若内容确实变化，则返回 `REVIEW_SOURCE_CONTENT_CHANGED` 并保留已有 V5；不要重新迁移或再次 Save As。已有环境或运行时证据后不会自动改写 source baseline。
 
@@ -206,7 +208,7 @@ Workflow 0.7.3 修复平台默认值省略导致的误报：当平台没有返�
 
 Workflow 0.7.4 修复旧 Job 创建 Runtime Review 时缺少 Workflow SHA-256 的兼容缺口。只有已安装的精确 Workflow 版本、包名和摘要证据一致时，才把真实摘要派生到新 Review；缺失、无效或互相矛盾的证据会在访问平台前安全停止，不修改旧 Job。新建 Job 会直接持久化完整的 Workflow 版本、包名和摘要，避免升级后再次丢失谱系。
 
-Workflow 0.8.0–0.8.3 曾引入并逐步完善 Agent Direct。Workflow 0.9.0 将普通运行时测试移出 Workflow 控制面，改为 Agent Native handoff + observation bundle + Agent/LLM diagnosis。Workflow 0.10.0 从当前运行时中删除 Agent Direct 命令、Schema 和兼容读取；Workflow 0.11.0 要求 Agent 提交完整的业务流程盘点、分类、执行范围和剩余队列，拒绝首屏一致但仍有未知或未执行路径的浅层等价结论。重新安装后的测试只使用 Agent Native。Protocol-8 Exploration/Scenario 仍作为独立的声明式历史能力保留。
+Workflow 0.8.0–0.8.3 曾引入并逐步完善 Agent Direct。Workflow 0.9.0 将普通运行时测试移出 Workflow 控制面，改为 Agent Native handoff + observation bundle + Agent/LLM diagnosis。Workflow 0.10.0 删除 Agent Direct 当前代码；0.11.0 增加候选流程与队列证据；0.12.0 候选进一步增加业务面逐项对账、独立覆盖状态和用户授权的写后结果验证，同时仍不接管 Agent 的测试策略。重新安装后的测试只使用 Agent Native。Protocol-8 Exploration/Scenario 仍作为独立的声明式历史能力保留。
 
 Workflow 会对 V4/V5 的配置、设置、域名、路由和绑定做脱敏环境比较。Agent Native 把差异作为提示与诊断置信度输入，不再因此阻止浏览器测试；受管 V5 修复仍要求满足独立的环境、CAS 和权限门禁。`/config/name` 按 `IGNORE_FOR_PARITY` 处理，其他未知字段如实保留。预览 URL 来自平台当前元数据，不需要用户手填。
 

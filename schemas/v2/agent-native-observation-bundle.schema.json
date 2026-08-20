@@ -52,8 +52,12 @@
     "findings": { "type": "array", "maxItems": 1000, "items": { "$ref": "#/$defs/finding" } },
     "evidenceRefs": { "$ref": "#/$defs/pathArray" },
     "claims": {
-      "type": "object", "additionalProperties": false, "required": ["strictParityClaimed", "workflowRestrictionsApplied"],
-      "properties": { "strictParityClaimed": { "const": false }, "workflowRestrictionsApplied": { "const": false } }
+      "type": "object", "additionalProperties": false, "required": ["strictParityClaimed", "workflowRestrictionsApplied", "wholeCaseObservedEquivalentClaimed"],
+      "properties": {
+        "strictParityClaimed": { "const": false },
+        "workflowRestrictionsApplied": { "const": false },
+        "wholeCaseObservedEquivalentClaimed": { "type": "boolean" }
+      }
     },
     "completedAt": { "$ref": "#/$defs/dateTime" },
     "createdAt": { "$ref": "#/$defs/dateTime" },
@@ -68,7 +72,7 @@
     "exploration": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["scope", "inventory", "candidateFlows", "queue"],
+      "required": ["scope", "inventory", "sideEffectPolicy", "surfaceInventory", "candidateFlows", "coverageAssessment", "queue"],
       "properties": {
         "scope": { "enum": ["WHOLE_CASE", "AFFECTED_FLOWS"] },
         "inventory": {
@@ -83,7 +87,58 @@
             "serviceCallsInspected": { "type": "boolean" }
           }
         },
+        "sideEffectPolicy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode", "scopeSummary"],
+          "properties": {
+            "mode": { "enum": ["NOT_AUTHORIZED", "USER_AUTHORIZED"] },
+            "scopeSummary": { "$ref": "#/$defs/nullableString" }
+          }
+        },
+        "surfaceInventory": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["units", "summary"],
+          "properties": {
+            "units": { "type": "array", "maxItems": 5000, "items": { "$ref": "#/$defs/surfaceUnit" } },
+            "summary": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["unitCount", "mappedCount", "excludedCount", "deferredCount", "reconciled"],
+              "properties": {
+                "unitCount": { "$ref": "#/$defs/count" },
+                "mappedCount": { "$ref": "#/$defs/count" },
+                "excludedCount": { "$ref": "#/$defs/count" },
+                "deferredCount": { "$ref": "#/$defs/count" },
+                "reconciled": { "const": true }
+              }
+            }
+          }
+        },
         "candidateFlows": { "type": "array", "maxItems": 1000, "items": { "$ref": "#/$defs/candidateFlow" } },
+        "coverageAssessment": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "inventoryComplete", "surfaceReconciled", "coveredUnitCount", "gapUnitCount", "criticalGapCount", "importantGapCount", "edgeGapCount", "residualGapUnitIds", "unresolvedInventory"],
+          "properties": {
+            "status": { "enum": ["COMPLETE", "PARTIAL", "BLOCKED"] },
+            "inventoryComplete": { "type": "boolean" },
+            "surfaceReconciled": { "const": true },
+            "coveredUnitCount": { "$ref": "#/$defs/count" },
+            "gapUnitCount": { "$ref": "#/$defs/count" },
+            "criticalGapCount": { "$ref": "#/$defs/count" },
+            "importantGapCount": { "$ref": "#/$defs/count" },
+            "edgeGapCount": { "$ref": "#/$defs/count" },
+            "residualGapUnitIds": { "$ref": "#/$defs/idArray" },
+            "unresolvedInventory": {
+              "type": "array",
+              "maxItems": 5,
+              "uniqueItems": true,
+              "items": { "enum": ["smokeTestCompleted", "staticArtifactsInspected", "runtimeSurfaceInspected", "navigationInspected", "serviceCallsInspected"] }
+            }
+          }
+        },
         "queue": {
           "type": "object",
           "additionalProperties": false,
@@ -100,25 +155,54 @@
         }
       }
     },
+    "surfaceUnit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["unitId", "kind", "summary", "criticality", "discoverySources", "disposition", "reason", "evidenceRefs"],
+      "properties": {
+        "unitId": { "$ref": "#/$defs/id" },
+        "kind": { "enum": ["PAGE_VIEW", "NAVIGATION_TRANSITION", "INTERACTION", "EVENT_SERVICE", "ROLE_PERMISSION", "BUSINESS_STATE", "DATA_VARIANT", "EXCEPTION_BRANCH", "WRITE_POSTCONDITION"] },
+        "summary": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        "criticality": { "enum": ["CORE", "IMPORTANT", "EDGE"] },
+        "discoverySources": { "$ref": "#/$defs/discoverySources" },
+        "disposition": { "enum": ["MAPPED_TO_FLOW", "EXCLUDED", "DEFERRED"] },
+        "reason": { "$ref": "#/$defs/nullableString" },
+        "evidenceRefs": { "$ref": "#/$defs/pathArray" }
+      }
+    },
     "candidateFlow": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["flowId", "summary", "discoverySources", "effectClass", "executionScope", "result", "stepCount", "stopReason", "evidenceRefs"],
+      "required": ["flowId", "summary", "criticality", "coverageUnitIds", "discoverySources", "preconditionSummary", "expectedResultSummary", "effectClass", "executionScope", "verificationDepth", "effectObservation", "postconditionObserved", "result", "stepCount", "stopReason", "blocker", "evidenceRefs"],
       "properties": {
         "flowId": { "$ref": "#/$defs/id" },
         "summary": { "type": "string", "minLength": 1, "maxLength": 4096 },
-        "discoverySources": {
-          "type": "array",
-          "minItems": 1,
-          "maxItems": 4,
-          "uniqueItems": true,
-          "items": { "enum": ["STATIC_ARTIFACT", "RUNTIME_UI", "RUNTIME_NETWORK", "USER_INPUT"] }
-        },
+        "criticality": { "enum": ["CORE", "IMPORTANT", "EDGE"] },
+        "coverageUnitIds": { "$ref": "#/$defs/nonEmptyIdArray" },
+        "discoverySources": { "$ref": "#/$defs/discoverySources" },
+        "preconditionSummary": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        "expectedResultSummary": { "type": "string", "minLength": 1, "maxLength": 4096 },
         "effectClass": { "enum": ["READ_ONLY", "WRITE", "UNKNOWN"] },
         "executionScope": { "enum": ["FULLY_EXECUTED", "PRE_SUBMIT_BOUNDARY", "BLOCKED", "NOT_EXECUTED"] },
+        "verificationDepth": { "enum": ["READ_ONLY_RESULT", "PRE_SUBMIT", "POST_WRITE_RESULT", "NONE"] },
+        "effectObservation": { "enum": ["NONE", "OCCURRED", "ATTEMPTED_NO_EFFECT", "UNKNOWN"] },
+        "postconditionObserved": { "type": "boolean" },
         "result": { "enum": ["MATCHED", "MISMATCH", "INCONCLUSIVE", "NOT_OBSERVED"] },
         "stepCount": { "$ref": "#/$defs/count" },
         "stopReason": { "$ref": "#/$defs/nullableString" },
+        "blocker": { "anyOf": [{ "$ref": "#/$defs/blocker" }, { "type": "null" }] },
+        "evidenceRefs": { "$ref": "#/$defs/pathArray" }
+      }
+    },
+    "blocker": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "unblockingDisposition", "attemptCount", "summary", "evidenceRefs"],
+      "properties": {
+        "kind": { "enum": ["AUTHORIZATION", "ROLE_PERMISSION", "BUSINESS_STATE", "DATA_CONDITION", "ENVIRONMENT", "TEST_HARNESS", "USER_POLICY", "UNKNOWN"] },
+        "unblockingDisposition": { "enum": ["ATTEMPTED", "NOT_SAFE", "NOT_AVAILABLE", "NOT_AUTHORIZED"] },
+        "attemptCount": { "$ref": "#/$defs/count" },
+        "summary": { "type": "string", "minLength": 1, "maxLength": 4096 },
         "evidenceRefs": { "$ref": "#/$defs/pathArray" }
       }
     },
@@ -134,6 +218,9 @@
       "properties": { "path": { "type": "string", "minLength": 1, "maxLength": 1024 }, "summary": { "type": "string", "minLength": 1, "maxLength": 2048 } }
     },
     "stringArray": { "type": "array", "maxItems": 200, "uniqueItems": true, "items": { "type": "string", "minLength": 1, "maxLength": 512 } },
+    "idArray": { "type": "array", "maxItems": 5000, "uniqueItems": true, "items": { "$ref": "#/$defs/id" } },
+    "nonEmptyIdArray": { "type": "array", "minItems": 1, "maxItems": 5000, "uniqueItems": true, "items": { "$ref": "#/$defs/id" } },
+    "discoverySources": { "type": "array", "minItems": 1, "maxItems": 4, "uniqueItems": true, "items": { "enum": ["STATIC_ARTIFACT", "RUNTIME_UI", "RUNTIME_NETWORK", "USER_INPUT"] } },
     "pathArray": { "type": "array", "maxItems": 2000, "uniqueItems": true, "items": { "type": "string", "minLength": 1, "maxLength": 1024, "pattern": "^(?!/)(?!.*\\.\\.).+$" } },
     "finding": {
       "type": "object", "additionalProperties": false,

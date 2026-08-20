@@ -62,9 +62,13 @@ Agent 先执行只读 Refresh prepare：证明该目标来自相同源案例的�
 
 这句话同时授权创建 WRITE Review 和初始修复预算。测试默认使用 `AGENT_NATIVE`：Workflow 只交付当前 V4/V5 地址、Job 文件根目录和环境差异，不创建测试授权或 Session，也不限制 Agent 选择浏览器、Playwright、脚本、会话、重试或测试动作；具体操作仍受用户要求和本机 Agent 自身安全规则约束。
 
-Agent 不会把“首屏截图一致”直接当作测试完成。它会结合 V4/V5 JSON、运行时控件、导航、事件和网络请求生成候选业务流程，逐条标记为只读、写入或未知，并同步执行两端可安全执行的流程。只读流程应继续深入；写入流程在未获允许时至少测试到提交前；未能判定的请求、被阻断的路径和未执行流程必须留在覆盖报告中。因此只要候选队列未完成，结果只能是 `INCONCLUSIVE`，不能报告观察等价。
+这句话本身不授权真实业务数据写入。如果还希望测试保存、提交、审核等有副作用流程，可同时补充一句：“我明确授权你在本机 Agent 安全政策允许的范围内自主执行有副作用业务测试，并验证写入后的业务结果。”Agent 只确认一次范围；之后无需逐动作询问。授权不会允许支付、真实通知、不可逆删除或其他被 Agent 宿主安全政策禁止的操作。
 
-Agent 将结果提交为 `OBSERVED_EQUIVALENT`、`OBSERVED_MISMATCH` 或 `INCONCLUSIVE`，并同时提交业务流程清单、每条路径的执行范围与结果、剩余队列和脱敏证据；它们仍是运行时观察而非严格 parity。发现差异后由当前 Agent/LLM 根据证据分类；只有高置信 `SOURCE_DATA` / `TARGET_CASE` 且修复目标为 `V5_ARTIFACT` 时，Workflow 才允许最小 RFC 6902 Patch、全量静态验证、CAS 写入、回读和 Agent Native 复测。`CONVERTER`、平台、环境、测试工具、波动、权限、知识缺口和未知问题只报告，不自动改 V5。
+Agent 不会把“首屏截图一致”直接当作测试完成。它会结合 V4/V5 JSON 与运行时证据建立页面、跳转、交互、服务、角色、状态、数据条件、异常分支和写入后置条件清单，把每项映射到自主归纳的候选流程，或明确记录排除/延期原因。流程数量、拆分方式、测试工具和顺序都由 Agent 决定，不由 Workflow 固定。
+
+只读流程应继续深入；未授权写入时只能测试到 `PRE_SUBMIT`，不能据此证明保存后的业务闭环。授权后 Agent 会自主执行范围内的写流程，并对请求/响应、持久化回读、页面及业务状态、后续动作、权限和可观察外部影响进行适当对照。阻塞流程必须记录原因和安全解除尝试；发现一个差异后，Agent通常继续其他独立安全路径以判断影响范围。
+
+Agent 同时提交“观察结果”和“覆盖状态”。`OBSERVED_EQUIVALENT` 可表示已执行流程一致，但覆盖仍可能是 `PARTIAL`；`OBSERVED_MISMATCH` 表示已执行流程存在差异；`INCONCLUSIVE` 表示已执行观察本身无法判断。覆盖状态另分 `COMPLETE`、`PARTIAL`、`BLOCKED`，只有 `OBSERVED_EQUIVALENT + COMPLETE` 才能报告整案观察等价，仍不是严格 parity。发现差异后由当前 Agent/LLM 分类；只有高置信 `SOURCE_DATA` / `TARGET_CASE` 且目标为 `V5_ARTIFACT` 时，Workflow 才允许受管修复与复测。
 
 如果 Save As 后平台只推进了源案例 revision，而完整源 JSON 与本次转换输入一致，Workflow 会在创建 Review 或首次环境检查时自动协调并记录审计证据，不需要再迁移或再创建一个 V5。若源内容确实变化，工作流会保留已创建的 V5 并以 `REVIEW_SOURCE_CONTENT_CHANGED` 停止；用户应审阅源变化，不能通过重复 Save As 绕过。
 
@@ -115,6 +119,9 @@ Agent 返回 `jobId`、`refreshId` 或 `reviewId` 后应保留它。以后可以
 | `OBSERVED_EQUIVALENT` | Agent Native 在实际覆盖中观察到 V4/V5 一致；不是 Workflow 严格 parity |
 | `OBSERVED_MISMATCH` | Agent Native 观察到差异并提交脱敏证据；由当前 Agent/LLM 继续归因 |
 | `INCONCLUSIVE` | Agent Native 暂时无法得到确定结论，可直接调整策略并创建关联复测 run |
+| `COMPLETE` | 已发现业务面全部对账且无剩余覆盖缺口；与观察结果组合解读 |
+| `PARTIAL` | 已得到部分运行时观察，但仍有阻塞、延期、未知或未验证的写入后置条件 |
+| `BLOCKED` | 尚未获得足以覆盖任何业务单元的可比较观察 |
 | `RUNTIME_PARITY_PASSED` | 声明式运行时对照已通过 |
 | `RUNTIME_PARITY_PASSED_WITH_USER_DECLARED_ENVIRONMENT` | 用户已声明列出的目标绑定在业务语义上等价，运行时对照通过 |
 | `DIAGNOSTIC_RUNTIME_PASSED_WITH_ENVIRONMENT_RISK` | 在用户接受的未解决环境风险下，所选断言通过；不代表严格运行时等价 |

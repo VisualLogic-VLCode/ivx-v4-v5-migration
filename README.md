@@ -6,6 +6,8 @@ This project is the distributable local workflow used by Codex or Claude Code. I
 
 The current signed stable release is Workflow `0.11.0` with Agent protocol 9, Converter `1.2.5`, and Knowledge Runtime `0.1.6`. Its capabilities are:
 
+The current source tree is preparing Workflow `0.12.0`; until its signed release is published, installed users remain on the stable version above.
+
 - private global Job storage with atomic state writes and per-Job locks;
 - metadata + physical work version classification;
 - a version-pinned local converter provider;
@@ -220,7 +222,11 @@ ivx-migrate review agent-native-list --review <reviewId>
 
 The Agent stores redacted evidence inside the returned workspace and submits `OBSERVED_EQUIVALENT`, `OBSERVED_MISMATCH`, or `INCONCLUSIVE` with `strictParityClaimed:false` and `workflowRestrictionsApplied:false`. Revisions, origins, environment differences, tools, and actual effects are recorded as facts, not execution gates. A retest is a new linked run; post-repair runs use `REPAIR_REGRESSION` plus `repairBatchId`. These observations never claim strict parity. Agent Native is the only current runtime-test interface.
 
-A Native run must progress beyond a first-screen smoke comparison: the Agent inspects static artifacts and the runtime UI/navigation/service surface, inventories candidate business flows, classifies each flow as `READ_ONLY`, `WRITE`, or `UNKNOWN`, and records paired execution scope and result. Read-only paths continue autonomously; write paths may stop at a documented pre-submit boundary when full execution is not permitted. `OBSERVED_EQUIVALENT` is accepted only when this inventory is complete, the candidate queue is exhausted, no effect remains unknown, and every flow matched. A third unclassified request, blocked path, or unexecuted candidate therefore produces `INCONCLUSIVE`, not a shallow equivalence claim.
+A Native run must progress beyond a first-screen smoke comparison. The Agent creates an evidence-linked surface ledger for pages, transitions, interactions, services, roles, states, data variants, exceptional branches, and write postconditions; every discovered unit maps to candidate flows or carries an explicit excluded/deferred reason. Flow count and grouping remain Agent decisions—Workflow supplies no browser driver, business planner, fixed count, or percentage target.
+
+Observed behavior and coverage completeness are separate. Executed matching flows may produce `OBSERVED_EQUIVALENT` with `coverageAssessment.status:PARTIAL` while blocked, unknown, excluded, or unverified write-postcondition units remain visible. Only `OBSERVED_EQUIVALENT + COMPLETE` may claim whole-case observed equivalence; `INCONCLUSIVE` means the executed observations themselves could not establish match/mismatch. A found mismatch does not normally stop other independent safe paths.
+
+Business-system side effects require one explicit user scope decision, recorded only as a redacted Agent-authored fact rather than a Workflow authorization lease. Inside an authorized scope the Agent remains autonomous and verifies relevant request/response semantics, persistent reread, UI/business state, downstream actions, permissions, and external effects. Without authorization a write flow stops at `PRE_SUBMIT`, which can cover form/validation behavior but leaves its write postcondition as a coverage gap.
 
 An unresolved Environment Gate is advisory for Agent Native execution and must be preserved in the observation. It may lower confidence or block a later managed repair, but it no longer prevents the Agent from testing. Legacy Runtime Cycles retain their original exact environment-risk contracts. `/config/name` remains an ignored saved-preset display label; other unknown fields remain visible rather than being silently normalized.
 

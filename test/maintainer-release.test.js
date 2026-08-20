@@ -122,6 +122,8 @@ test('Workflow release descriptor advertises only Agent Native runtime testing u
     assert.equal(descriptor.capabilities.agentNativeObservationDiagnosis, true);
     assert.equal(descriptor.capabilities.agentNativeRepairRegression, true);
     assert.equal(descriptor.capabilities.agentNativeBusinessFlowCoverage, true);
+    assert.equal(descriptor.capabilities.agentNativeCoverageReconciliation, true);
+    assert.equal(descriptor.capabilities.agentNativeAuthorizedSideEffectTesting, true);
   } finally {
     fs.rmSync(temporary, { recursive: true, force: true });
   }

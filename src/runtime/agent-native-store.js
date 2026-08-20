@@ -162,8 +162,13 @@ export class AgentNativeStore {
         strictParityClaimAllowed: false,
         secretsAllowed: false,
         businessFlowCoverageRequired: true,
+        surfaceReconciliationRequired: true,
+        coverageDepthRequired: true,
         completeInventoryRequiredForEquivalent: true,
-        unknownEffectRequiresInconclusive: true,
+        observedOutcomeSeparatedFromCoverageStatus: true,
+        authorizedSideEffectTestingSupported: true,
+        sideEffectAuthorizationRecordedByAgent: true,
+        postWriteEvidenceRequired: true,
         writeMayStopAtPreSubmitBoundary: true,
       },
     };
@@ -182,7 +187,9 @@ export class AgentNativeStore {
       const allRefs = [
         ...observation.evidenceRefs,
         ...observation.findings.flatMap((finding) => finding.evidenceRefs),
+        ...(observation.exploration?.surfaceInventory?.units || []).flatMap((unit) => unit.evidenceRefs),
         ...(observation.exploration?.candidateFlows || []).flatMap((flow) => flow.evidenceRefs),
+        ...(observation.exploration?.candidateFlows || []).flatMap((flow) => flow.blocker?.evidenceRefs || []),
       ];
       if (fs.existsSync(root)) {
         const stat = fs.lstatSync(root);

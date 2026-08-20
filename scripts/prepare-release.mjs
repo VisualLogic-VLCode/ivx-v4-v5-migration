@@ -80,6 +80,8 @@ function releaseDescriptor({ kind, packageJson, artifactUrl, artifactSha256, opt
         agentNativeObservationDiagnosis: true,
         agentNativeRepairRegression: true,
         agentNativeBusinessFlowCoverage: true,
+        agentNativeCoverageReconciliation: true,
+        agentNativeAuthorizedSideEffectTesting: true,
       },
       artifact: { url: artifactUrl, sha256: artifactSha256 },
     };

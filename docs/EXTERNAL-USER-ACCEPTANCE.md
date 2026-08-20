@@ -209,7 +209,7 @@ Agent 可以读取 Job 的 `state.json` 和 `reports/`，但不得读取 Token �
 
 只使用第二阶段已正常返回 `SUCCEEDED` 的 Job 创建 Runtime Review。把实际 Job ID 写进提示，不依赖“刚才那个案例”等聊天记忆：
 
-> 请使用 v4-to-v5-workflow，对迁移 Job `<JOB_ID>` 创建 Runtime Review；由你通过 Agent Native 自主读取完整 Job、选择浏览器或 Playwright/CDP、编写脚本、使用 CSS/XPath/循环和动态决策，对源 V4 与目标 V5 做充分业务对照。首屏只作为冒烟基线；结合静态 artifact、运行时 UI、导航、事件和网络服务建立候选业务流程清单，逐条分类为只读、写入或未知并配对执行。只读路径继续深入，写入路径在未获允许时至少到提交前边界；任何未知、阻断或未执行候选都必须报告 `INCONCLUSIVE`，不能据首屏一致提交观察等价。环境差异只作为提示，不阻止测试。发现差异后提交脱敏 observation，由当前 Agent/LLM 完成证据分类；只对 Workflow 允许的高置信非转换器问题使用初始预算自动修复并以关联 Native run 复测，不扩大预算。只能按实际观察范围汇报，不能声称严格 parity。
+> 请使用 v4-to-v5-workflow，对迁移 Job `<JOB_ID>` 创建 Runtime Review；由你通过 Agent Native 自主读取完整 Job、选择工具和脚本，对源 V4 与目标 V5 做充分业务对照。首屏只作为冒烟；建立页面、跳转、交互、服务、角色、状态、数据条件、异常分支和写入后置条件的业务面清单，把每项映射到候选流程或明确记录排除/延期原因。只读路径继续深入；未获业务副作用授权时写入路径只到提交前，不能证明写后闭环。结果必须同时报告观察 outcome 与 COMPLETE/PARTIAL/BLOCKED 覆盖状态；只有 OBSERVED_EQUIVALENT+COMPLETE 可报告整案观察等价。发现差异后继续其他独立安全流程，再提交脱敏证据并按受管政策诊断、修复和关联复测。流程数量、工具、顺序和测试动作全部由你自主决定，不声称严格 parity。
 
 至少核对：
 
@@ -217,8 +217,9 @@ Agent 可以读取 Job 的 `state.json` 和 `reports/`，但不得读取 Token �
 - Environment Gate 差异被记录为事实而不是测试阻断，也不会被错误归因给 Converter；
 - Workflow 未创建测试 authorization/Session、Runtime/Exploration Driver、动作规划、凭据规则或副作用 scope；工具和浏览器操作由 Agent 决定；
 - Agent 可读取精确 Job 全部文件并把新证据只写入返回的私有 workspace；认证值没有进入 Workflow、CLI、文件、截图、报告、证据或 observation；
-- observation 明确报告完整 inventory checkpoint、候选业务流程、发现来源、effect 分类、执行范围、逐流结果、剩余队列、状态、动作、断言、截图、网络观察、实际 effects 和差异，并保持 `strictParityClaimed:false`、`workflowRestrictionsApplied:false`；
-- 人为留下一个未分类服务或未执行路径时，Workflow 会拒绝浅层 `OBSERVED_EQUIVALENT`，Agent 只能补足覆盖或提交 `INCONCLUSIVE`；
+- observation 明确报告业务面单元、逐流映射、criticality、前置条件/期望结果、effect 分类、验证深度、阻塞/解除证据、剩余队列、覆盖状态、实际 effects 和差异，并保持 `strictParityClaimed:false`、`workflowRestrictionsApplied:false`；
+- 人为留下一个未分类服务或未执行路径时，Workflow 必须把覆盖判为 `PARTIAL/BLOCKED`，并拒绝 `wholeCaseObservedEquivalentClaimed:true`；已执行且一致的部分仍可诚实记为 `OBSERVED_EQUIVALENT + PARTIAL`；
+- 未授权写流程只能到 `PRE_SUBMIT`；另行明确授权有副作用测试后，Agent 无需逐动作询问，但完整 WRITE 必须记录 `POST_WRITE_RESULT`、实际 effect、持久化/业务状态回读和脱敏证据；
 - `CONVERTER`、平台、环境、测试工具、`FLAKY_RUNTIME`、知识、权限与未知根因不触发自动目标修改；
 - 每次允许的目标修复都执行 revision CAS、静态全量验证、写后回读和关联 `REPAIR_REGRESSION` Native run；
 - 写入结果未知、目标漂移、重复 Patch、振荡、范围扩大或预算暂停时不会重放或绕过。

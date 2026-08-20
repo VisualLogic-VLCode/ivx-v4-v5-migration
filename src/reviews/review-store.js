@@ -1766,7 +1766,7 @@ export class RuntimeReviewStore {
       const segments = evidenceRef.slice('artifact:'.length).split('/');
       const runId = segments[2];
       normalizeId(runId, ARTIFACT_ID_PATTERN, 'INVALID_AGENT_NATIVE_RUN_ID', 'Invalid Agent Native run id');
-      validateAgentNativeObservationBundle(readJson(this.#artifactPath(reviewId, segments.join('/'))));
+      validateAgentNativeObservationBundle(readJson(this.#artifactPath(reviewId, segments.join('/'))), { allowLegacyExploration: true });
       runIds.push(runId);
     }
     return [...new Set(runIds)].sort();
