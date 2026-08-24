@@ -8,7 +8,7 @@
     "schemaVersion": { "const": 2 }, "kind": { "const": "refresh-journal" },
     "refreshId": { "type": "string", "pattern": "^rfr_[A-Za-z0-9_]+$" }, "planId": { "$ref": "common.schema.json#/$defs/id" },
     "planSha256": { "$ref": "common.schema.json#/$defs/sha256" }, "authorizationId": { "$ref": "common.schema.json#/$defs/id" },
-    "phase": { "enum": ["NOT_STARTED", "WRITE_REQUESTED", "WRITE_OUTCOME_UNKNOWN", "READBACK_VERIFIED", "RECONCILIATION_REQUIRED", "TARGET_DRIFTED", "BASELINE_STILL_PRESENT"] },
+    "phase": { "enum": ["NOT_STARTED", "WRITE_REQUESTED", "WRITE_REJECTED", "WRITE_OUTCOME_UNKNOWN", "READBACK_VERIFIED", "RECONCILIATION_REQUIRED", "TARGET_DRIFTED", "BASELINE_STILL_PRESENT"] },
     "expectedTarget": {
       "type": "object",
       "required": ["nid", "workId", "sha256", "configSha256", "settingsSha256", "routingSha256"],

@@ -45,6 +45,17 @@ export class RefreshApplyOrchestrator {
             });
             return this.#finalizeConfirmed(refreshId, confirmed);
           }
+          if (error?.details?.outcome === 'REJECTED_BY_PLATFORM'
+            && (!observed || this.#isExactBaseline(prepared.plan, observed))) {
+            this.refreshes.recordWriteRejected(refreshId, {
+              observedWorkId: observed?.workId || null,
+              observedSha256: observed?.sha256 || null,
+              errorCode: errorCode(error),
+            });
+            throw new WorkflowError('TARGET_PERMISSION_DENIED', 'Platform rejected the existing-target update for the current user', {
+              cause: errorCode(error),
+            });
+          }
           this.refreshes.recordWriteUnknown(refreshId, {
             observedWorkId: observed?.workId || null,
             observedSha256: observed?.sha256 || null,

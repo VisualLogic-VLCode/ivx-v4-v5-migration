@@ -40,7 +40,7 @@
 ### 2.3 AI 和数据所在位置
 
 - AI 推理发生在用户本地的 Codex、Claude Code 或以后支持的本地 Agent 中。
-- Workflow CLI 是状态和写入权限的唯一权威；聊天记录不是工作流状态来源。
+- Workflow CLI 是状态、用户授权和受管写入编排的唯一权威；成员权限由真实平台写接口裁决，聊天记录和本地角色字段都不是服务器权限来源。
 - Token 只由 Launcher/CLI 的安全输入和 Platform Adapter 在内存中使用，不进入 Agent 上下文、命令参数、Job、日志、诊断报告或知识反馈包。
 - 源/目标案例 JSON 以及用户输入都按“不可信数据”处理，不能把其中的文本当成工作流指令。
 
@@ -56,7 +56,7 @@
 
 ### 3.1 改造前已经具备
 
-- 使用用户自己的 Token 获取其有权参与的案例，并分别检查读取权限和另存权限。
+- 使用用户自己的 Token 获取其有权参与的案例，检查读取/对象身份；另存成员权限由实际写接口裁决，不在本地复制 `memberType`/Group 角色政策。
 - 根据平台元数据和 JSON 物理特征判断 V4、V5、歧义或不支持格式。
 - 锁定 Workflow/Converter 版本，调用 Converter 并保存 V4、V5 和结构化诊断。
 - 静态验证目标 JSON 的根结构、版本、节点 ID/引用、AST、`jsfn` 等问题。
@@ -165,7 +165,7 @@ flowchart TD
 ### 6.1 初次迁移
 
 1. Agent 检查 Launcher、Workflow、Converter、Agent 协议和 Knowledge Runtime 更新状态。
-2. CLI 使用用户 Token 读取源元数据，验证读取/另存权限；`gid` 未提供时由平台元数据识别，不猜测。
+2. CLI 使用用户 Token 读取源元数据，验证可读性与显式 `gid` 一致性；`gid` 未提供时不猜测，另存成员权限留给后续真实写接口。
 3. CLI 判定版本：
    - V4：继续；
    - V5：返回 `SKIPPED_ALREADY_V5`；
@@ -934,7 +934,7 @@ Converter 修复后由维护者发布新 Converter；用户更新后可以对原
 
 - 为 Migration Job 增加显式 `CREATE_ADDITIONAL_V5` 意图；恢复/重试仍只允许继续原 Job 和 journal。
 - 增加独立 Refresh Job、Refresh Plan、Refresh Authorization、Refresh Journal、目标操作租约和 Review 继任关系。
-- 增加源/目标判版、可信 lineage、独立读写权限、版本兼容、完整候选验证、目标身份改写、目标 CAS 与未知结果对账。
+- 增加源/目标判版、可信 lineage、独立源/目标可读性、平台权威写权限、版本兼容、完整候选验证、目标身份改写、目标 CAS 与未知结果对账。
 - 首版只做 content-only refresh，保留目标配置、settings、路由、预览与环境绑定；配置迁移不隐式附带。
 - 更新 Agent SOP 和协议；先发布兼容新协议的 Knowledge Release，再发布签名 Workflow 与 Agent 适配器。
 - 详细合同、状态机和验收矩阵见第 21 节。
@@ -1017,7 +1017,7 @@ Agent 不得把“再转一次”“继续”“重试”“更新原 V5”等�
 - 当前源经平台权威元数据和物理结构共同判定为 V4；
 - 当前目标经平台权威元数据和物理结构共同判定为 V5；
 - 已完成的 Workflow Migration Job 能证明 `source nid → target nid` lineage，且 lineage 的 source nid 与本次源一致；
-- 用户 Token 当前既能读取完整源，也拥有该目标的编辑/保存权限；Group 内源案例仍按相同流程处理，`gid` 只是源读取与权限上下文，不改变 Refresh 语义；
+- 用户 Token 当前能读取完整源和目标；Group 内源案例仍按相同流程处理，`gid` 只是源对象上下文，不改变 Refresh 语义；目标编辑/保存权限由 apply 的真实写接口裁决；
 - 当前 Workflow、Converter、Knowledge 组合兼容，转换器能够从当前完整 V4 生成候选；
 - 候选可序列化、平台可接受且通过整例结构校验；所有根因分类的已知诊断都必须列入 Refresh Plan。根因分类本身不是 refresh 白名单/黑名单；用户可明确接受带问题候选，但认证、服务器权限、平台控制面、revision/CAS、未知结果对账和 Saveable Checkpoint 仍是独立硬门禁，且任何问题都不能被隐藏或误报为已修复。
 
@@ -1067,7 +1067,7 @@ Refresh Plan 至少绑定：source nid/gid/workId/规范摘要、target nid/work
 
 ### 21.6 权限、授权和并发
 
-`prepare` 只读，并完成源读取权限、目标读取权限、目标编辑/保存权限的独立预检；不能用“源可另存”代替“目标可编辑”。它固定目标基线但不在等待用户审阅期间长期占锁。`apply`/`reconcile` 与 Runtime Repair/Runtime cycle 准备共用目标级独占操作租约；真正进入写入前还要重做权限与 CAS，同一目标不能并发开始 Repair、Refresh 或新的运行时写周期。
+`prepare` 只读，并完成源/目标读取、目标身份和基线预检；它不根据 `memberType`、Group owner 或部署例外声称目标可编辑。它固定目标基线但不在等待用户审阅期间长期占锁。`apply`/`reconcile` 与 Runtime Repair/Runtime cycle 准备共用目标级独占操作租约；真正写入前重做 CAS，由目标保存接口裁决当前 Token 的成员权限，同一目标不能并发开始 Repair、Refresh 或新的运行时写周期。
 
 Refresh Authorization 由用户单独授予，必须绑定：
 
@@ -1078,19 +1078,20 @@ Refresh Authorization 由用户单独授予，必须绑定：
 - 最多一次确认成功的目标 revision；
 - 到期时间。
 
-它不能复用 Save As 授权、Review Repair 授权或全局 `writeMode`。apply 在写前重新读取源和目标；任一 revision、内容、配置、权限或兼容版本漂移都使计划失效，必须重新 prepare，不能由 Agent 修改计划字段来续用旧授权。
+它不能复用 Save As 授权、Review Repair 授权或全局 `writeMode`。apply 在写前重新读取源和目标；任一 revision、内容、配置或兼容版本漂移都使计划失效，必须重新 prepare，不能由 Agent 修改计划字段来续用旧授权。平台结构化拒绝会阻断该一次性计划；不确定响应只允许对账，不能重放。
 
 ### 21.7 状态机与未知结果
 
 ```mermaid
 stateDiagram-v2
     [*] --> REFRESH_PREPARING
-    REFRESH_PREPARING --> REFRESH_PLAN_READY: 判版、lineage、权限、转换与校验通过
+    REFRESH_PREPARING --> REFRESH_PLAN_READY: 判版、lineage、可读性、转换与校验通过
     REFRESH_PREPARING --> REFRESH_BLOCKED: 任一硬前提失败
     REFRESH_PLAN_READY --> AWAITING_REFRESH_AUTHORIZATION
     AWAITING_REFRESH_AUTHORIZATION --> REFRESH_READY_TO_APPLY: 用户授权精确计划
-    REFRESH_READY_TO_APPLY --> REFRESH_PLAN_STALE: 源/目标/配置/权限/版本漂移
+    REFRESH_READY_TO_APPLY --> REFRESH_PLAN_STALE: 源/目标/配置/版本漂移
     REFRESH_READY_TO_APPLY --> REFRESH_WRITE_REQUESTED: CAS 通过且 journal 已落盘
+    REFRESH_WRITE_REQUESTED --> REFRESH_BLOCKED: 平台明确拒绝当前 Token 写入
     REFRESH_WRITE_REQUESTED --> TARGET_REFRESHED: 读回内容匹配候选
     REFRESH_WRITE_REQUESTED --> REFRESH_RECONCILIATION_REQUIRED: 响应丢失或读回不确定
     REFRESH_RECONCILIATION_REQUIRED --> TARGET_REFRESHED: 后续读回匹配候选
@@ -1137,8 +1138,8 @@ Knowledge Runtime `0.1.4` 是 compatibility-only 发布：它把协议兼容上�
 - 恢复或重试原 Job 不会新建 nid；
 - Refresh 使用当前 V4 更新既有 V5，target nid 不变、内容匹配候选、目标配置摘要不变；
 - Refresh 成功后旧 Review 只读 supersede，新 Review 绑定新 revision；
-- source 已是 V5、target 不是 V5、lineage 不匹配、目标无编辑权限、组合版本不兼容时均在写前阻断；
-- prepare 后源 revision、目标内容、目标配置或权限漂移时旧 plan/authorization 失效；
+- source 已是 V5、target 不是 V5、lineage 不匹配、源/目标不可读取、组合版本不兼容时均在写前阻断；目标编辑权限由平台写接口在 apply 时明确允许或拒绝；
+- prepare 后源 revision、目标内容或目标配置漂移时旧 plan/authorization 失效；
 - 所有根因分类的已知诊断都完整显示；硬写入前提满足并由用户精确授权时可生成诊断 refresh，但不会被报告成问题已修复；
 - 写响应丢失时，candidate 匹配可确认成功，冲突漂移进入对账，旧 baseline 不自动重放；
 - 中断后新 Agent 会话可从 Refresh Job/journal 恢复，不依赖聊天记忆；

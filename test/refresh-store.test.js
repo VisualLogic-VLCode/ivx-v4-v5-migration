@@ -141,6 +141,25 @@ test('RefreshStore never turns an unchanged unknown outcome into an automatic re
   }
 });
 
+test('RefreshStore records an exact-baseline platform rejection as blocked, not unknown', () => {
+  const setup = setupStore();
+  try {
+    const { store, refresh, authorization, plan } = setup;
+    store.authorize(refresh.refreshId, authorization);
+    store.markWriteRequested(refresh.refreshId, authorization.authorizationId);
+    const result = store.recordWriteRejected(refresh.refreshId, {
+      observedWorkId: plan.target.workId,
+      observedSha256: plan.target.sha256,
+      errorCode: 'PLATFORM_PERMISSION_DENIED',
+    });
+    assert.equal(result.refresh.status, 'REFRESH_BLOCKED');
+    assert.equal(result.journal.phase, 'WRITE_REJECTED');
+    assert.equal(result.journal.attempts.at(-1).status, 'REJECTED_BY_PLATFORM');
+  } finally {
+    fs.rmSync(setup.temporary, { recursive: true, force: true });
+  }
+});
+
 test('RefreshStore confirms only a revision-advanced candidate read-back', () => {
   const setup = setupStore();
   try {

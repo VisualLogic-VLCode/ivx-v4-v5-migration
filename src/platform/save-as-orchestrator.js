@@ -260,6 +260,13 @@ export class SaveAsOrchestrator {
         invariant(Number.isSafeInteger(Number(created?.nid)) && Number(created.nid) > 0, 'PLATFORM_RESPONSE_INVALID', 'Save As response has no target nid');
         invariant(typeof created?.workId === 'string' && created.workId, 'PLATFORM_RESPONSE_INVALID', 'Save As response has no target workId');
       } catch (error) {
+        if (error?.details?.outcome === 'REJECTED_BY_PLATFORM') {
+          journal.phase = 'CREATE_REJECTED';
+          this.record(journal, 'save-as-create', 'REJECTED_BY_PLATFORM', { error: publicError(error) });
+          this.persist(jobId, journal);
+          this.transitionIfNeeded(jobId, 'TARGET_PERMISSION_DENIED', 'save-as-create-rejected-by-platform');
+          throw new WorkflowError('TARGET_PERMISSION_DENIED', 'Platform rejected the Save As request for the current user', { cause: publicError(error) });
+        }
         journal.phase = 'CREATE_OUTCOME_UNKNOWN';
         this.record(journal, 'save-as-create', 'OUTCOME_UNKNOWN', { error: publicError(error) });
         this.persist(jobId, journal);

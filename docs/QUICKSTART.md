@@ -88,12 +88,16 @@ ivx-migrate platform preflight --nid 11064050
 ivx-migrate migrate --nid 11064050
 ```
 
+`platform preflight` 是建议性预检：它证明源案例可读取并返回当前对象上下文，但不根据 `memberType` 或 Group 所有者关系裁决另存权限。只有真正保存时，平台写接口才会判定当前 Token 是否允许操作。
+
 只有用户明确知道且平台上下文确实需要时，才同时传入可选的 `gid`；Agent 不得猜测：
 
 ```bash
 ivx-migrate platform preflight --nid 12226286 --gid 25391
 ivx-migrate migrate --nid 12226286 --gid 25391
 ```
+
+如果提供 `gid`，预检仍会强制校验它与平台源对象的 gid 完全一致；这是对象身份检查，与成员写权限无关。
 
 不加 `--save` 时不会创建 V5 案例。常见结果：
 

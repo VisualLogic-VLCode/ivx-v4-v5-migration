@@ -84,7 +84,7 @@ ivx-migrate update check
 
 如果签名通道报告更新，先运行 `ivx-migrate update apply`，按提示重新启动命令，再重复 `doctor` 和 `update check`。不得通过 `git pull` 或直接修改安装目录来更新。
 
-## 5. Agent 执行只读权限预检
+## 5. Agent 执行只读对象预检
 
 分别将 `<PERSONAL_NID>`、`<GROUP_NID>` 替换为维护者提供的数字。两个预检都**不要传 `--gid`**：
 
@@ -93,15 +93,15 @@ ivx-migrate platform preflight --nid <PERSONAL_NID>
 ivx-migrate platform preflight --nid <GROUP_NID>
 ```
 
-案例 A 预期为 `allowed=true`、`decision=ALLOWED`，权限原因应说明当前用户是个人案例成员/所有者。案例 B 只有在当前部署的服务端策略确认普通参与者可另存时才预期 `ALLOWED`；`UNKNOWN_SERVER_POLICY` 是必须停止的安全结果，不能绕过，也不能算作 Group 权限通过。
+案例 A、B 只要当前 Token 能读取源对象，都预期为 `allowed=true`、`decision=ALLOWED`、`reason=PLATFORM_WRITE_AUTHORITY`。该结果只证明对象可读取且显式 gid（本阶段未提供）没有冲突，不证明当前用户能另存。Workflow 不再根据 `memberType`、Group 所有者或 `AdminEid` 复制一套权限政策；Group 普通参与者的真实另存能力必须在第 11.2 节经单独授权后由 Save As 接口验证。
 
 记录两个案例各自的 `decision` 和 `reason`，不要粘贴完整源元数据、案例标题、用户 ID、Group ID 或 `workId`。第一阶段输入和最终 Job 中的 `gid` 都应保持 `null`。
 
 安全停止规则：
 
 - `AUTH_FAILED`：macOS 上由 Agent 再次执行 `setup --prompt-token`，测试用户只在原生安全输入框更新 Token，然后可以重新预检一次；仍失败则停止，不要把 Token 发给维护者；
-- `SOURCE_PERMISSION_DENIED` 或 `UNKNOWN_SERVER_POLICY`：只停止受影响的案例并提交结果，不尝试绕过权限；案例 A 不受影响时仍可继续；
-- Group 关系无法由平台权限结果确认：停止案例 B 并记录，不在本轮改传 `gid` 掩盖问题；
+- `SOURCE_PERMISSION_DENIED`：只停止无法读取的案例并提交结果，不尝试绕过权限；案例 A 不受影响时仍可继续；
+- `SOURCE_GID_MISMATCH`：停止并核对调用方提供的 gid；本轮不得猜测或改传 gid 掩盖对象身份问题；
 - 任何未知平台错误：停止，不反复请求。
 
 ## 6. Agent 转换、诊断并验证，但不保存
@@ -163,7 +163,7 @@ Agent 可以读取 Job 的 `state.json` 和 `reports/`，但不得读取 Token �
 
 - 公开 Launcher 可安装，签名 Workflow/Converter 可安装或更新；
 - `doctor` 的平台、Token 来源、运行时和 Agent 状态正常；
-- 只传 `nid` 的预检能够以测试用户自己的权限得到 `ALLOWED`；
+- 只传 `nid` 的预检能够以测试用户自己的 Token 读取对象并得到 advisory `ALLOWED`；该结果不记作另存权限通过；
 - 源案例被确认判定为受支持 V4；
 - Job 到达 `READY_TO_SAVE`，validation `blockerCount=0`；
 - diagnostics 可用，`droppedTotal=0`，所有 truncation 字段为 `false`；
@@ -176,8 +176,8 @@ Agent 可以读取 Job 的 `state.json` 和 `reports/`，但不得读取 Token �
 
 - 测试用户确实只是 Group 普通参与者，不是案例创建者或 Group 所有者；
 - 所有命令未传 `gid`，Job 输入 `gid=null`；
-- 若服务端返回 `ALLOWED`，后续转换也必须满足上述完整标准，才能记为“Group 参与者权限通过”；
-- 若返回 `UNKNOWN_SERVER_POLICY` 或明确拒绝，则记为“权限安全停止”；这证明工作流没有绕过权限，但不算 Group 权限通过。
+- 只读预检和转换满足上述完整标准，只能记为“Group 参与者读取/转换通过”；
+- “Group 参与者另存权限通过”只能由第 11.2 节单独授权的真实 Save As 成功和回读证明；明确拒绝或不确定结果都不能算通过。
 
 ## 10. 后续真实另存是独立阶段
 
@@ -236,6 +236,7 @@ Agent 可以读取 Job 的 `state.json` 和 `reports/`，但不得读取 Token �
 
 结果必须区分：
 
-- 权限预检 `ALLOWED` 且最终 `SUCCEEDED`：Group 普通参与者读取、转换和另存完整通过；
-- 权限安全停止：证明没有绕过权限，但不能算 Group 权限能力通过；
-- 转换通过但另存失败：读取/转换链通过，Group 另存能力未通过。
+- advisory 预检 `ALLOWED` 且最终 `SUCCEEDED`：Group 普通参与者读取、转换和平台另存完整通过；
+- Save As 返回结构化 `TARGET_PERMISSION_DENIED`：平台明确拒绝本次写入，Workflow 未绕过也未重放，Group 另存能力未通过；
+- Save As 结果不确定：保留同一 Job 进入恢复/对账，禁止重复创建，不能据此判断权限通过或拒绝；
+- 转换通过但另存未成功：读取/转换链通过，Group 另存能力未通过。

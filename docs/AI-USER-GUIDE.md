@@ -15,7 +15,7 @@
 ### 只检查和转换，不创建 V5 案例
 
 ```text
-请使用 v4-to-v5-workflow，检查并转换 nid <NID>，完成判版、权限预检、诊断和验证，但不要创建 V5 案例。
+请使用 v4-to-v5-workflow，检查并转换 nid <NID>，完成判版、对象预检、诊断和验证，但不要创建 V5 案例。
 ```
 
 这类请求没有平台写入授权。转换通过时停在 `READY_TO_SAVE`。
@@ -32,7 +32,7 @@
 
 如果源案例已经是 V5、版本不明确、当前用户无权限或当前平台条件不满足，工作流会安全停止，而不是强行调用 Converter 或另存。
 
-个人案例与 Group 案例使用完全相同的判版、转换、诊断、验证、另存和运行时测试流程，用户通常只需提供 `nid`。只有用户明确知道且平台上下文确实需要时才同时提供 `gid`；Agent 不得猜测。Group 的实际读取和另存能力以平台权限预检结果为准。
+个人案例与 Group 案例使用完全相同的判版、转换、诊断、验证、另存和运行时测试流程，用户通常只需提供 `nid`。只有用户明确知道且平台上下文确实需要时才同时提供 `gid`；Agent 不得猜测。只读预检确认案例可读取并校验显式 `gid`，但不根据 `memberType` 或 Group 所有者关系预判另存能力；Group 与个人案例的实际另存/更新权限都由当前 Token 调用的真实写接口决定。
 
 下面的 Additional V5 与 Existing Target Refresh 需要 Workflow `0.6.0`、Agent protocol 7 以及兼容的 Knowledge Runtime。旧运行时必须先通过签名更新完成整组兼容检查，不能只照抄新命令。
 
@@ -50,9 +50,9 @@ Agent 会创建带 `CREATE_ADDITIONAL_V5` 意图的新 Job，并执行一条新�
 请使用 v4-to-v5-workflow，用当前 V4 nid <SOURCE_NID> 的内容刷新已有 V5 nid <TARGET_NID>，保留目标 nid 和目标配置。先准备并向我汇报计划，等我确认后再写入。
 ```
 
-Agent 先执行只读 Refresh prepare：证明该目标来自相同源案例的受管迁移历史，独立检查目标编辑权限，确认源仍是 V4、目标仍是 V5，并固定当前 revision、内容、目标配置摘要、转换候选、诊断和到期时间。目标域名、settings、路由、环境绑定与配置值默认保留，不会从源案例复制，私有 Refresh 产物中也不保存这些配置值。
+Agent 先执行只读 Refresh prepare：证明该目标来自相同源案例的受管迁移历史，确认源/目标可读取、源仍是 V4、目标仍是 V5，并固定当前 revision、内容、目标配置摘要、转换候选、诊断和到期时间。prepare 不根据本地角色字段证明编辑权限；目标域名、settings、路由、环境绑定与配置值默认保留，不会从源案例复制，私有 Refresh 产物中也不保存这些配置值。
 
-用户确认的是这一份精确计划，而不是长期写权限。写入前 Workflow 会再次核对 runtime、权限、源/目标内容和配置摘要；任何变化都会让计划失效。响应不确定时只允许对账，不能自动重放。确认成功后旧写 Review 变为只读 `REVIEW_SUPERSEDED_BY_REFRESH`，新 Review 从 Environment Gate 重新开始，不继承旧 parity、修复预算或授权。
+用户确认的是这一份精确计划，而不是长期写权限。写入前 Workflow 会再次核对 runtime、源/目标内容和配置摘要，随后由目标写接口判定当前 Token 是否允许更新；确定性内容变化会让计划失效。平台明确拒绝时停止，响应不确定时只允许对账，不能自动重放。确认成功后旧写 Review 变为只读 `REVIEW_SUPERSEDED_BY_REFRESH`，新 Review 从 Environment Gate 重新开始，不继承旧 parity、修复预算或授权。
 
 ### 转换后自动进行运行时测试和受限修复
 

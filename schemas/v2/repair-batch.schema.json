@@ -8,13 +8,13 @@
     "schemaVersion": { "const": 2 }, "kind": { "const": "repair-batch" },
     "batchId": { "$ref": "common.schema.json#/$defs/id" }, "reviewId": { "$ref": "common.schema.json#/$defs/reviewId" },
     "attemptIds": { "$ref": "common.schema.json#/$defs/stringArray", "minItems": 1, "maxItems": 50 }, "clusterIds": { "$ref": "common.schema.json#/$defs/stringArray", "minItems": 1, "maxItems": 50 },
-    "state": { "enum": ["LOCAL_VALIDATED", "WRITE_REQUESTED", "WRITE_OUTCOME_UNKNOWN", "READBACK_VERIFIED", "RECONCILIATION_REQUIRED", "RUNTIME_TESTING", "RUNTIME_VERIFIED", "RUNTIME_FAILED", "RUNTIME_INCONCLUSIVE"] },
+    "state": { "enum": ["LOCAL_VALIDATED", "WRITE_REQUESTED", "WRITE_REJECTED", "WRITE_OUTCOME_UNKNOWN", "READBACK_VERIFIED", "RECONCILIATION_REQUIRED", "RUNTIME_TESTING", "RUNTIME_VERIFIED", "RUNTIME_FAILED", "RUNTIME_INCONCLUSIVE"] },
     "authorizationId": { "$ref": "common.schema.json#/$defs/id" },
     "expectedTarget": { "type": "object", "required": ["nid", "workId", "sha256"], "properties": { "nid": { "type": "integer", "minimum": 1 }, "workId": { "type": "string", "minLength": 1 }, "sha256": { "$ref": "common.schema.json#/$defs/sha256" } }, "additionalProperties": false },
     "candidate": { "type": "object", "required": ["checkpointId", "artifact", "sha256"], "properties": { "checkpointId": { "$ref": "common.schema.json#/$defs/id" }, "artifact": { "$ref": "common.schema.json#/$defs/safeRelativePath" }, "sha256": { "$ref": "common.schema.json#/$defs/sha256" } }, "additionalProperties": false },
     "affectedScenarioIds": { "$ref": "common.schema.json#/$defs/stringArray", "maxItems": 100 },
     "affectedNativeRunIds": { "$ref": "common.schema.json#/$defs/stringArray", "maxItems": 1000 },
-    "write": { "type": "object", "required": ["requestedAt", "outcome", "observedWorkId", "observedSha256", "errorCode"], "properties": { "requestedAt": { "oneOf": [{ "$ref": "common.schema.json#/$defs/dateTime" }, { "type": "null" }] }, "outcome": { "enum": ["NOT_ATTEMPTED", "REQUESTED", "UNKNOWN", "VERIFIED", "RECONCILIATION_REQUIRED"] }, "observedWorkId": { "type": ["string", "null"] }, "observedSha256": { "oneOf": [{ "$ref": "common.schema.json#/$defs/sha256" }, { "type": "null" }] }, "errorCode": { "type": ["string", "null"] } }, "additionalProperties": false },
+    "write": { "type": "object", "required": ["requestedAt", "outcome", "observedWorkId", "observedSha256", "errorCode"], "properties": { "requestedAt": { "oneOf": [{ "$ref": "common.schema.json#/$defs/dateTime" }, { "type": "null" }] }, "outcome": { "enum": ["NOT_ATTEMPTED", "REQUESTED", "REJECTED_BY_PLATFORM", "UNKNOWN", "VERIFIED", "RECONCILIATION_REQUIRED"] }, "observedWorkId": { "type": ["string", "null"] }, "observedSha256": { "oneOf": [{ "$ref": "common.schema.json#/$defs/sha256" }, { "type": "null" }] }, "errorCode": { "type": ["string", "null"] } }, "additionalProperties": false },
     "createdAt": { "$ref": "common.schema.json#/$defs/dateTime" }, "updatedAt": { "$ref": "common.schema.json#/$defs/dateTime" }, "createdBy": { "const": "CLI" }, "sensitivity": { "const": "PRIVATE" }
   },
   "anyOf": [

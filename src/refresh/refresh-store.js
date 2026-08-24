@@ -240,6 +240,21 @@ export class RefreshStore {
     });
   }
 
+  recordWriteRejected(refreshId, { observedWorkId = null, observedSha256 = null, errorCode = 'PLATFORM_PERMISSION_DENIED' } = {}) {
+    return this.#mutateJournal(refreshId, ['REFRESH_WRITE_REQUESTED'], 'REFRESH_BLOCKED', (journal, at) => {
+      if (observedWorkId !== null || observedSha256 !== null) {
+        invariant(
+          observedWorkId === journal.expectedTarget.workId && observedSha256 === journal.expectedTarget.sha256,
+          'REFRESH_REJECTION_BASELINE_MISMATCH',
+          'A rejected Refresh write may be finalized only with the exact target baseline',
+        );
+      }
+      journal.phase = 'WRITE_REJECTED';
+      journal.write = { ...journal.write, observedWorkId, observedSha256, errorCode };
+      journal.attempts.push({ operation: 'target-refresh-write', status: 'REJECTED_BY_PLATFORM', at, errorCode });
+    });
+  }
+
   adoptWriteJournalForReconciliation(refreshId, errorCode = 'REFRESH_PROCESS_INTERRUPTED') {
     const refresh = this.load(refreshId);
     if (refresh.status === 'REFRESH_RECONCILIATION_REQUIRED') {

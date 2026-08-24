@@ -57,7 +57,7 @@ test('platform adapter uses an in-memory bearer token and decodes work', async (
   assert.equal(JSON.stringify(adapter).includes(token), false);
 });
 
-test('platform adapter preflight separates personal allow, role deny, and group uncertainty', async () => {
+test('platform adapter preflight delegates member permission to platform writes while retaining gid consistency', async () => {
   const cases = new Map([
     [10, { nid: 10, workId: 'a-1', gid: 0, memberType: 3 }],
     [11, { nid: 11, workId: 'b-1', gid: 0, memberType: 4 }],
@@ -72,18 +72,107 @@ test('platform adapter preflight separates personal allow, role deny, and group 
       const pathname = new URL(url).pathname;
       const body = options.body ? JSON.parse(options.body) : {};
       if (pathname.endsWith('/work/get')) return response(cases.get(body.nid));
-      if (pathname.endsWith('/userinfo')) return response({ id: 500 });
-      if (pathname.endsWith('/workGroup/get')) return response({ gid: body.gid, uid: body.gid === 98 ? 500 : 600 });
       throw new Error(`Unexpected ${pathname}`);
     },
   });
-  assert.equal((await adapter.preflightSaveAs({ nid: 10 })).decision, 'ALLOWED');
-  assert.equal((await adapter.preflightSaveAs({ nid: 11 })).decision, 'DENIED');
-  assert.equal((await adapter.preflightSaveAs({ nid: 12, gid: 99 })).decision, 'UNKNOWN');
-  assert.equal((await adapter.preflightSaveAs({ nid: 13, gid: 98 })).reason, 'GROUP_OWNER');
-  assert.equal((await adapter.preflightTargetUpdate({ nid: 10 })).decision, 'ALLOWED');
-  assert.equal((await adapter.preflightTargetUpdate({ nid: 11 })).reason, 'TARGET_ROLE_NOT_EDITABLE');
-  assert.equal((await adapter.preflightTargetUpdate({ nid: 12 })).decision, 'UNKNOWN');
+  for (const nid of [10, 11, 12, 13]) {
+    const decision = await adapter.preflightSaveAs({ nid, ...(nid >= 12 ? { gid: cases.get(nid).gid } : {}) });
+    assert.equal(decision.allowed, true);
+    assert.equal(decision.decision, 'ALLOWED');
+    assert.equal(decision.reason, 'PLATFORM_WRITE_AUTHORITY');
+  }
+  const mismatched = await adapter.preflightSaveAs({ nid: 12, gid: 98 });
+  assert.equal(mismatched.allowed, false);
+  assert.equal(mismatched.decision, 'DENIED');
+  assert.equal(mismatched.reason, 'SOURCE_GID_MISMATCH');
+  for (const nid of [10, 11, 12]) {
+    const decision = await adapter.preflightTargetUpdate({ nid });
+    assert.equal(decision.allowed, true);
+    assert.equal(decision.reason, 'PLATFORM_WRITE_AUTHORITY');
+  }
+});
+
+test('platform adapter recognizes only structured Save As permission rejection as definite', async () => {
+  const groupPermission = {
+    id: 'editor',
+    code: 400,
+    detail: '不允许非组拥有者另存为案例到当前组',
+    status: 'Bad Request',
+    key: '不允许非组拥有者另存为案例到当前组',
+  };
+  const adapter = new IvxPlatformAdapter({
+    baseUrl: 'http://localhost:3000',
+    token: 'permission-token-must-not-leak',
+    writesEnabled: true,
+    allowInsecureLocalhost: true,
+    fetchImpl: async () => response({
+      id: 'resource',
+      code: 500,
+      detail: JSON.stringify(groupPermission),
+      status: 'Internal Server Error',
+    }, { status: 500 }),
+  });
+  await assert.rejects(adapter.saveAsV5({ sourceNid: 10, work }), (error) => {
+    assert.equal(error.code, 'PLATFORM_PERMISSION_DENIED');
+    assert.equal(error.details.outcome, 'REJECTED_BY_PLATFORM');
+    assert.equal(error.details.platformError.id, 'editor');
+    assert.equal(error.details.platformError.code, 400);
+    assert.equal(JSON.stringify(error).includes('permission-token-must-not-leak'), false);
+    return true;
+  });
+
+  const unknown = new IvxPlatformAdapter({
+    baseUrl: 'http://localhost:3000',
+    token: 'token',
+    writesEnabled: true,
+    allowInsecureLocalhost: true,
+    fetchImpl: async () => response({ id: 'resource', code: 500, detail: 'copy failed', status: 'Internal Server Error' }, { status: 500 }),
+  });
+  await assert.rejects(unknown.saveAsV5({ sourceNid: 10, work }), (error) => {
+    assert.equal(error.code, 'PLATFORM_HTTP_FAILED');
+    assert.equal(error.details.outcome, 'UNKNOWN_AFTER_WRITE_ATTEMPT');
+    return true;
+  });
+});
+
+test('platform adapter treats target-save member rejection as definite but keeps generic 4xx unknown', async () => {
+  const denied = new IvxPlatformAdapter({
+    baseUrl: 'http://localhost:3000',
+    token: 'token',
+    writesEnabled: true,
+    allowInsecureLocalhost: true,
+    fetchImpl: async () => response({ id: 'resource', code: 403, detail: 'you are not allow to do this', status: 'Forbidden' }, { status: 403 }),
+  });
+  await assert.rejects(denied.saveWork({ targetNid: 10, workId: 'target-work-1', work }), (error) => {
+    assert.equal(error.code, 'PLATFORM_PERMISSION_DENIED');
+    assert.equal(error.details.outcome, 'REJECTED_BY_PLATFORM');
+    return true;
+  });
+
+  const generic = new IvxPlatformAdapter({
+    baseUrl: 'http://localhost:3000',
+    token: 'token',
+    writesEnabled: true,
+    allowInsecureLocalhost: true,
+    fetchImpl: async () => response({ id: 'resource', code: 400, detail: 'invalid payload', status: 'Bad Request' }, { status: 400 }),
+  });
+  await assert.rejects(generic.saveWork({ targetNid: 10, workId: 'target-work-1', work }), (error) => {
+    assert.equal(error.details.outcome, 'UNKNOWN_AFTER_WRITE_ATTEMPT');
+    return true;
+  });
+
+  const unstructuredForbidden = new IvxPlatformAdapter({
+    baseUrl: 'http://localhost:3000',
+    token: 'token',
+    writesEnabled: true,
+    allowInsecureLocalhost: true,
+    fetchImpl: async () => response('forbidden', { status: 403 }),
+  });
+  await assert.rejects(unstructuredForbidden.saveWork({ targetNid: 10, workId: 'target-work-1', work }), (error) => {
+    assert.equal(error.code, 'PLATFORM_PERMISSION_DENIED');
+    assert.equal(error.details.outcome, 'UNKNOWN_AFTER_WRITE_ATTEMPT');
+    return true;
+  });
 });
 
 test('target routing snapshot prefers settings over work metadata without retaining unrelated fields', () => {
@@ -286,7 +375,7 @@ test('platform adapter normalizes the real HTTP 203 login filter before endpoint
   });
   await assert.rejects(writeAdapter.saveAsV5({ sourceNid: 10, work }), (error) => {
     assert.equal(error.code, 'PLATFORM_AUTH_FAILED');
-    assert.equal(error.details.outcome, 'UNKNOWN_AFTER_WRITE_ATTEMPT');
+    assert.equal(error.details.outcome, 'REJECTED_BY_PLATFORM');
     assert.equal(JSON.stringify(error).includes('expired-write-token'), false);
     return true;
   });

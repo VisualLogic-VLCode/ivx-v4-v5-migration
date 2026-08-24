@@ -87,6 +87,7 @@ class FakeAdapter {
     this.failRoutingUnknownBeforeWrite = false;
     this.failRoutingOnceKnown = false;
     this.failCreateOutcome = false;
+    this.failCreateRejected = false;
     this.invalidCreateResponse = false;
     this.forcePostSaveMismatch = false;
     this.permissionDecision = { allowed: true, decision: 'ALLOWED', reason: 'TEST' };
@@ -142,6 +143,12 @@ class FakeAdapter {
   }
   async saveAsV5() {
     this.calls.create += 1;
+    if (this.failCreateRejected) {
+      throw Object.assign(new Error('platform denied creation'), {
+        code: 'PLATFORM_PERMISSION_DENIED',
+        details: { outcome: 'REJECTED_BY_PLATFORM' },
+      });
+    }
     if (this.failCreateOutcome) throw Object.assign(new Error('connection lost'), { code: 'PLATFORM_NETWORK_FAILED' });
     if (this.invalidCreateResponse) return {};
     return structuredClone(this.targetInfo);
@@ -504,13 +511,28 @@ test('unknown target creation outcome is never replayed automatically', async ()
   }
 });
 
-test('unknown group permission never reaches target creation', async () => {
+test('definite platform Save As rejection terminates as permission denied rather than unknown', async () => {
   const context = fixture();
-  context.adapter.permissionDecision = { allowed: false, decision: 'UNKNOWN', reason: 'UNKNOWN_SERVER_POLICY' };
+  context.adapter.failCreateRejected = true;
   try {
-    await assert.rejects(context.orchestrator.run(context.job.jobId), { code: 'TARGET_PERMISSION_UNKNOWN' });
+    await assert.rejects(context.orchestrator.run(context.job.jobId), { code: 'TARGET_PERMISSION_DENIED' });
+    assert.equal(context.jobs.load(context.job.jobId).status, 'TARGET_PERMISSION_DENIED');
+    assert.equal(context.adapter.calls.create, 1);
+    const journal = JSON.parse(fs.readFileSync(context.orchestrator.journalFile(context.job.jobId), 'utf8'));
+    assert.equal(journal.phase, 'CREATE_REJECTED');
+    assert.equal(journal.target.nid, undefined);
+  } finally {
+    fs.rmSync(context.temporary, { recursive: true, force: true });
+  }
+});
+
+test('deterministic preflight denial still never reaches target creation', async () => {
+  const context = fixture();
+  context.adapter.permissionDecision = { allowed: false, decision: 'DENIED', reason: 'SOURCE_GID_MISMATCH' };
+  try {
+    await assert.rejects(context.orchestrator.run(context.job.jobId), { code: 'TARGET_PERMISSION_DENIED' });
     assert.equal(context.adapter.calls.create, 0);
-    assert.equal(context.jobs.load(context.job.jobId).status, 'READY_TO_SAVE');
+    assert.equal(context.jobs.load(context.job.jobId).status, 'TARGET_PERMISSION_DENIED');
   } finally {
     fs.rmSync(context.temporary, { recursive: true, force: true });
   }

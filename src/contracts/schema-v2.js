@@ -116,6 +116,7 @@ export const REPAIR_AUTHORIZATION_SCOPES = Object.freeze(['INITIAL', 'EXTENSION'
 export const REPAIR_BATCH_STATES = Object.freeze([
   'LOCAL_VALIDATED',
   'WRITE_REQUESTED',
+  'WRITE_REJECTED',
   'WRITE_OUTCOME_UNKNOWN',
   'READBACK_VERIFIED',
   'RECONCILIATION_REQUIRED',
@@ -184,6 +185,7 @@ export const REFRESH_STATUSES = Object.freeze([
 export const REFRESH_JOURNAL_PHASES = Object.freeze([
   'NOT_STARTED',
   'WRITE_REQUESTED',
+  'WRITE_REJECTED',
   'WRITE_OUTCOME_UNKNOWN',
   'READBACK_VERIFIED',
   'RECONCILIATION_REQUIRED',
@@ -1745,7 +1747,7 @@ export function validateRepairBatch(document) {
   if (document.affectedNativeRunIds !== undefined) uniqueStrings(document.affectedNativeRunIds, '$.affectedNativeRunIds', { max: 1000 });
   exactKeys(document.write, ['requestedAt', 'outcome', 'observedWorkId', 'observedSha256', 'errorCode'], ['requestedAt', 'outcome', 'observedWorkId', 'observedSha256', 'errorCode'], '$.write');
   nullableIsoDate(document.write.requestedAt, '$.write.requestedAt');
-  enumValue(document.write.outcome, ['NOT_ATTEMPTED', 'REQUESTED', 'UNKNOWN', 'VERIFIED', 'RECONCILIATION_REQUIRED'], '$.write.outcome');
+  enumValue(document.write.outcome, ['NOT_ATTEMPTED', 'REQUESTED', 'REJECTED_BY_PLATFORM', 'UNKNOWN', 'VERIFIED', 'RECONCILIATION_REQUIRED'], '$.write.outcome');
   nullableString(document.write.observedWorkId, '$.write.observedWorkId', { max: 256 });
   nullableSha256(document.write.observedSha256, '$.write.observedSha256');
   nullableString(document.write.errorCode, '$.write.errorCode', { max: 128 });

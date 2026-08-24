@@ -51,9 +51,21 @@ class FakeAdapter {
   }
   async saveWork({ work }) {
     this.saveCalls += 1;
+    if (this.failMode === 'REJECTED') {
+      throw Object.assign(new Error('platform denied target update'), {
+        code: 'PLATFORM_PERMISSION_DENIED',
+        details: { outcome: 'REJECTED_BY_PLATFORM' },
+      });
+    }
     if (this.failMode !== 'NO_WRITE') {
       this.targetWork = structuredClone(work);
       this.targetInfo.workId = 'target-work-2';
+    }
+    if (this.failMode === 'REJECTED_AFTER_WRITE') {
+      throw Object.assign(new Error('contradictory platform denial after target change'), {
+        code: 'PLATFORM_PERMISSION_DENIED',
+        details: { outcome: 'REJECTED_BY_PLATFORM' },
+      });
     }
     if (this.failMode) throw Object.assign(new Error('response lost'), { code: 'PLATFORM_NETWORK_FAILED' });
     return { workId: this.targetInfo.workId };
@@ -215,6 +227,35 @@ test('Refresh unknown write with the original baseline requires reconcile and ne
     assert.equal(reconciled.refresh.status, 'REFRESH_OUTCOME_UNKNOWN');
     assert.equal(context.adapter.saveCalls, 1);
     await assert.rejects(context.orchestrator.run(context.refresh.refreshId, context.authorization.authorizationId), { code: 'REFRESH_STATE_MISMATCH' });
+  } finally {
+    fs.rmSync(context.temporary, { recursive: true, force: true });
+  }
+});
+
+test('Refresh platform permission rejection with exact baseline blocks without unknown reconciliation', async () => {
+  const context = fixture();
+  context.adapter.failMode = 'REJECTED';
+  try {
+    await assert.rejects(context.orchestrator.run(context.refresh.refreshId, context.authorization.authorizationId), { code: 'TARGET_PERMISSION_DENIED' });
+    assert.equal(context.store.load(context.refresh.refreshId).status, 'REFRESH_BLOCKED');
+    const journal = context.store.loadJournal(context.refresh.refreshId);
+    assert.equal(journal.phase, 'WRITE_REJECTED');
+    assert.equal(journal.write.observedWorkId, context.plan.target.workId);
+    assert.equal(context.adapter.saveCalls, 1);
+    await assert.rejects(context.orchestrator.run(context.refresh.refreshId, context.authorization.authorizationId), { code: 'REFRESH_STATE_MISMATCH' });
+  } finally {
+    fs.rmSync(context.temporary, { recursive: true, force: true });
+  }
+});
+
+test('Refresh candidate read-back wins over a contradictory rejection response', async () => {
+  const context = fixture();
+  context.adapter.failMode = 'REJECTED_AFTER_WRITE';
+  try {
+    const result = await context.orchestrator.run(context.refresh.refreshId, context.authorization.authorizationId);
+    assert.equal(result.refresh.status, 'TARGET_REFRESHED');
+    assert.equal(context.store.loadJournal(context.refresh.refreshId).phase, 'READBACK_VERIFIED');
+    assert.equal(context.adapter.saveCalls, 1);
   } finally {
     fs.rmSync(context.temporary, { recursive: true, force: true });
   }

@@ -6,12 +6,12 @@ Version `0.2.0` implements the Platform Adapter and Save As state machine. The c
 
 1. Authenticate the caller's existing platform token in memory without persisting it.
 2. Read source metadata and the current `workId` for `nid` and optional `gid`.
-3. Separate authentication, source-read permission, and target Save As preflight.
+3. Separate authentication/source readability from an advisory Save As object/gid preflight; member write permission is decided only by the platform write endpoint.
 4. Load and decode the complete current work, then run physical version classification.
 5. Re-read the source revision before saving to detect concurrent changes.
 6. Reproduce the VxEditor41 sequence: create the derived case, merge user defaults with source `customVars`, replace source nid while preserving `modDbId`, save final V5 work, and read it back.
 7. Journal every remote mutation so recognized `SAVE_INCOMPLETE` states can resume without duplicating a known target.
-8. For Workflow `0.6.0`, prepare and apply an independent content-only Existing Target Refresh: prove trusted source/target lineage, preflight target edit permission independently, preserve target configuration, bind source/target/config revisions into one immutable plan, and reconcile an uncertain write by read-back without replay.
+8. For Workflow `0.6.0`, prepare and apply an independent content-only Existing Target Refresh: prove trusted source/target lineage and target readability, preserve target configuration, bind source/target/config revisions into one immutable plan, let the target write endpoint decide member permission, and reconcile an uncertain write by read-back without replay.
 
 The binary codec is compatible with VxEditor41's SJCL/pako framing. The adapter sends `Authorization: Bearer <token>` only in memory and redacts it from errors.
 
@@ -31,11 +31,11 @@ The native prompt currently requires macOS. Cancellation returns `TOKEN_PROMPT_C
 
 ## Permission boundary
 
-Source readability does not imply target write permission. Local tests cover owner, developer, guest/denied, group-owner, and group-participant-unknown decisions.
+Source readability does not imply target write permission. `preflightSaveAs()` and `preflightTargetUpdate()` therefore do not infer authorization from `memberType`, Group ownership, or deployment-specific exceptions. They read the relevant object, and Save As additionally rejects an explicitly supplied gid that disagrees with platform metadata.
 
-Before broad release, a controlled real-platform matrix must still cover owner, ordinary participant, group owner, group participant, removed participant, the AdminEid exception, and any personal-copy fallback using real API responses.
+The authorized Save As or target-update endpoint is the only member-permission authority. A controlled real-platform matrix should still cover owner, ordinary participant, group owner, group participant, removed participant, the AdminEid exception, and any personal-copy fallback, but those results describe the platform rather than a duplicated Workflow policy table.
 
-The Workflow never broadens the caller's permissions or substitutes the maintainer's identity. A non-owner group participant returns `UNKNOWN_SERVER_POLICY`; live Save As does not begin. A definite denial returns `SOURCE_PERMISSION_DENIED` or `TARGET_PERMISSION_DENIED` and leaves the private Job evidence intact.
+The Workflow never broadens the caller's permissions or substitutes the maintainer's identity. It sends the current user's Token only after all deterministic write gates and user authorization pass. An endpoint-scoped structured permission rejection becomes `TARGET_PERMISSION_DENIED`/`REJECTED_BY_PLATFORM` and is not replayed. Network failure, generic server error, unrecognized response, or contradictory read-back remains an unknown write outcome and may only use the operation's read-back/reconciliation path.
 
 ## Save gate
 
@@ -47,7 +47,7 @@ Normal remote Save As may start only when:
 - no issue is owned by `CONVERTER` or `UNKNOWN`;
 - every approved source repair went through Patch policy and revalidation;
 - source `workId` is unchanged; and
-- destination preflight is `ALLOWED`.
+- advisory destination object/gid preflight is `ALLOWED`; this does not claim member write permission.
 
 Classified known issues have one explicit exception for diagnosis. The Job must be `BLOCKED_CONVERTER_DEFECT`, `AI_REPAIR_REQUIRED`, or an eligible `NEEDS_REVIEW`; every issue must have a supported closed classification; and the caller must use `resume-diagnostic-save` with `SAVE_V5_WITH_KNOWN_ISSUES`. Cause does not grant or deny the write: authentication, actual server permission, explicit user authorization, current platform path, source revision, checkpoint, config, nid rewrite, known write outcome, and read-back protections are enforced independently. A previous `PLATFORM` or `AUTHORIZATION` diagnosis can therefore proceed only after the corresponding current hard prerequisite is satisfied. Completion is `DIAGNOSTIC_COPY_CREATED`, not `SUCCEEDED`.
 
@@ -70,7 +70,7 @@ The default is `platform.writeMode: "disabled"`. Live writes require all of:
 - `platform.writeMode: "explicit"` in private config;
 - `--confirm-live-write SAVE_V5` on that command;
 - a Job in `READY_TO_SAVE` or a recognized resumable save state;
-- an `ALLOWED` permission decision; and
+- an `ALLOWED` advisory object/gid decision; and
 - unchanged source revision.
 
 For the diagnostic-copy exception, the path-specific requirements replace the normal command/status pair:
@@ -82,6 +82,6 @@ For the diagnostic-copy exception, the path-specific requirements replace the no
 
 The normal and diagnostic save intents cannot resume each other. After every authorized live-save attempt, restore `platform.writeMode` to `"disabled"` even when the command fails or is interrupted; never leave the global write gate open between Jobs.
 
-Existing Target Refresh uses a third, non-interchangeable confirmation: `--confirm-live-write REFRESH_EXISTING_V5`. It additionally requires the exact Refresh Authorization ID and a protocol-7-compatible managed Workflow/Converter/Knowledge set. A successful content read-back preserves the target nid and configuration, supersedes old write-capable Reviews as read-only evidence, and creates a fresh Review from the refreshed revision.
+Existing Target Refresh uses a third, non-interchangeable confirmation: `--confirm-live-write REFRESH_EXISTING_V5`. It additionally requires the exact Refresh Authorization ID and a protocol-7-compatible managed Workflow/Converter/Knowledge set. The target save endpoint decides current member permission. A structured rejection with no contradictory target change closes that write as rejected; a successful content read-back preserves the target nid and configuration, supersedes old write-capable Reviews as read-only evidence, and creates a fresh Review from the refreshed revision.
 
 Until the controlled real-platform permission matrix is complete, keep `writeMode` disabled for general users.

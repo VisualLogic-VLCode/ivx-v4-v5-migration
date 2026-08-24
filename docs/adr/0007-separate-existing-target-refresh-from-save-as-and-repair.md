@@ -24,6 +24,6 @@ After a confirmed refresh, older write-capable Reviews for that target become pr
 
 - Users can deliberately create another V5 without weakening retry/resume safety.
 - Existing target identity can be retained without pretending that full reconversion is a local runtime repair.
-- Refresh needs new schemas, storage, CLI commands, target permission preflight, Agent procedure, tests, and a protocol-compatible Knowledge Release before publication.
+- Refresh needs new schemas, storage, CLI commands, target object/read preflight, platform-authoritative write permission, Agent procedure, tests, and a protocol-compatible Knowledge Release before publication.
 - The first implementation cannot refresh arbitrary V5 targets without trusted Workflow lineage.
 - Unknown platform outcomes may require a new user decision instead of automatic replay.

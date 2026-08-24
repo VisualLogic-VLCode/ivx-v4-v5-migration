@@ -52,6 +52,18 @@ export class TargetUpdateOrchestrator {
             observedSnapshot: observed.snapshot,
           });
         }
+        if (error?.details?.outcome === 'REJECTED_BY_PLATFORM'
+          && (!observed || (observed.workId === prepared.batch.expectedTarget.workId
+            && observed.sha256 === prepared.batch.expectedTarget.sha256))) {
+          this.reviews.markTargetRepairRejected(reviewId, batchId, {
+            observedWorkId: observed?.workId || null,
+            observedSnapshot: observed?.snapshot || null,
+            errorCode: publicErrorCode(error),
+          });
+          throw new WorkflowError('TARGET_PERMISSION_DENIED', 'Platform rejected the target repair for the current user', {
+            cause: publicErrorCode(error),
+          });
+        }
         this.reviews.markTargetRepairUncertain(reviewId, batchId, {
           observedWorkId: observed?.workId || null,
           observedSnapshot: observed?.snapshot || null,

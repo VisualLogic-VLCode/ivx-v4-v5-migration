@@ -1,7 +1,9 @@
 import { WorkflowError, invariant } from '../errors.js';
 import { decodePlatformWork, encodePlatformWork } from './work-codec.js';
 
-const EDIT_ROLES = new Set([1, 2, 3]);
+const SAVE_AS_PATH = '/work/saveAs';
+const SAVE_WORK_PATH_PREFIX = '/work/save/';
+const GROUP_SAVE_AS_DENIAL_KEY = '不允许非组拥有者另存为案例到当前组';
 
 // Mirrors VxEditor41 src/stores/globalConfig.js defaultWorkConfig. The editor
 // uses this exact fallback when getDefaultConfig returns null or an empty object.
@@ -61,6 +63,43 @@ function safeErrorDetail(text, token) {
     .replaceAll(token, '[REDACTED]')
     .replace(/Bearer\s+[^\s"']+/gi, 'Bearer [REDACTED]')
     .slice(0, 2000);
+}
+
+function platformErrorChain(text, token) {
+  const chain = [];
+  let current;
+  try {
+    current = JSON.parse(String(text || ''));
+  } catch {
+    return chain;
+  }
+  for (let depth = 0; depth < 3; depth += 1) {
+    if (!current || typeof current !== 'object' || Array.isArray(current)) break;
+    const code = Number(current.code);
+    chain.push({
+      id: typeof current.id === 'string' ? safeErrorDetail(current.id, token) : null,
+      code: Number.isFinite(code) ? code : null,
+      key: typeof current.key === 'string' ? safeErrorDetail(current.key, token) : null,
+    });
+    if (typeof current.detail !== 'string') break;
+    try {
+      current = JSON.parse(current.detail);
+    } catch {
+      break;
+    }
+  }
+  return chain;
+}
+
+function isPlatformMemberPermissionRejection(pathname, status, chain) {
+  const memberWrite = pathname === SAVE_AS_PATH || pathname.startsWith(SAVE_WORK_PATH_PREFIX);
+  if (!memberWrite) return false;
+  if (status === 401 || chain.some((entry) => entry.code === 401 || entry.code === 403)) return true;
+  return pathname === SAVE_AS_PATH && chain.some((entry) => (
+    entry.id === 'editor'
+      && entry.code === 400
+      && entry.key === GROUP_SAVE_AS_DENIAL_KEY
+  ));
 }
 
 export function normalizePlatformBaseUrl(value, allowInsecureLocalhost = false) {
@@ -263,16 +302,21 @@ export class IvxPlatformAdapter {
     }
     if (!result.ok) {
       const text = await result.text();
+      const errorChain = platformErrorChain(text, this.#token);
+      const permissionRejected = write && isPlatformMemberPermissionRejection(pathname, result.status, errorChain);
       const code = result.status === 401
         ? 'PLATFORM_AUTH_FAILED'
-        : result.status === 403
+        : permissionRejected || result.status === 403
           ? 'PLATFORM_PERMISSION_DENIED'
           : 'PLATFORM_HTTP_FAILED';
       throw new WorkflowError(code, `Platform returned HTTP ${result.status}`, {
         operation: `${method} ${pathname}`,
         status: result.status,
         detail: safeErrorDetail(text, this.#token),
-        outcome: write ? 'UNKNOWN_AFTER_WRITE_ATTEMPT' : 'REJECTED',
+        outcome: write
+          ? (permissionRejected ? 'REJECTED_BY_PLATFORM' : 'UNKNOWN_AFTER_WRITE_ATTEMPT')
+          : 'REJECTED',
+        ...(errorChain.length > 0 ? { platformError: errorChain.at(-1) } : {}),
       });
     }
     if (result.status === 203) {
@@ -285,7 +329,7 @@ export class IvxPlatformAdapter {
           operation: `${method} ${pathname}`,
           status: result.status,
           detail: safeErrorDetail(text, this.#token),
-          outcome: write ? 'UNKNOWN_AFTER_WRITE_ATTEMPT' : 'REJECTED',
+          outcome: write ? 'REJECTED_BY_PLATFORM' : 'REJECTED',
         });
       }
       if (response === 'binary') return buffered;
@@ -461,54 +505,17 @@ export class IvxPlatformAdapter {
     });
   }
 
-  async preflightSaveAs({ nid, gid, currentUser } = {}) {
-    const user = currentUser || await this.getCurrentUser();
+  async preflightSaveAs({ nid, gid } = {}) {
     const source = await this.getCaseInfo(nid);
     const sourceGid = Number(source?.gid || 0);
     if (gid !== undefined && gid !== null && Number(gid) !== sourceGid) {
       return { allowed: false, decision: 'DENIED', reason: 'SOURCE_GID_MISMATCH', source };
     }
-    const memberType = Number(source?.memberType || 0);
-    if (!EDIT_ROLES.has(memberType)) {
-      return { allowed: false, decision: 'DENIED', reason: 'SOURCE_ROLE_NOT_EDITABLE', source };
-    }
-    if (!sourceGid) return { allowed: true, decision: 'ALLOWED', reason: 'PERSONAL_CASE_MEMBER', source };
-    const group = await this.getWorkGroup(sourceGid);
-    const currentUid = Number(user?.id || user?.uid || 0);
-    const groupOwnerUid = Number(group?.uid || 0);
-    if (currentUid > 0 && currentUid === groupOwnerUid) {
-      return { allowed: true, decision: 'ALLOWED', reason: 'GROUP_OWNER', source };
-    }
-    return {
-      allowed: false,
-      decision: 'UNKNOWN',
-      reason: 'UNKNOWN_SERVER_POLICY',
-      source,
-      evidence: { memberType, currentUserKnown: currentUid > 0, groupOwnerKnown: groupOwnerUid > 0 },
-    };
+    return { allowed: true, decision: 'ALLOWED', reason: 'PLATFORM_WRITE_AUTHORITY', source };
   }
 
-  async preflightTargetUpdate({ nid, currentUser } = {}) {
-    const user = currentUser || await this.getCurrentUser();
+  async preflightTargetUpdate({ nid } = {}) {
     const target = await this.getCaseInfo(nid);
-    const memberType = Number(target?.memberType || 0);
-    if (!EDIT_ROLES.has(memberType)) {
-      return { allowed: false, decision: 'DENIED', reason: 'TARGET_ROLE_NOT_EDITABLE', target };
-    }
-    const targetGid = Number(target?.gid || 0);
-    if (!targetGid) return { allowed: true, decision: 'ALLOWED', reason: 'PERSONAL_CASE_MEMBER', target };
-    const group = await this.getWorkGroup(targetGid);
-    const currentUid = Number(user?.id || user?.uid || 0);
-    const groupOwnerUid = Number(group?.uid || 0);
-    if (currentUid > 0 && currentUid === groupOwnerUid) {
-      return { allowed: true, decision: 'ALLOWED', reason: 'GROUP_OWNER', target };
-    }
-    return {
-      allowed: false,
-      decision: 'UNKNOWN',
-      reason: 'UNKNOWN_SERVER_POLICY',
-      target,
-      evidence: { memberType, currentUserKnown: currentUid > 0, groupOwnerKnown: groupOwnerUid > 0 },
-    };
+    return { allowed: true, decision: 'ALLOWED', reason: 'PLATFORM_WRITE_AUTHORITY', target };
   }
 }

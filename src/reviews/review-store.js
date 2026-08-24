@@ -1589,6 +1589,39 @@ export class RuntimeReviewStore {
     });
   }
 
+  markTargetRepairRejected(reviewId, batchId, { observedWorkId = null, observedSnapshot = null, errorCode = 'PLATFORM_PERMISSION_DENIED' } = {}) {
+    return this.#mutate(reviewId, (review) => {
+      const batch = this.#repairBatch(reviewId, batchId);
+      invariant(batch.state === 'WRITE_REQUESTED', 'TARGET_REPAIR_REJECTION_INVALID', 'Repair Batch is not awaiting a platform write result');
+      const observedSha256 = observedSnapshot === null ? null : revisionValueDigest(observedSnapshot);
+      if (observedWorkId !== null || observedSha256 !== null) {
+        invariant(
+          observedWorkId === batch.expectedTarget.workId && observedSha256 === batch.expectedTarget.sha256,
+          'TARGET_REPAIR_REJECTION_BASELINE_MISMATCH',
+          'A rejected target repair may be finalized only with the exact target baseline',
+        );
+      }
+      batch.state = 'WRITE_REJECTED';
+      batch.write = {
+        ...batch.write,
+        outcome: 'REJECTED_BY_PLATFORM',
+        observedWorkId,
+        observedSha256,
+        errorCode,
+      };
+      batch.updatedAt = this.now().toISOString();
+      writePrivateJson(this.#batchPath(reviewId, batchId), batch);
+      if (review.status !== 'BLOCKED_PLATFORM_RUNTIME') {
+        assertReviewTransition(review.status, 'BLOCKED_PLATFORM_RUNTIME');
+        this.#setStatus(review, 'BLOCKED_PLATFORM_RUNTIME', `target-repair-write-rejected:${batchId}:${errorCode}`);
+      } else {
+        review.updatedAt = batch.updatedAt;
+        review.history.push({ status: review.status, at: review.updatedAt, reason: `target-repair-write-rejected:${batchId}:${errorCode}` });
+      }
+      return { review, batch };
+    });
+  }
+
   markTargetRepairUncertain(reviewId, batchId, { observedWorkId, observedSnapshot, errorCode = 'PLATFORM_NETWORK_FAILED' } = {}) {
     return this.#mutate(reviewId, (review) => {
       const batch = this.#repairBatch(reviewId, batchId);

@@ -225,6 +225,12 @@ class FaultAdapter {
   async loadWork() { return structuredClone(this.snapshot); }
   async saveWork({ work }) {
     this.saveCalls += 1;
+    if (this.mode === 'rejected') {
+      const error = new Error('platform denied target repair');
+      error.code = 'PLATFORM_PERMISSION_DENIED';
+      error.details = { outcome: 'REJECTED_BY_PLATFORM' };
+      throw error;
+    }
     if (this.mode === 'unchanged-then-throw') {
       const error = new Error('connection lost');
       error.code = 'PLATFORM_NETWORK_FAILED';
@@ -232,6 +238,12 @@ class FaultAdapter {
     }
     this.snapshot = structuredClone(work);
     this.workId = 'target-work-2';
+    if (this.mode === 'rejected-after-write') {
+      const error = new Error('contradictory platform denial after target change');
+      error.code = 'PLATFORM_PERMISSION_DENIED';
+      error.details = { outcome: 'REJECTED_BY_PLATFORM' };
+      throw error;
+    }
     if (this.mode === 'applied-then-throw') {
       const error = new Error('response lost');
       error.code = 'PLATFORM_NETWORK_FAILED';
@@ -680,6 +692,38 @@ test('unknown unchanged write is blocked for reconciliation without replay', asy
     assert.equal(value.reviews.loadRepairBatch(value.review.reviewId, value.repair.batch.batchId).state, 'WRITE_OUTCOME_UNKNOWN');
     const reconciled = await orchestrator.reconcile(value.review.reviewId, value.repair.batch.batchId);
     assert.equal(reconciled.reconciled, false);
+    assert.equal(adapter.saveCalls, 1);
+  } finally {
+    fs.rmSync(value.temporary, { recursive: true, force: true });
+  }
+});
+
+test('platform-rejected target repair is blocked as definite denial without reconciliation', async () => {
+  const value = fixture('ivx-target-repair-rejected-');
+  try {
+    const adapter = new FaultAdapter('rejected');
+    const orchestrator = new TargetUpdateOrchestrator({ reviews: value.reviews, adapter });
+    await assert.rejects(orchestrator.run(value.review.reviewId, value.repair.batch.batchId), { code: 'TARGET_PERMISSION_DENIED' });
+    assert.equal(value.reviews.load(value.review.reviewId).status, 'BLOCKED_PLATFORM_RUNTIME');
+    const batch = value.reviews.loadRepairBatch(value.review.reviewId, value.repair.batch.batchId);
+    assert.equal(batch.state, 'WRITE_REJECTED');
+    assert.equal(batch.write.outcome, 'REJECTED_BY_PLATFORM');
+    assert.equal(batch.write.observedWorkId, batch.expectedTarget.workId);
+    assert.equal(adapter.saveCalls, 1);
+    await assert.rejects(orchestrator.reconcile(value.review.reviewId, value.repair.batch.batchId), { code: 'TARGET_REPAIR_RECONCILIATION_NOT_REQUIRED' });
+  } finally {
+    fs.rmSync(value.temporary, { recursive: true, force: true });
+  }
+});
+
+test('target repair candidate read-back wins over a contradictory rejection response', async () => {
+  const value = fixture('ivx-target-repair-rejected-after-write-');
+  try {
+    const adapter = new FaultAdapter('rejected-after-write');
+    const orchestrator = new TargetUpdateOrchestrator({ reviews: value.reviews, adapter });
+    const result = await orchestrator.run(value.review.reviewId, value.repair.batch.batchId);
+    assert.equal(result.batch.state, 'READBACK_VERIFIED');
+    assert.equal(result.batch.write.outcome, 'VERIFIED');
     assert.equal(adapter.saveCalls, 1);
   } finally {
     fs.rmSync(value.temporary, { recursive: true, force: true });
