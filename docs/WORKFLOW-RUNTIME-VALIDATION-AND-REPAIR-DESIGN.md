@@ -1,7 +1,7 @@
 # V4→V5 工作流：运行时验证、问题诊断与 AI 修复设计
 
-> 状态：阶段 0–13 已公开实现于签名稳定版 Workflow `0.12.1`，包括 Agent 自主业务面逐项对账、独立覆盖状态及用户授权的有副作用写后验证。执行、语义诊断、测试动作与业务判断仍交给本地 Agent；Workflow 保留受管证据、诊断政策、Patch 验证、预算、CAS、写后回读和审计。兼容 Converter `1.2.6` 与 Knowledge Runtime `0.1.6`，Agent protocol 仍为 9。
-> 初稿：2026-08-12；本次修订：2026-08-21
+> 状态：阶段 0–13 已公开实现于签名稳定版 Workflow `0.12.3`，包括 Agent 自主业务面逐项对账、独立覆盖状态、用户授权的有副作用写后验证，以及由平台写接口裁决成员权限。执行、语义诊断、测试动作与业务判断仍交给本地 Agent；Workflow 保留受管证据、诊断政策、Patch 验证、预算、CAS、写后回读和审计。兼容 Converter `1.2.6` 与 Knowledge Runtime `0.1.6`，Agent protocol 仍为 9。
+> 初稿：2026-08-12；本次修订：2026-08-24
 > 适用项目：`ivx-v4-v5-migration` 及其独立分发的 Workflow、Agent 适配器和知识运行时
 > 不修改：`tov5parser` 的转换规则；转换器继续由维护者在独立仓库中维护
 
@@ -974,11 +974,11 @@ Converter 修复后由维护者发布新 Converter；用户更新后可以对原
 
 ## 20. 当前状态与后续维护
 
-代码改造阶段 0–13 已全部实现。Knowledge Runtime `0.1.6`、Workflow `0.12.1` 和兼容的独立 Converter `1.2.6` 已公开发布；Workflow `0.10.0` 在 `0.9.0` 的 Agent Native 链基础上删除 Agent Direct 的当前运行时代码与兼容层，Workflow `0.11.0` 拒绝业务流程覆盖不足的浅层等价结论，Workflow `0.12.0` 进一步增加业务面逐项对账、独立覆盖状态和用户授权的写后结果验证，Workflow `0.12.1` 仅同步独立 Converter 的当前稳定版本说明。Agent 自主执行、由 Agent/LLM 语义诊断与生成 Patch，Workflow 继续负责证据归档、政策验证、预算、全量静态验证、CAS、平台写入、读回与恢复。历史不可变 Release 仍保留；0.12.1 可读取旧 0.10.0/0.11.0 Native observation，但新提交必须使用 0.12.0 结构，且不重新加载旧 Direct artifact。
+代码改造阶段 0–13 已全部实现。Knowledge Runtime `0.1.6`、Workflow `0.12.3` 和兼容的独立 Converter `1.2.6` 已公开发布；Workflow `0.10.0` 在 `0.9.0` 的 Agent Native 链基础上删除 Agent Direct 的当前运行时代码与兼容层，Workflow `0.11.0` 拒绝业务流程覆盖不足的浅层等价结论，Workflow `0.12.0` 增加业务面逐项对账、独立覆盖状态和用户授权的写后结果验证，Workflow `0.12.1` 同步独立 Converter 的稳定版本说明，Workflow `0.12.2` 把成员写权限交由真实平台写接口裁决，Workflow `0.12.3` 只修正随 0.12.2 发布的当前稳定版说明。Agent 自主执行、由 Agent/LLM 语义诊断与生成 Patch，Workflow 继续负责证据归档、政策验证、预算、全量静态验证、CAS、平台写入、读回与恢复。历史不可变 Release 仍保留；0.12.3 可读取旧 0.10.0/0.11.0 Native observation，但新提交必须使用 0.12.0 结构，且不重新加载旧 Direct artifact。
 
 Workflow `0.5.0` 在此基础上增加 `/config/name` 的明确字段政策、精确范围的环境风险接受、诊断专用运行状态和 Agent 报告边界。Agent protocol 已提升到 6，Knowledge Runtime `0.1.3` 提供对应兼容范围。`0.5.1` 补齐 Workflow 回滚后的 Agent Skill 协调同步；`0.5.2` 增加以完整 V4 输入摘要为证据的 post-Save source revision 协调，并明确禁止通过重复 Save As 处理内容变化。签名 Release、稳定通道、全新安装、协调更新、回滚和既有 Review 恢复共同构成发布验收。
 
-阶段 0–13 的后续工作属于持续维护和扩大真实案例覆盖：继续收集稳定、可回滚的真实场景校准 Diagnosis/Repair 政策；按真实试点数据评估预算；为 Windows 建立原生 Token 文件 ACL 合同。0.12.1 在协议 9 内保留 Native observation、`FLAKY_RUNTIME`、Native 诊断来源、修复来源关联和 Agent 自主回归闭环，并继承 0.12.0 的业务面逐项对账、独立覆盖状态、阻塞解除事实和用户授权的写后结果证据；不读取、迁移或恢复 Agent Direct artifact。Additional V5、Existing Target Refresh 与历史自主探索的公开安装/更新路径仍可使用。任何尚未由真实稳定场景覆盖的能力都必须明确标注为 mock、校准夹具或故障注入结果，不以静态结果替代运行时等价结论。Converter 后续继续独立发布；只要版本满足 Workflow `0.12.1` 的 `>=1.2.0 <2.0.0` 兼容范围，就不要求同步发布新的 Workflow。
+阶段 0–13 的后续工作属于持续维护和扩大真实案例覆盖：继续收集稳定、可回滚的真实场景校准 Diagnosis/Repair 政策；按真实试点数据评估预算；为 Windows 建立原生 Token 文件 ACL 合同。0.12.3 在协议 9 内保留 Native observation、`FLAKY_RUNTIME`、Native 诊断来源、修复来源关联和 Agent 自主回归闭环，并继承 0.12.0 的业务面逐项对账、独立覆盖状态、阻塞解除事实和用户授权的写后结果证据，以及 0.12.2 的平台权威成员权限政策；不读取、迁移或恢复 Agent Direct artifact。Additional V5、Existing Target Refresh 与历史自主探索的公开安装/更新路径仍可使用。任何尚未由真实稳定场景覆盖的能力都必须明确标注为 mock、校准夹具或故障注入结果，不以静态结果替代运行时等价结论。Converter 后续继续独立发布；只要版本满足 Workflow `0.12.3` 的 `>=1.2.0 <2.0.0` 兼容范围，就不要求同步发布新的 Workflow。
 
 ## 21. Additional V5 Creation 与 Existing Target Refresh（阶段 10 已实现并发布）
 
