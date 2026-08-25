@@ -1512,6 +1512,7 @@ export async function runCli(argv, dependencies = {}) {
         'ivx-migrate dry-run --input <app.json> --nid <nid> [--converter-path <development-package>] [--metadata <json>]',
         'ivx-migrate platform preflight --nid <nid> [--gid <gid>] [--token-file <0600-file>]',
         'ivx-migrate migrate --nid <nid> [--gid <gid>] [--intent create-v5|create-additional-v5] [--related-job <jobId[,jobId]>] [--token-file <0600-file>] [--converter-path <development-package>] [--save --confirm-live-write SAVE_V5]',
+        'ivx-migrate job list',
         'ivx-migrate job status --job <jobId>',
         'ivx-migrate job classify --job <jobId> --file <classification.json>',
         'ivx-migrate job apply-patch --job <jobId> --file <patch.json>',

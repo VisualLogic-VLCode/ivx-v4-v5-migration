@@ -102,7 +102,7 @@ export class JobStore {
   }
 
   load(jobId) {
-    const job = readJson(this.statePath(jobId));
+    const job = readJson(this.statePath(jobId), null);
     if (!job) throw new WorkflowError('JOB_NOT_FOUND', `Job not found: ${jobId}`);
     return job;
   }

@@ -10,6 +10,8 @@
 
 刚安装完成时可以在当前任务继续。若要同时验证 Codex/Claude Code 能否自动发现新安装的 Skill，重新打开一个全新任务再提交 `nid`。
 
+每次开始迁移或恢复时，Agent 都应先通过 `job list`、`refresh list`、`review list` 和对应的 `status`/`recover` 读取正式记录。当前工作目录里的 `task_plan.md`、`findings.md`、`progress.md`、其他报告及会话历史不是受管状态，不能作为 Job/Review/Refresh 存在、谱系、完成状态或授权的依据。平台上某个 V5 仍然存在，也只证明该案例存在且是 V5，不能代替已经被清理的本地受管 Job。
+
 ## 2. 选择要完成的任务
 
 ### 只检查和转换，不创建 V5 案例
@@ -103,6 +105,8 @@ Agent 返回 `jobId`、`refreshId` 或 `reviewId` 后应保留它。以后可以
 ```
 
 手工发现会作为 Human Finding 加入既有 Review，它只是新证据，不会自动扩大写入或修复授权。
+
+若 `status`/`recover` 返回 `JOB_NOT_FOUND`、`REFRESH_NOT_FOUND` 或 `REVIEW_NOT_FOUND`，该受管对象已经不存在。Agent 必须重新依据当前请求决定普通创建、明确的 Additional V5 或用户指定目标的 Refresh；不得从旧规划文本中抄回 ID，也不得只查询旧 V5 后宣布当前转换已完成。
 
 ## 5. 常见结果
 

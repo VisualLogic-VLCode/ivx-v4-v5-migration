@@ -118,6 +118,8 @@ ivx-migrate job status --job <jobId>
 
 Job 默认位于 `~/.ivx-v4-v5/jobs/`，不放在当前项目目录。Token 内容不会写入 Job、转换诊断或 AI 分析文件。
 
+Agent 开始或恢复任务时，应同时运行 `job list`、`refresh list`、`review list`，并以这些清单及成功的 `status`/`recover` 结果作为正式记录。项目目录里的 `task_plan.md`、`findings.md`、`progress.md`、其他报告和会话历史不是受管状态，不能作为谱系、完成状态或授权；平台查询确认旧 V5 存在也不能替代已经缺失的 Job。CLI 返回 `*_NOT_FOUND` 后必须按当前用户请求重新选择操作，不能从规划文本恢复 ID 或宣布当前迁移已完成。
+
 ## 6. 审核后另存 V5
 
 只有 Job 已到达 `READY_TO_SAVE`，且当前任务包含普通另存授权时，才临时打开写入门禁。用户最初明确要求“转成/创建 V5”已经构成该 Job 的普通另存授权；只要求检查、测试或诊断的 Job 则需用户后来单独授权。

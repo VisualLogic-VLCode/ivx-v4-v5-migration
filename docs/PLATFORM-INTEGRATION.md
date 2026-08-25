@@ -1,5 +1,9 @@
 # Platform integration and recovery boundary
 
+## Managed state authority
+
+Migration Job, Refresh, and Runtime Review existence comes only from the private CLI-managed inventories and a successful object `status`/`recover`. Workspace planning files (`task_plan.md`, `findings.md`, `progress.md`), reports, filenames, conversation history, and platform case listings are not managed state and cannot establish lineage, completion, intent, or authorization. A platform read may prove that a V5 target exists, but it cannot substitute for a missing local Job or make a new migration request successful. A missing managed object is reported with the corresponding `*_NOT_FOUND` code; the Agent must then select a new operation from the current user's intent rather than reconstructing state from prose.
+
 Version `0.2.0` implements the Platform Adapter and Save As state machine. The complete flow is exercised against a local HTTP platform simulator; no real platform write was made during development.
 
 ## Implemented operations

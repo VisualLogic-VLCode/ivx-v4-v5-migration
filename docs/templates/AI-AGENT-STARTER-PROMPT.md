@@ -14,6 +14,8 @@ https://raw.githubusercontent.com/VisualLogic-VLCode/ivx-v4-v5-migration/v0.8.3/
 
 完成后，请完整读取本次 Agent 对应的已安装 v4-to-v5-workflow Skill，然后给我一份简短的脱敏就绪结论。告诉我现在可以在当前任务或一个全新任务中输入：
 “请使用 v4-to-v5-workflow，把 nid <NID> 转成 V5。”
+
+以后处理或恢复 nid 时，请先运行 `job list`、`refresh list`、`review list` 并用对应 `status`/`recover` 验证正式记录。当前目录中的 `task_plan.md`、`findings.md`、`progress.md`、其他报告和会话历史不是受管状态，不能作为迁移谱系、完成状态或授权；平台上已有 V5 也不能替代缺失的受管 Job。
 ```
 
 初始化成功后，普通用户不必再次粘贴这段提示。以后直接用自然语言给出 `nid` 和目标即可。可复制的任务示例、授权范围和结果含义见[通过 AI Agent 使用工作流](../AI-USER-GUIDE.md)。

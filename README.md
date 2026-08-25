@@ -4,9 +4,10 @@ This project is the distributable local workflow used by Codex or Claude Code. I
 
 ## Current status
 
-The current signed stable release is Workflow `0.12.3` with Agent protocol 9, Converter `1.2.6`, and Knowledge Runtime `0.1.6`. Its capabilities are:
+The current signed stable release is Workflow `0.12.4` with Agent protocol 9, Converter `1.2.7`, and Knowledge Runtime `0.1.6`. Its capabilities are:
 
 - private global Job storage with atomic state writes and per-Job locks;
+- explicit managed-state authority through Job/Refresh/Review inventories and normalized not-found results; workspace planning prose, conversation history, and platform case existence never substitute for managed lineage;
 - metadata + physical work version classification;
 - a version-pinned local converter provider;
 - versioned converter-process diagnostics with conservative save gating;
@@ -165,6 +166,8 @@ ivx-migrate config write-mode --mode disabled
 ```
 
 `prepare` is read-only and persists no target configuration values—only stable digests. `apply` preserves existing target configuration and may issue at most one target write for the exact plan. If its outcome is uncertain, keep writes disabled and run `refresh reconcile`; never call apply again. `refresh finalize` is local-only recovery after content was already confirmed but Review succession did not finish.
+
+Before choosing resume versus creation, Agents must read `job list`, `refresh list`, and `review list`, then require the selected object's `status`/`recover` to succeed. `task_plan.md`, `findings.md`, `progress.md`, other workspace notes, and conversation history are non-authoritative hints. A platform V5 read proves existence/version only; it cannot recreate a deleted Job, establish Workflow lineage, authorize a write, or complete a new migration request.
 
 `finding-add` records USER evidence only. If the target may have been edited, `observe-platform-revision` reads it through the Platform Adapter, creates a bounded redacted diff, and pauses the review as `TARGET_EXTERNALLY_MODIFIED`. `accept-baseline` requires both that observation and a matching USER Human Finding that requested `ACCEPT_TARGET_REVISION`; it adopts the snapshot locally and returns to `LOCAL_VALIDATING`.
 
